@@ -27,6 +27,8 @@ import {
   getNutritionPlanJob,
   NutritionPlanApiResponse,
   startNutritionPlanJob,
+  analyzeMealImage,
+  MealImageAnalysisResponse,
   updateNutritionMealCompletion,
 } from '../../lib/nutrition';
 
@@ -236,6 +238,9 @@ function MealPlanResult({
   const [mealModalActionState, setMealModalActionState] = useState<'idle' | 'loading' | 'done'>('idle');
   const [mealModalActionMode, setMealModalActionMode] = useState<'complete' | 'unmark'>('complete');
   const [analysisImage, setAnalysisImage] = useState<ImagePicker.ImagePickerAsset | null>(null);
+  const [analysisLoading, setAnalysisLoading] = useState(false);
+  const [analysisResult, setAnalysisResult] = useState<MealImageAnalysisResponse | null>(null);
+  const [analysisError, setAnalysisError] = useState('');
 
   const normalizeMealCompletions = (plan: NutritionPlanApiResponse | null | undefined) => {
     const entries = plan?.meal_completions ?? {};
@@ -457,13 +462,36 @@ function MealPlanResult({
         allowsEditing: false,
         quality: 0.9,
         cameraType: ImagePicker.CameraType.back,
+        base64: true,
       });
 
       if (!result.canceled && result.assets.length > 0) {
-        setAnalysisImage(result.assets[0]);
+        const asset = result.assets[0];
+        setAnalysisImage(asset);
+        setAnalysisError('');
+        setAnalysisResult(null);
+
+        if (!asset.base64) {
+          throw new Error('The selected image could not be read for analysis.');
+        }
+
+        setAnalysisLoading(true);
+        try {
+          const response = await analyzeMealImage({
+            image_base64: asset.base64,
+            mime_type: asset.mimeType ?? 'image/jpeg',
+            file_name: asset.fileName ?? null,
+          });
+          setAnalysisResult(response);
+        } catch (analysisErr) {
+          setAnalysisError(formatAppError(analysisErr).message);
+        } finally {
+          setAnalysisLoading(false);
+        }
       }
     } catch (error) {
       Alert.alert('Camera error', error instanceof Error ? error.message : 'Unable to open the camera right now.');
+      setAnalysisLoading(false);
     }
   };
 
@@ -733,13 +761,72 @@ function MealPlanResult({
               </View>
             ) : null}
 
-            <View style={styles.analysisEmptyCard}>
-              <Ionicons name="camera-outline" size={40} color="rgba(255,255,255,0.2)" />
-              <Text style={styles.analysisEmptyText}>No analysis yet</Text>
-              <Text style={styles.analysisEmptySub}>
-                Upload a photo of your meal and our AI will break down the calories, protein, carbs and fats.
-              </Text>
-            </View>
+            {analysisImage ? (
+              <View style={styles.analysisResultCard}>
+                {analysisLoading ? (
+                  <View style={styles.analysisLoadingRow}>
+                    <ActivityIndicator color={Colors.primary} />
+                    <Text style={styles.analysisLoadingText}>Analyzing your meal photo...</Text>
+                  </View>
+                ) : analysisResult ? (
+                  <>
+                    <View style={styles.analysisResultHeader}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.analysisResultLabel}>Meal analysis</Text>
+                        <Text style={styles.analysisResultTitle}>{analysisResult.meal_name_guess}</Text>
+                      </View>
+                      <View style={styles.analysisConfidencePill}>
+                        <Text style={styles.analysisConfidenceText}>{analysisResult.confidence}</Text>
+                      </View>
+                    </View>
+                    <Text style={styles.analysisResultSummary}>{analysisResult.summary}</Text>
+                    <View style={styles.analysisResultGrid}>
+                      <View style={styles.analysisResultMetric}>
+                        <Text style={styles.analysisResultMetricLabel}>Calories</Text>
+                        <Text style={styles.analysisResultMetricValue}>{analysisResult.estimated_calories}</Text>
+                      </View>
+                      <View style={styles.analysisResultMetric}>
+                        <Text style={styles.analysisResultMetricLabel}>Protein</Text>
+                        <Text style={styles.analysisResultMetricValue}>{analysisResult.estimated_protein}g</Text>
+                      </View>
+                      <View style={styles.analysisResultMetric}>
+                        <Text style={styles.analysisResultMetricLabel}>Carbs</Text>
+                        <Text style={styles.analysisResultMetricValue}>{analysisResult.estimated_carbs}g</Text>
+                      </View>
+                      <View style={styles.analysisResultMetric}>
+                        <Text style={styles.analysisResultMetricLabel}>Fat</Text>
+                        <Text style={styles.analysisResultMetricValue}>{analysisResult.estimated_fat}g</Text>
+                      </View>
+                    </View>
+                    {analysisResult.notes.length > 0 ? (
+                      <View style={styles.analysisNotesBlock}>
+                        {analysisResult.notes.map((note, index) => (
+                          <Text key={`${note}-${index}`} style={styles.analysisNoteItem}>
+                            • {note}
+                          </Text>
+                        ))}
+                      </View>
+                    ) : null}
+                  </>
+                ) : analysisError ? (
+                  <Text style={styles.analysisErrorText}>{analysisError}</Text>
+                ) : (
+                  <Text style={styles.analysisEmptySub}>
+                    Capture a meal image to see the analysis here.
+                  </Text>
+                )}
+              </View>
+            ) : null}
+
+            {!analysisImage ? (
+              <View style={styles.analysisEmptyCard}>
+                <Ionicons name="camera-outline" size={40} color="rgba(255,255,255,0.2)" />
+                <Text style={styles.analysisEmptyText}>No analysis yet</Text>
+                <Text style={styles.analysisEmptySub}>
+                  Upload a photo of your meal and our AI will break down the calories, protein, carbs and fats.
+                </Text>
+              </View>
+            ) : null}
           </View>
         )}
 
@@ -1930,6 +2017,107 @@ const styles = StyleSheet.create({
   analysisPreviewText: {
     color: '#fff',
     fontSize: 14,
+    fontFamily: 'Inter_500Medium',
+  },
+  analysisResultCard: {
+    backgroundColor: '#13132A',
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.07)',
+    gap: 14,
+  },
+  analysisLoadingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 8,
+  },
+  analysisLoadingText: {
+    color: '#fff',
+    fontSize: 14,
+    fontFamily: 'Inter_500Medium',
+  },
+  analysisResultHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+  },
+  analysisResultLabel: {
+    color: Colors.textMuted,
+    fontSize: 11,
+    textTransform: 'uppercase',
+    letterSpacing: 0.9,
+    fontFamily: 'Inter_700Bold',
+    marginBottom: 4,
+  },
+  analysisResultTitle: {
+    color: '#fff',
+    fontSize: 18,
+    fontFamily: 'Inter_700Bold',
+  },
+  analysisConfidencePill: {
+    alignSelf: 'flex-start',
+    backgroundColor: 'rgba(168,85,247,0.14)',
+    borderColor: 'rgba(168,85,247,0.28)',
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  analysisConfidenceText: {
+    color: '#D8B4FE',
+    fontSize: 11,
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+    fontFamily: 'Inter_700Bold',
+  },
+  analysisResultSummary: {
+    color: Colors.textMuted,
+    fontSize: 13,
+    lineHeight: 20,
+    fontFamily: 'Inter_400Regular',
+  },
+  analysisResultGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+  },
+  analysisResultMetric: {
+    width: '47%',
+    backgroundColor: '#0D0D1E',
+    borderRadius: 12,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.06)',
+  },
+  analysisResultMetricLabel: {
+    color: Colors.textMuted,
+    fontSize: 10,
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+    fontFamily: 'Inter_700Bold',
+    marginBottom: 6,
+  },
+  analysisResultMetricValue: {
+    color: '#fff',
+    fontSize: 18,
+    fontFamily: 'Inter_700Bold',
+  },
+  analysisNotesBlock: {
+    gap: 6,
+  },
+  analysisNoteItem: {
+    color: Colors.textMuted,
+    fontSize: 13,
+    lineHeight: 20,
+    fontFamily: 'Inter_400Regular',
+  },
+  analysisErrorText: {
+    color: '#FCA5A5',
+    fontSize: 13,
+    lineHeight: 20,
     fontFamily: 'Inter_500Medium',
   },
   analysisUploadGrad: { borderRadius: 14, paddingVertical: 16, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 10 },

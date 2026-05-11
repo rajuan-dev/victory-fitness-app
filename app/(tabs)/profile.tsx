@@ -6,12 +6,14 @@ import {
   ScrollView,
   TouchableOpacity,
   Image,
+  ActivityIndicator,
 } from 'react-native';
 import { useRouter } from 'expo-router';
+import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../constants/Colors';
 import VictoryHeader from '../../components/VictoryHeader';
-import { clearAuthTokens } from '../../lib/api';
+import { clearAuthTokens, fetchCurrentUser } from '../../lib/api';
 
 const pts = 105;
 const nextRankPts = 500;
@@ -47,6 +49,52 @@ const MENU_SECTIONS = [
 
 export default function ProfileScreen() {
   const router = useRouter();
+  const [me, setMe] = React.useState<{
+    id: string;
+    name: string;
+    email: string;
+    is_verified: boolean;
+    role?: string;
+    is_admin?: boolean;
+    country?: string;
+    profileImage?: string;
+  } | null>(null);
+  const [loadingMe, setLoadingMe] = React.useState(true);
+
+  useFocusEffect(
+    React.useCallback(() => {
+      let cancelled = false;
+
+      const loadMe = async () => {
+        setLoadingMe(true);
+        try {
+          const response = await fetchCurrentUser();
+          if (!cancelled) {
+            setMe(response);
+          }
+        } catch {
+          if (!cancelled) {
+            setMe(null);
+          }
+        } finally {
+          if (!cancelled) {
+            setLoadingMe(false);
+          }
+        }
+      };
+
+      loadMe();
+
+      return () => {
+        cancelled = true;
+      };
+    }, []),
+  );
+
+  const displayName = me?.name ?? 'Loading...';
+  const displayEmail = me?.email ?? 'Fetching /me data';
+  const displayRole = me?.is_admin ? 'ADMIN' : (me?.role?.toUpperCase() ?? 'MEMBER');
+  const displayVerified = me?.is_verified ? 'Verified' : 'Not verified';
 
   return (
     <View style={styles.container}>
@@ -59,20 +107,29 @@ export default function ProfileScreen() {
           {/* Avatar */}
           <View style={styles.avatarWrap}>
             <Image
-              source={require('../../assets/a.jpg')}
+              source={
+                me?.profileImage
+                  ? { uri: me.profileImage }
+                  : require('../../assets/profile-placeholder.png')
+              }
               style={styles.avatarImage}
             />
           </View>
 
           {/* Name & Badge */}
-          <Text style={styles.heroName}>Admin</Text>
+          <Text style={styles.heroName}>{loadingMe ? 'Loading...' : displayName}</Text>
+          <Text style={styles.heroEmail}>{loadingMe ? 'Fetching /me data' : displayEmail}</Text>
           <View style={styles.heroBadgeRow}>
             <View style={styles.rankBadge}>
-              <Text style={styles.rankBadgeText}>🎖️ RECRUIT</Text>
+              <Text style={styles.rankBadgeText}>🎖️ {loadingMe ? 'MEMBER' : displayRole}</Text>
             </View>
             <View style={styles.ptsBadge}>
-              <Text style={styles.ptsBadgeText}>⚡ {pts} PTS</Text>
+              <Text style={styles.ptsBadgeText}>⚡ {loadingMe ? '...' : pts} PTS</Text>
             </View>
+          </View>
+          <View style={styles.heroMetaRow}>
+            <Text style={styles.heroMetaText}>{loadingMe ? 'Loading profile...' : displayVerified}</Text>
+            {me?.is_admin ? <Text style={styles.heroMetaAdmin}>Admin account</Text> : null}
           </View>
 
           {/* Rank Progress */}
@@ -238,6 +295,8 @@ const styles = StyleSheet.create({
     height: 88,
     borderRadius: 44,
     resizeMode: 'cover',
+    borderWidth: 1,
+    borderColor: 'rgba(6,182,212,0.28)',
   },
   rankRingOuter: {
     position: 'absolute',
@@ -268,11 +327,36 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(6,182,212,0.4)',
   },
   heroName: { fontSize: 26, fontWeight: '800', color: '#fff', fontFamily: 'Inter_700Bold', letterSpacing: 1, marginBottom: 10 },
+  heroEmail: {
+    color: Colors.textMuted,
+    fontSize: 13,
+    fontFamily: 'Inter_400Regular',
+    marginBottom: 12,
+  },
   heroBadgeRow: { flexDirection: 'row', gap: 10, marginBottom: 20 },
   rankBadge: { backgroundColor: 'rgba(6,182,212,0.15)', borderRadius: 20, paddingHorizontal: 12, paddingVertical: 5, borderWidth: 1, borderColor: 'rgba(6,182,212,0.3)' },
   rankBadgeText: { color: '#06B6D4', fontSize: 12, fontWeight: '700', fontFamily: 'Inter_700Bold', letterSpacing: 0.5 },
   ptsBadge: { backgroundColor: 'rgba(245,158,11,0.15)', borderRadius: 20, paddingHorizontal: 12, paddingVertical: 5, borderWidth: 1, borderColor: 'rgba(245,158,11,0.3)' },
   ptsBadgeText: { color: '#F59E0B', fontSize: 12, fontWeight: '700', fontFamily: 'Inter_700Bold', letterSpacing: 0.5 },
+  heroMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    width: '100%',
+    marginBottom: 6,
+  },
+  heroMetaText: {
+    color: Colors.textMuted,
+    fontSize: 12,
+    fontFamily: 'Inter_400Regular',
+  },
+  heroMetaAdmin: {
+    color: '#D8B4FE',
+    fontSize: 11,
+    fontFamily: 'Inter_700Bold',
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+  },
 
   rankProgressWrap: { width: '100%', marginBottom: 16 },
   rankProgressLabels: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 },

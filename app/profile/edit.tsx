@@ -7,16 +7,78 @@ import {
   TouchableOpacity,
   ScrollView,
   Image,
+  ActivityIndicator,
+  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Stack, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../constants/Colors';
+import { fetchCurrentUser, updateCurrentUserProfile } from '../../lib/api';
 
 export default function EditProfileScreen() {
   const router = useRouter();
-  const [name, setName] = useState('Admin');
-  const [email, setEmail] = useState('admin@victoryfitness.com');
+  const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
+  const [location, setLocation] = useState('');
+  const [profileImage, setProfileImage] = useState('');
+  const [loadingProfile, setLoadingProfile] = useState(true);
+  const [savingProfile, setSavingProfile] = useState(false);
+
+  React.useEffect(() => {
+    let cancelled = false;
+
+    const loadProfile = async () => {
+      setLoadingProfile(true);
+      try {
+        const me = await fetchCurrentUser();
+        if (cancelled) {
+          return;
+        }
+
+        setName(me.name ?? '');
+        setEmail(me.email ?? '');
+        setLocation(me.country ?? '');
+        setProfileImage(me.profileImage ?? '');
+      } catch (error) {
+        if (!cancelled) {
+          Alert.alert('Profile unavailable', 'Unable to load your profile right now.');
+        }
+      } finally {
+        if (!cancelled) {
+          setLoadingProfile(false);
+        }
+      }
+    };
+
+    loadProfile();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const handleSave = async () => {
+    if (savingProfile) {
+      return;
+    }
+
+    setSavingProfile(true);
+    try {
+      await updateCurrentUserProfile({
+        name: name.trim(),
+        email: email.trim(),
+        country: location.trim(),
+        profileImage: profileImage.trim() || undefined,
+      });
+      router.back();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unable to save profile changes.';
+      Alert.alert('Save failed', message);
+    } finally {
+      setSavingProfile(false);
+    }
+  };
 
   return (
     <SafeAreaView style={styles.container}>
@@ -37,7 +99,11 @@ export default function EditProfileScreen() {
         <View style={styles.avatarSection}>
           <View style={styles.avatarWrap}>
             <Image
-              source={require('../../assets/a.jpg')}
+              source={
+                profileImage
+                  ? { uri: profileImage }
+                  : require('../../assets/profile-placeholder.png')
+              }
               style={styles.avatarImage}
             />
             <TouchableOpacity style={styles.cameraBtn}>
@@ -56,6 +122,7 @@ export default function EditProfileScreen() {
               onChangeText={setName}
               placeholder="Your Name"
               placeholderTextColor="rgba(255,255,255,0.2)"
+              editable={!loadingProfile && !savingProfile}
             />
           </View>
 
@@ -68,6 +135,7 @@ export default function EditProfileScreen() {
               placeholder="Your Email"
               placeholderTextColor="rgba(255,255,255,0.2)"
               keyboardType="email-address"
+              editable={!loadingProfile && !savingProfile}
             />
           </View>
 
@@ -75,14 +143,29 @@ export default function EditProfileScreen() {
             <Text style={styles.label}>LOCATION (OPTIONAL)</Text>
             <TextInput
               style={styles.input}
+              value={location}
+              onChangeText={setLocation}
               placeholder="City, Country"
               placeholderTextColor="rgba(255,255,255,0.2)"
+              editable={!loadingProfile && !savingProfile}
             />
           </View>
         </View>
 
-        <TouchableOpacity style={styles.saveBtn} activeOpacity={0.8}>
-          <Text style={styles.saveBtnText}>SAVE CHANGES</Text>
+        <TouchableOpacity
+          style={[styles.saveBtn, (loadingProfile || savingProfile) && styles.saveBtnDisabled]}
+          activeOpacity={0.8}
+          onPress={handleSave}
+          disabled={loadingProfile || savingProfile}
+        >
+          {savingProfile ? (
+            <View style={styles.saveBtnRow}>
+              <ActivityIndicator color="#000" />
+              <Text style={styles.saveBtnText}>SAVING...</Text>
+            </View>
+          ) : (
+            <Text style={styles.saveBtnText}>{loadingProfile ? 'LOADING...' : 'SAVE CHANGES'}</Text>
+          )}
         </TouchableOpacity>
       </ScrollView>
     </SafeAreaView>
@@ -166,6 +249,14 @@ const styles = StyleSheet.create({
     paddingVertical: 18,
     borderRadius: 16,
     alignItems: 'center',
+  },
+  saveBtnDisabled: {
+    opacity: 0.7,
+  },
+  saveBtnRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
   },
   saveBtnText: {
     color: '#000',

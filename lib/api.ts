@@ -5,7 +5,7 @@ declare const process: {
   env?: Record<string, string | undefined>;
 };
 
-const RAW_API_URL = process.env?.EXPO_PUBLIC_API_URL ?? 'http://localhost:8000';
+const RAW_API_URL = process.env?.EXPO_PUBLIC_API_URL ?? 'https://victory-fitness-backend.vercel.app';
 
 function resolveApiUrl(url: string): string {
   if (Platform.OS !== 'android') {
@@ -48,6 +48,8 @@ export type AuthUser = {
   name: string;
   email: string;
   is_verified: boolean;
+  country?: string;
+  profileImage?: string;
 };
 
 const AUTH_STORAGE_KEY = 'victory-auth-tokens';
@@ -229,12 +231,40 @@ export async function getAuthUser() {
 }
 
 export async function fetchCurrentUser() {
-  const user = await apiRequest<AuthUser & { role?: string; is_admin?: boolean }>('/me');
+  const user = await apiRequest<AuthUser & { role?: string; is_admin?: boolean; country?: string; profileImage?: string }>('/me');
   authUser = {
     id: user.id,
     name: user.name,
     email: user.email,
     is_verified: user.is_verified,
+    country: user.country,
+    profileImage: user.profileImage,
+  };
+  authUserLoaded = true;
+  await persistAuthUser(authUser);
+  return user;
+}
+
+export async function updateCurrentUserProfile(payload: {
+  name?: string;
+  email?: string;
+  country?: string;
+  profileImage?: string;
+}) {
+  const user = await apiRequest<AuthUser & { role?: string; is_admin?: boolean; country?: string; profileImage?: string }>(
+    '/me',
+    {
+      method: 'PATCH',
+      body: payload,
+    }
+  );
+  authUser = {
+    id: user.id,
+    name: user.name,
+    email: user.email,
+    is_verified: user.is_verified,
+    country: user.country,
+    profileImage: user.profileImage,
   };
   authUserLoaded = true;
   await persistAuthUser(authUser);
@@ -367,5 +397,7 @@ export type AuthResponse = {
     name: string;
     email: string;
     is_verified: boolean;
+    country?: string;
+    profileImage?: string;
   };
 };

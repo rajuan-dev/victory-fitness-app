@@ -48,6 +48,17 @@ export type NutritionPlanJobResponse = {
   updated_at: string;
 };
 
+export type MealImageAnalysisResponse = {
+  meal_name_guess: string;
+  summary: string;
+  estimated_calories: number;
+  estimated_protein: number;
+  estimated_carbs: number;
+  estimated_fat: number;
+  confidence: string;
+  notes: string[];
+};
+
 export async function startNutritionPlanJob(payload: Record<string, unknown>) {
   return apiRequest<NutritionPlanJobResponse>('/ai/nutrition/plan/jobs', {
     method: 'POST',
@@ -66,6 +77,17 @@ export async function updateNutritionMealCompletion(payload: {
 }) {
   return apiRequest<NutritionPlanApiResponse>('/ai/nutrition/plan/latest/completions', {
     method: 'PATCH',
+    body: payload,
+  });
+}
+
+export async function analyzeMealImage(payload: {
+  image_base64: string;
+  mime_type: string;
+  file_name?: string | null;
+}) {
+  return apiRequest<MealImageAnalysisResponse>('/ai/meal-analysis', {
+    method: 'POST',
     body: payload,
   });
 }

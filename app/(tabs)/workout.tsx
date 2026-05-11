@@ -193,7 +193,7 @@ export default function WorkoutScreen() {
               </View>
             )}
 
-            <Text style={styles.sectionTitle}>NEW &amp; POPULAR</Text>
+            <Text style={[styles.sectionTitle, styles.popularSectionTitle]}>NEW &amp; POPULAR</Text>
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
@@ -398,6 +398,10 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontFamily: 'Inter_700Bold',
     letterSpacing: 1.2,
+  },
+  popularSectionTitle: {
+    paddingLeft: 16,
+    marginBottom: 10,
   },
   sectionHeader: {
     paddingHorizontal: 16,
