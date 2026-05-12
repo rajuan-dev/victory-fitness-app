@@ -7,13 +7,16 @@ import {
   TouchableOpacity,
   Image,
   ActivityIndicator,
+  Modal,
+  TextInput,
+  Alert,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../constants/Colors';
 import VictoryHeader from '../../components/VictoryHeader';
-import { clearAuthTokens, fetchCurrentUser } from '../../lib/api';
+import { BodyMetrics, clearAuthTokens, fetchCurrentUser, fetchCurrentUserBodyMetrics, updateCurrentUserBodyMetrics } from '../../lib/api';
 
 const pts = 105;
 const nextRankPts = 500;
@@ -60,6 +63,23 @@ export default function ProfileScreen() {
     profileImage?: string;
   } | null>(null);
   const [loadingMe, setLoadingMe] = React.useState(true);
+  const [bodyMetrics, setBodyMetrics] = React.useState<BodyMetrics>({
+    age: '',
+    height: '',
+    weight: '',
+    gender: '',
+  });
+  const [showMetricsModal, setShowMetricsModal] = React.useState(false);
+  const [savingMetrics, setSavingMetrics] = React.useState(false);
+  const [metricsDraft, setMetricsDraft] = React.useState<BodyMetrics>({
+    age: '',
+    height: '',
+    weight: '',
+    gender: '',
+  });
+  const [showGenderModal, setShowGenderModal] = React.useState(false);
+
+  const genderOptions = ['Male', 'Female', 'Other'];
 
   useFocusEffect(
     React.useCallback(() => {
@@ -68,13 +88,18 @@ export default function ProfileScreen() {
       const loadMe = async () => {
         setLoadingMe(true);
         try {
-          const response = await fetchCurrentUser();
+          const [response, metricsResponse] = await Promise.all([
+            fetchCurrentUser(),
+            fetchCurrentUserBodyMetrics(),
+          ]);
           if (!cancelled) {
             setMe(response);
+            setBodyMetrics(metricsResponse);
           }
         } catch {
           if (!cancelled) {
             setMe(null);
+            setBodyMetrics({ age: '', height: '', weight: '', gender: '' });
           }
         } finally {
           if (!cancelled) {
@@ -95,6 +120,34 @@ export default function ProfileScreen() {
   const displayEmail = me?.email ?? 'Fetching /me data';
   const displayRole = me?.is_admin ? 'ADMIN' : (me?.role?.toUpperCase() ?? 'MEMBER');
   const displayVerified = me?.is_verified ? 'Verified' : 'Not verified';
+
+  const openMetricsModal = () => {
+    setMetricsDraft(bodyMetrics);
+    setShowMetricsModal(true);
+  };
+
+  const handleSaveMetrics = async () => {
+    if (savingMetrics) {
+      return;
+    }
+
+    setSavingMetrics(true);
+    try {
+      const updated = await updateCurrentUserBodyMetrics({
+        age: metricsDraft.age.trim(),
+        height: metricsDraft.height.trim(),
+        weight: metricsDraft.weight.trim(),
+        gender: metricsDraft.gender.trim(),
+      });
+      setBodyMetrics(updated);
+      setShowMetricsModal(false);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unable to update body metrics right now.';
+      Alert.alert('Save failed', message);
+    } finally {
+      setSavingMetrics(false);
+    }
+  };
 
   return (
     <View style={styles.container}>
@@ -164,7 +217,7 @@ export default function ProfileScreen() {
             <TouchableOpacity
               style={styles.metricsEditBtn}
               activeOpacity={0.8}
-              onPress={() => router.push('/profile/metrics')}
+              onPress={openMetricsModal}
             >
               <Ionicons name="pencil-outline" size={14} color="#06B6D4" />
               <Text style={styles.metricsEditText}>Edit</Text>
@@ -172,10 +225,10 @@ export default function ProfileScreen() {
           </View>
           <View style={styles.metricsGrid}>
             {[
-              { label: 'Age', value: '28', unit: 'yrs', icon: 'calendar-outline', tint: '#4F8EF7' },
-              { label: 'Height', value: '175', unit: 'cm', icon: 'resize-outline', tint: '#06B6D4' },
-              { label: 'Weight', value: '72', unit: 'kg', icon: 'barbell-outline', tint: '#A855F7' },
-              { label: 'Gender', value: 'Male', unit: '', icon: 'person-outline', tint: '#F97316' },
+              { label: 'Age', value: bodyMetrics.age || '--', unit: bodyMetrics.age ? 'yrs' : '', icon: 'calendar-outline', tint: '#4F8EF7' },
+              { label: 'Height', value: bodyMetrics.height || '--', unit: bodyMetrics.height ? 'cm' : '', icon: 'resize-outline', tint: '#06B6D4' },
+              { label: 'Weight', value: bodyMetrics.weight || '--', unit: bodyMetrics.weight ? 'kg' : '', icon: 'barbell-outline', tint: '#A855F7' },
+              { label: 'Gender', value: bodyMetrics.gender || '--', unit: '', icon: 'person-outline', tint: '#F97316' },
             ].map((m) => (
               <View key={m.label} style={styles.metricCard}>
                 <View style={[styles.metricIconBox, { backgroundColor: `${m.tint}18` }]}>
@@ -270,6 +323,113 @@ export default function ProfileScreen() {
         <Text style={styles.versionText}>Victory Fitness v1.0.0</Text>
         <View style={{ height: 40 }} />
       </ScrollView>
+
+      <Modal visible={showMetricsModal} transparent animationType="fade" onRequestClose={() => setShowMetricsModal(false)}>
+        <View style={styles.metricsModalOverlay}>
+          <View style={styles.metricsModalCard}>
+            {savingMetrics ? (
+              <View style={styles.metricsSavingOverlay}>
+                <View style={styles.metricsSavingCard}>
+                  <ActivityIndicator color={Colors.accentBlue} size="large" />
+                  <Text style={styles.metricsSavingText}>Saving metrics...</Text>
+                </View>
+              </View>
+            ) : null}
+            <View style={styles.metricsModalHeader}>
+              <Text style={styles.metricsModalTitle}>EDIT BODY METRICS</Text>
+              <TouchableOpacity onPress={() => setShowMetricsModal(false)} disabled={savingMetrics}>
+                <Ionicons name="close" size={22} color="rgba(255,255,255,0.7)" />
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.metricsFormGrid}>
+              <View style={styles.metricsInputGroup}>
+                <Text style={styles.metricsInputLabel}>AGE</Text>
+                <View style={styles.metricsInputWrap}>
+                  <TextInput
+                    style={styles.metricsInput}
+                    value={metricsDraft.age}
+                    onChangeText={(value) => setMetricsDraft((prev) => ({ ...prev, age: value }))}
+                    keyboardType="numeric"
+                    editable={!savingMetrics}
+                  />
+                  <Text style={styles.metricsInputUnit}>yrs</Text>
+                </View>
+              </View>
+
+              <View style={styles.metricsInputGroup}>
+                <Text style={styles.metricsInputLabel}>GENDER</Text>
+                <TouchableOpacity
+                  style={styles.metricsInputWrap}
+                  activeOpacity={0.8}
+                  onPress={() => setShowGenderModal(true)}
+                  disabled={savingMetrics}
+                >
+                  <Text style={styles.metricsInput}>{metricsDraft.gender || 'Select'}</Text>
+                  <Ionicons name="chevron-down" size={16} color="rgba(255,255,255,0.45)" />
+                </TouchableOpacity>
+              </View>
+
+              <View style={styles.metricsInputGroup}>
+                <Text style={styles.metricsInputLabel}>HEIGHT</Text>
+                <View style={styles.metricsInputWrap}>
+                  <TextInput
+                    style={styles.metricsInput}
+                    value={metricsDraft.height}
+                    onChangeText={(value) => setMetricsDraft((prev) => ({ ...prev, height: value }))}
+                    keyboardType="numeric"
+                    editable={!savingMetrics}
+                  />
+                  <Text style={styles.metricsInputUnit}>cm</Text>
+                </View>
+              </View>
+
+              <View style={styles.metricsInputGroup}>
+                <Text style={styles.metricsInputLabel}>WEIGHT</Text>
+                <View style={styles.metricsInputWrap}>
+                  <TextInput
+                    style={styles.metricsInput}
+                    value={metricsDraft.weight}
+                    onChangeText={(value) => setMetricsDraft((prev) => ({ ...prev, weight: value }))}
+                    keyboardType="numeric"
+                    editable={!savingMetrics}
+                  />
+                  <Text style={styles.metricsInputUnit}>kg</Text>
+                </View>
+              </View>
+            </View>
+
+            <TouchableOpacity style={styles.metricsSaveBtn} activeOpacity={0.85} onPress={handleSaveMetrics} disabled={savingMetrics}>
+              <Text style={styles.metricsSaveBtnText}>SAVE</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal visible={showGenderModal} transparent animationType="fade" onRequestClose={() => setShowGenderModal(false)}>
+        <TouchableOpacity style={styles.metricsModalOverlay} activeOpacity={1} onPress={() => setShowGenderModal(false)}>
+          <View style={styles.genderModalCard}>
+            <Text style={styles.genderModalTitle}>SELECT GENDER</Text>
+            {genderOptions.map((option) => (
+              <TouchableOpacity
+                key={option}
+                style={styles.genderModalOption}
+                onPress={() => {
+                  setMetricsDraft((prev) => ({ ...prev, gender: option }));
+                  setShowGenderModal(false);
+                }}
+              >
+                <Text style={[styles.genderModalOptionText, metricsDraft.gender === option && styles.genderModalOptionTextActive]}>
+                  {option.toUpperCase()}
+                </Text>
+                {metricsDraft.gender === option ? (
+                  <Ionicons name="checkmark-circle" size={20} color={Colors.accentBlue} />
+                ) : null}
+              </TouchableOpacity>
+            ))}
+          </View>
+        </TouchableOpacity>
+      </Modal>
     </View>
   );
 }
@@ -427,6 +587,141 @@ const styles = StyleSheet.create({
   metricBigVal: { fontSize: 26, fontWeight: '800', color: '#fff', fontFamily: 'Inter_700Bold', lineHeight: 30 },
   metricUnit: { fontSize: 13, color: Colors.textMuted, fontWeight: '400', fontFamily: 'Inter_400Regular' },
   metricLabel: { fontSize: 10, color: Colors.textMuted, fontFamily: 'Inter_400Regular', textTransform: 'uppercase', letterSpacing: 0.6 },
+  metricsModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(3,6,20,0.72)',
+    justifyContent: 'center',
+    padding: 20,
+  },
+  metricsModalCard: {
+    backgroundColor: '#151629',
+    borderRadius: 24,
+    padding: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+    overflow: 'hidden',
+  },
+  metricsModalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 18,
+  },
+  metricsModalTitle: {
+    color: '#fff',
+    fontSize: 16,
+    fontFamily: 'Inter_700Bold',
+    letterSpacing: 1.2,
+  },
+  metricsFormGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    marginBottom: 18,
+  },
+  metricsInputGroup: {
+    width: '48%',
+    marginBottom: 16,
+  },
+  metricsInputLabel: {
+    color: Colors.textMuted,
+    fontSize: 11,
+    fontFamily: 'Inter_700Bold',
+    letterSpacing: 1,
+    marginBottom: 8,
+  },
+  metricsInputWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#0D0D20',
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.06)',
+  },
+  metricsInput: {
+    flex: 1,
+    color: '#fff',
+    fontSize: 16,
+    fontFamily: 'Inter_600SemiBold',
+    outlineStyle: 'none' as any,
+  },
+  metricsInputUnit: {
+    color: Colors.textMuted,
+    fontSize: 13,
+    fontFamily: 'Inter_400Regular',
+  },
+  metricsSaveBtn: {
+    backgroundColor: Colors.accentBlue,
+    borderRadius: 16,
+    alignItems: 'center',
+    paddingVertical: 16,
+  },
+  metricsSaveBtnText: {
+    color: '#04111F',
+    fontSize: 14,
+    fontFamily: 'Inter_700Bold',
+    letterSpacing: 1.4,
+  },
+  metricsSavingOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(7,10,24,0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 10,
+  },
+  metricsSavingCard: {
+    backgroundColor: '#0E1325',
+    borderRadius: 18,
+    paddingHorizontal: 28,
+    paddingVertical: 24,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+    gap: 12,
+  },
+  metricsSavingText: {
+    color: '#fff',
+    fontSize: 14,
+    fontFamily: 'Inter_600SemiBold',
+  },
+  genderModalCard: {
+    backgroundColor: '#151629',
+    borderRadius: 24,
+    padding: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+  },
+  genderModalTitle: {
+    color: Colors.textMuted,
+    fontSize: 11,
+    fontFamily: 'Inter_700Bold',
+    letterSpacing: 1.2,
+    textAlign: 'center',
+    marginBottom: 18,
+  },
+  genderModalOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255,255,255,0.05)',
+  },
+  genderModalOptionText: {
+    color: 'rgba(255,255,255,0.6)',
+    fontSize: 15,
+    fontFamily: 'Inter_600SemiBold',
+    letterSpacing: 0.8,
+  },
+  genderModalOptionTextActive: {
+    color: Colors.accentBlue,
+  },
 
   /* Toggles */
   togglesCard: {

@@ -40,7 +40,7 @@ export type NutritionPlanApiResponse = {
 
 export type NutritionPlanJobResponse = {
   job_id: string;
-  status: 'queued' | 'processing' | 'completed' | 'failed' | string;
+  status: 'queued' | 'processing' | 'generating_monday' | 'monday_ready' | 'completed' | 'failed' | string;
   plan_id?: string | null;
   plan?: NutritionPlanApiResponse | null;
   error?: string | null;
@@ -70,12 +70,38 @@ export async function getNutritionPlanJob(jobId: string) {
   return apiRequest<NutritionPlanJobResponse>(`/ai/nutrition/plan/jobs/${encodeURIComponent(jobId)}`);
 }
 
+export async function startProgressiveNutritionPlanJob(payload: Record<string, unknown>) {
+  return apiRequest<NutritionPlanJobResponse>('/ai/nutrition/plan/progressive/jobs', {
+    method: 'POST',
+    body: payload,
+  });
+}
+
+export async function getProgressiveNutritionPlanJob(jobId: string) {
+  return apiRequest<NutritionPlanJobResponse>(`/ai/nutrition/plan/progressive/jobs/${encodeURIComponent(jobId)}`);
+}
+
+export async function getLatestProgressiveNutritionPlan() {
+  return apiRequest<NutritionPlanApiResponse>('/ai/nutrition/plan/progressive/latest');
+}
+
 export async function updateNutritionMealCompletion(payload: {
   day: string;
   meal_key: string;
   completed: boolean;
 }) {
   return apiRequest<NutritionPlanApiResponse>('/ai/nutrition/plan/latest/completions', {
+    method: 'PATCH',
+    body: payload,
+  });
+}
+
+export async function updateProgressiveNutritionMealCompletion(payload: {
+  day: string;
+  meal_key: string;
+  completed: boolean;
+}) {
+  return apiRequest<NutritionPlanApiResponse>('/ai/nutrition/plan/progressive/latest/completions', {
     method: 'PATCH',
     body: payload,
   });

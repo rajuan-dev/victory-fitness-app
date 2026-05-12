@@ -52,6 +52,13 @@ export type AuthUser = {
   profileImage?: string;
 };
 
+export type BodyMetrics = {
+  age: string;
+  height: string;
+  weight: string;
+  gender: string;
+};
+
 const AUTH_STORAGE_KEY = 'victory-auth-tokens';
 const AUTH_USER_STORAGE_KEY = 'victory-auth-user';
 
@@ -269,6 +276,37 @@ export async function updateCurrentUserProfile(payload: {
   authUserLoaded = true;
   await persistAuthUser(authUser);
   return user;
+}
+
+export async function uploadCurrentUserProfileImage(payload: {
+  image_base64: string;
+  mime_type: string;
+  file_name?: string | null;
+}) {
+  const response = await apiRequest<{ image_url: string }>('/me/profile-image', {
+    method: 'POST',
+    body: payload,
+  });
+  if (authUser) {
+    authUser = {
+      ...authUser,
+      profileImage: response.image_url,
+    };
+    authUserLoaded = true;
+    await persistAuthUser(authUser);
+  }
+  return response;
+}
+
+export async function fetchCurrentUserBodyMetrics() {
+  return apiRequest<BodyMetrics>('/me/body-metrics');
+}
+
+export async function updateCurrentUserBodyMetrics(payload: Partial<BodyMetrics>) {
+  return apiRequest<BodyMetrics>('/me/body-metrics', {
+    method: 'PATCH',
+    body: payload,
+  });
 }
 
 async function refreshWithSessionToken(sessionToken: string): Promise<AuthTokens | null> {

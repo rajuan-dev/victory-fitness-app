@@ -13,8 +13,9 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Stack, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import * as ImagePicker from 'expo-image-picker';
 import { Colors } from '../../constants/Colors';
-import { fetchCurrentUser, updateCurrentUserProfile } from '../../lib/api';
+import { fetchCurrentUser, updateCurrentUserProfile, uploadCurrentUserProfileImage } from '../../lib/api';
 
 export default function EditProfileScreen() {
   const router = useRouter();
@@ -24,6 +25,7 @@ export default function EditProfileScreen() {
   const [profileImage, setProfileImage] = useState('');
   const [loadingProfile, setLoadingProfile] = useState(true);
   const [savingProfile, setSavingProfile] = useState(false);
+  const [uploadingImage, setUploadingImage] = useState(false);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -80,6 +82,53 @@ export default function EditProfileScreen() {
     }
   };
 
+  const handleChangePhoto = async () => {
+    if (loadingProfile || savingProfile || uploadingImage) {
+      return;
+    }
+
+    try {
+      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!permission.granted) {
+        Alert.alert('Permission needed', 'Please allow photo library access to choose a profile image.');
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.9,
+        base64: true,
+      });
+
+      if (result.canceled || result.assets.length === 0) {
+        return;
+      }
+
+      const asset = result.assets[0];
+      if (!asset.base64) {
+        throw new Error('The selected image could not be processed for upload.');
+      }
+
+      setUploadingImage(true);
+      try {
+        const response = await uploadCurrentUserProfileImage({
+          image_base64: asset.base64,
+          mime_type: asset.mimeType ?? 'image/jpeg',
+          file_name: asset.fileName ?? null,
+        });
+        setProfileImage(response.image_url);
+      } finally {
+        setUploadingImage(false);
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unable to upload your profile image right now.';
+      Alert.alert('Upload failed', message);
+      setUploadingImage(false);
+    }
+  };
+
   return (
     <SafeAreaView style={styles.container}>
       <Stack.Screen options={{ 
@@ -106,11 +155,21 @@ export default function EditProfileScreen() {
               }
               style={styles.avatarImage}
             />
-            <TouchableOpacity style={styles.cameraBtn}>
+            <TouchableOpacity
+              style={[styles.cameraBtn, uploadingImage && styles.cameraBtnDisabled]}
+              onPress={handleChangePhoto}
+              disabled={uploadingImage || loadingProfile || savingProfile}
+            >
+              {uploadingImage ? (
+                <ActivityIndicator color="#fff" size="small" />
+              ) : (
               <Ionicons name="camera" size={18} color="#fff" />
+              )}
             </TouchableOpacity>
           </View>
-          <Text style={styles.changePhotoText}>Change Profile Photo</Text>
+          <TouchableOpacity onPress={handleChangePhoto} disabled={uploadingImage || loadingProfile || savingProfile}>
+            <Text style={styles.changePhotoText}>{uploadingImage ? 'Uploading photo...' : 'Change Profile Photo'}</Text>
+          </TouchableOpacity>
         </View>
 
         <View style={styles.formSection}>
@@ -211,6 +270,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderWidth: 3,
     borderColor: '#1E1E1E',
+  },
+  cameraBtnDisabled: {
+    opacity: 0.8,
   },
   changePhotoText: {
     color: Colors.accentBlue,

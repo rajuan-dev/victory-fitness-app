@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -16,6 +16,7 @@ import {
   Easing,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useFocusEffect } from 'expo-router';
 import { setAudioModeAsync, useAudioPlayer } from 'expo-audio';
 import * as ImagePicker from 'expo-image-picker';
 import { Colors } from '../../constants/Colors';
@@ -135,6 +136,11 @@ function OptionList({
 const PLAN_DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 const PLAN_TABS = ['My Plan', 'Tracker', 'Meal Analysis', 'Plan JSON'];
 
+function getCurrentPlanDay() {
+  const dayIndex = new Date().getDay();
+  return PLAN_DAYS[(dayIndex + 6) % 7];
+}
+
 type MealEntry = { name: string; desc: string; kcal: number; p: number; c: number; f: number; ingredients: string[]; instructions?: string[]; };
 type DayPlan = { breakfast: MealEntry; lunch: MealEntry; dinner: MealEntry; };
 type NutritionProfile = {
@@ -225,7 +231,7 @@ function MealPlanResult({
   onCreateNewPlan: () => void;
 }) {
   const [planTab, setPlanTab] = useState('My Plan');
-  const [activeDay, setActiveDay] = useState('Mon');
+  const [activeDay, setActiveDay] = useState(() => getCurrentPlanDay());
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [showShopping, setShowShopping] = useState(false);
   const [checkedItems, setCheckedItems] = useState<Set<string>>(new Set());
@@ -241,6 +247,12 @@ function MealPlanResult({
   const [analysisLoading, setAnalysisLoading] = useState(false);
   const [analysisResult, setAnalysisResult] = useState<MealImageAnalysisResponse | null>(null);
   const [analysisError, setAnalysisError] = useState('');
+
+  useFocusEffect(
+    useCallback(() => {
+      setActiveDay(getCurrentPlanDay());
+    }, [])
+  );
 
   const normalizeMealCompletions = (plan: NutritionPlanApiResponse | null | undefined) => {
     const entries = plan?.meal_completions ?? {};
@@ -403,6 +415,10 @@ function MealPlanResult({
   const totalP = day.breakfast.p + day.lunch.p + day.dinner.p;
   const totalC = day.breakfast.c + day.lunch.c + day.dinner.c;
   const totalF = day.breakfast.f + day.lunch.f + day.dinner.f;
+  const adviceItems = nutritionAdvice
+    .split(/\r?\n+/)
+    .map((item) => item.replace(/^\s*(?:[-*\u2022]|\d+[.)])\s*/, '').trim())
+    .filter(Boolean);
 
   const goalLabel = generatedPlan?.goal_label ?? (profile.goal === 'g1' ? 'Weight Loss'
     : profile.goal === 'g2' ? 'Muscle Building'
@@ -731,7 +747,33 @@ function MealPlanResult({
                   <Text style={styles.getSuggestionsBtnText}>GET SUGGESTIONS</Text>
                 )}
               </TouchableOpacity>
-              {nutritionAdvice ? <Text style={styles.adviceText}>{nutritionAdvice}</Text> : null}
+              {nutritionAdvice ? (
+                <View style={styles.advicePanel}>
+                  <View style={styles.advicePanelHeader}>
+                    <View>
+                      <Text style={styles.advicePanelEyebrow}>TODAY'S COACHING</Text>
+                      <Text style={styles.advicePanelTitle}>Practical actions for {activeDay}</Text>
+                    </View>
+                    <View style={styles.advicePanelPill}>
+                      <Text style={styles.advicePanelPillText}>{adviceItems.length || 1} tips</Text>
+                    </View>
+                  </View>
+                  {adviceItems.length > 0 ? (
+                    <View style={styles.adviceList}>
+                      {adviceItems.map((item, index) => (
+                        <View key={`${item}-${index}`} style={styles.adviceItem}>
+                          <View style={styles.adviceBullet}>
+                            <Text style={styles.adviceBulletText}>{index + 1}</Text>
+                          </View>
+                          <Text style={styles.adviceItemText}>{item}</Text>
+                        </View>
+                      ))}
+                    </View>
+                  ) : (
+                    <Text style={styles.adviceFallbackText}>{nutritionAdvice}</Text>
+                  )}
+                </View>
+              ) : null}
             </View>
 
           </View>
@@ -1963,7 +2005,84 @@ const styles = StyleSheet.create({
   macroGridUnit: { fontSize: 13, color: Colors.textMuted, fontFamily: 'Inter_400Regular' },
   getSuggestionsBtn: { backgroundColor: '#0D0D1E', borderRadius: 12, paddingVertical: 14, alignItems: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)' },
   getSuggestionsBtnText: { color: '#fff', fontSize: 13, fontWeight: '700', fontFamily: 'Inter_700Bold', letterSpacing: 1 },
-  adviceText: { color: '#fff', fontSize: 13, lineHeight: 20, marginTop: 12, fontFamily: 'Inter_400Regular' },
+  advicePanel: {
+    marginTop: 12,
+    backgroundColor: '#0B0B18',
+    borderRadius: 14,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+  },
+  advicePanelHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 12,
+    marginBottom: 12,
+  },
+  advicePanelEyebrow: {
+    fontSize: 10,
+    color: Colors.textMuted,
+    letterSpacing: 1.1,
+    textTransform: 'uppercase',
+    fontFamily: 'Inter_400Regular',
+    marginBottom: 4,
+  },
+  advicePanelTitle: {
+    color: '#fff',
+    fontSize: 16,
+    fontFamily: 'Inter_700Bold',
+    lineHeight: 22,
+  },
+  advicePanelPill: {
+    alignSelf: 'flex-start',
+    backgroundColor: 'rgba(168,85,247,0.14)',
+    borderColor: 'rgba(168,85,247,0.25)',
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  advicePanelPillText: {
+    color: '#C084FC',
+    fontSize: 11,
+    fontFamily: 'Inter_700Bold',
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+  },
+  adviceList: {
+    gap: 10,
+  },
+  adviceItem: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+    backgroundColor: 'rgba(255,255,255,0.03)',
+    borderRadius: 12,
+    padding: 12,
+  },
+  adviceBullet: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: Colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 1,
+  },
+  adviceBulletText: {
+    color: '#050816',
+    fontSize: 12,
+    fontFamily: 'Inter_700Bold',
+  },
+  adviceItemText: {
+    color: '#fff',
+    fontSize: 13,
+    lineHeight: 19,
+    fontFamily: 'Inter_400Regular',
+    flex: 1,
+  },
+  adviceFallbackText: { color: '#fff', fontSize: 13, lineHeight: 20, fontFamily: 'Inter_400Regular' },
   mealSearchRow: { flexDirection: 'row', gap: 8, marginBottom: 14 },
   mealSearchInput: {
     backgroundColor: 'rgba(255,255,255,0.05)',
