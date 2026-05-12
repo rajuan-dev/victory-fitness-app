@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -7,9 +7,11 @@ import {
   TouchableOpacity,
   TextInput,
   Dimensions,
+  ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../constants/Colors';
+import { apiRequest } from '../../lib/api';
 
 const { width } = Dimensions.get('window');
 
@@ -43,56 +45,112 @@ const readyToStart = [
 ];
 
 // ── Community Posts ──
-const communityPosts = [
-  {
-    id: 'p1',
-    author: 'Admin',
-    time: '12 days ago',
-    tier: 'ALL',
-    tierColor: '#22C55E',
-    content: "\uD83C\uDFC6 Challenge 'Kindness Sprint' gemeistert! Ein super Gef\u00fchl, das Ziel zu erreichen. Wer ist als n\u00e4chstes dran? #ChallengeAccepted",
-    likes: 0,
-    comments: 0,
-  },
-  {
-    id: 'p2',
-    author: 'Admin',
-    time: '13 days ago',
-    tier: 'ALL',
-    tierColor: '#22C55E',
-    content: 'how are you',
-    likes: 0,
-    comments: 0,
-  },
-  {
-    id: 'p3',
-    author: 'Coach Victor',
-    time: '2 days ago',
-    tier: 'PRO',
-    tierColor: '#A855F7',
-    content: '\uD83D\uDCAA Great work everyone on the 30-Day Push-Up Challenge! You are all crushing it. Keep the momentum going this week!',
-    likes: 14,
-    comments: 3,
-  },
-  {
-    id: 'p4',
-    author: 'Sarah K.',
-    time: '5 days ago',
-    tier: 'ALL',
-    tierColor: '#22C55E',
-    content: 'Just finished my morning run \uD83C\uDFC3\u200D\u2640\uFE0F Felt amazing! Who else is doing the 7-Day Morning Run challenge?',
-    likes: 7,
-    comments: 2,
-  },
-];
+type CommunityPost = {
+  id: string;
+  author_name: string;
+  author_role: string;
+  author_profile_image: string;
+  audience: string;
+  content: string;
+  image_url: string;
+  like_count: number;
+  comment_count: number;
+  created_at: string;
+  updated_at: string;
+};
+function formatCommunityPostTime(value: string) {
+  const createdAt = new Date(value);
+  if (Number.isNaN(createdAt.getTime())) {
+    return '';
+  }
 
+  const diffMs = Date.now() - createdAt.getTime();
+  const diffMinutes = Math.max(Math.floor(diffMs / 60000), 0);
+  if (diffMinutes < 1) {
+    return 'Just now';
+  }
+  if (diffMinutes < 60) {
+    return `${diffMinutes}m ago`;
+  }
 
-const TIERS = ['All Tiers', 'Silver Only', 'Gold Only', 'Platinum Only', 'Inner Circle Only'];
+  const diffHours = Math.floor(diffMinutes / 60);
+  if (diffHours < 24) {
+    return `${diffHours}h ago`;
+  }
+
+  const diffDays = Math.floor(diffHours / 24);
+  if (diffDays < 7) {
+    return `${diffDays}d ago`;
+  }
+
+  return createdAt.toLocaleDateString();
+}
 
 export default function ChallengesScreen() {
   const [activeTab, setActiveTab] = useState('CHALLENGES');
-  const [selectedTier, setSelectedTier] = useState('All Tiers');
-  const [tierDropdownOpen, setTierDropdownOpen] = useState(false);
+  const [communityPosts, setCommunityPosts] = useState<CommunityPost[]>([]);
+  const [communityDraft, setCommunityDraft] = useState('');
+  const [communityLoading, setCommunityLoading] = useState(false);
+  const [communityPosting, setCommunityPosting] = useState(false);
+  const [communityError, setCommunityError] = useState('');
+
+  useEffect(() => {
+    if (activeTab !== 'COMMUNITY') {
+      return;
+    }
+
+    let isMounted = true;
+
+    const loadCommunityPosts = async () => {
+      setCommunityLoading(true);
+      setCommunityError('');
+      try {
+        const response = await apiRequest<{ posts: CommunityPost[] }>('/community/posts');
+        if (isMounted) {
+          setCommunityPosts(Array.isArray(response.posts) ? response.posts : []);
+        }
+      } catch (error) {
+        if (isMounted) {
+          setCommunityError(error instanceof Error ? error.message : 'Failed to load community posts');
+        }
+      } finally {
+        if (isMounted) {
+          setCommunityLoading(false);
+        }
+      }
+    };
+
+    loadCommunityPosts();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [activeTab]);
+
+  const handleCommunityPost = async () => {
+    const content = communityDraft.trim();
+    if (!content) {
+      setCommunityError('Write something before posting.');
+      return;
+    }
+
+    setCommunityPosting(true);
+    setCommunityError('');
+    try {
+      const response = await apiRequest<CommunityPost>('/community/posts', {
+        method: 'POST',
+        body: {
+          content,
+        },
+      });
+      setCommunityDraft('');
+      setCommunityPosts((current) => [response, ...current]);
+    } catch (error) {
+      setCommunityError(error instanceof Error ? error.message : 'Failed to publish post');
+    } finally {
+      setCommunityPosting(false);
+    }
+  };
 
   return (
     <View style={styles.container}>
@@ -251,6 +309,8 @@ export default function ChallengesScreen() {
                 placeholder="What's on your mind?"
                 placeholderTextColor="rgba(255,255,255,0.35)"
                 multiline
+                value={communityDraft}
+                onChangeText={setCommunityDraft}
               />
               <View style={styles.composerDivider} />
               <View style={styles.composerActions}>
@@ -301,11 +361,28 @@ export default function ChallengesScreen() {
                   )}
                 </View> */}
 
-                <TouchableOpacity style={styles.postBtn}>
-                  <Text style={styles.postBtnText}>Post</Text>
+                <TouchableOpacity
+                  style={[styles.postBtn, communityPosting && { opacity: 0.7 }]}
+                  onPress={handleCommunityPost}
+                  disabled={communityPosting}
+                >
+                  {communityPosting ? <ActivityIndicator size="small" color="#0A0A14" /> : <Text style={styles.postBtnText}>Post</Text>}
                 </TouchableOpacity>
               </View>
             </View>
+
+            {communityError ? (
+              <View style={styles.communityErrorCard}>
+                <Text style={styles.communityErrorText}>{communityError}</Text>
+              </View>
+            ) : null}
+
+            {communityLoading ? (
+              <View style={styles.communityLoadingWrap}>
+                <ActivityIndicator size="small" color={Colors.primary} />
+                <Text style={styles.communityLoadingText}>Loading community posts...</Text>
+              </View>
+            ) : null}
 
             {/* Community Posts */}
             {communityPosts.map((post) => (
@@ -313,14 +390,14 @@ export default function ChallengesScreen() {
                 {/* Post Header */}
                 <View style={styles.postHeader}>
                   <View style={styles.postAvatar}>
-                    <Text style={styles.postAvatarText}>{post.author[0]}</Text>
+                    <Text style={styles.postAvatarText}>{(post.author_name || 'U')[0]}</Text>
                   </View>
                   <View style={styles.postMeta}>
                     <View style={styles.postMetaRow}>
-                      <Text style={styles.postAuthor}>{post.author}</Text>
-                      <Text style={styles.postTime}>{post.time}</Text>
-                      <View style={[styles.tierBadge, { backgroundColor: post.tierColor }]}>
-                        <Text style={styles.tierBadgeText}>{post.tier}</Text>
+                      <Text style={styles.postAuthor}>{post.author_name}</Text>
+                      <Text style={styles.postTime}>{formatCommunityPostTime(post.created_at)}</Text>
+                      <View style={[styles.tierBadge, { backgroundColor: post.audience === 'ALL' ? '#22C55E' : '#A855F7' }]}>
+                        <Text style={styles.tierBadgeText}>{post.audience}</Text>
                       </View>
                     </View>
                   </View>
@@ -328,16 +405,19 @@ export default function ChallengesScreen() {
 
                 {/* Post Body */}
                 <Text style={styles.postBody}>{post.content}</Text>
+                {post.image_url ? (
+                  <Text style={styles.postImageLink}>{post.image_url}</Text>
+                ) : null}
 
                 {/* Post Footer */}
                 <View style={styles.postFooter}>
                   <TouchableOpacity style={styles.postAction}>
                     <Ionicons name="thumbs-up-outline" size={16} color="rgba(255,255,255,0.5)" />
-                    <Text style={styles.postActionText}>{post.likes}</Text>
+                    <Text style={styles.postActionText}>{post.like_count}</Text>
                   </TouchableOpacity>
                   <TouchableOpacity style={styles.postAction}>
                     <Ionicons name="chatbubble-outline" size={16} color="rgba(255,255,255,0.5)" />
-                    <Text style={styles.postActionText}>{post.comments}</Text>
+                    <Text style={styles.postActionText}>{post.comment_count}</Text>
                   </TouchableOpacity>
                 </View>
               </View>
@@ -896,6 +976,32 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     fontFamily: 'Inter_700Bold',
   },
+  communityErrorCard: {
+    backgroundColor: 'rgba(239,68,68,0.12)',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(239,68,68,0.25)',
+    padding: 12,
+    marginBottom: 12,
+  },
+  communityErrorText: {
+    color: '#FCA5A5',
+    fontSize: 13,
+    fontFamily: 'Inter_400Regular',
+    lineHeight: 18,
+  },
+  communityLoadingWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 12,
+    paddingHorizontal: 4,
+  },
+  communityLoadingText: {
+    color: Colors.textMuted,
+    fontSize: 13,
+    fontFamily: 'Inter_400Regular',
+  },
 
   /* Post Card */
   postCard: {
@@ -964,6 +1070,12 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontFamily: 'Inter_400Regular',
     lineHeight: 22,
+    marginBottom: 14,
+  },
+  postImageLink: {
+    color: Colors.primary,
+    fontSize: 12,
+    fontFamily: 'Inter_400Regular',
     marginBottom: 14,
   },
   postFooter: {

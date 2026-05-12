@@ -56,6 +56,13 @@ export default function PrivacyScreen() {
     .split(/\n{2,}/)
     .map((section) => section.trim())
     .filter(Boolean);
+  const normalizedSections = sections
+    .map((section) => {
+      const lines = section.split('\n').map((line) => line.trim()).filter(Boolean);
+      const filteredLines = lines.filter((line) => !/^last updated\s*:/i.test(line));
+      return filteredLines.join('\n').trim();
+    })
+    .filter(Boolean);
   const updatedLabel = policy?.updated_at
     ? new Date(policy.updated_at).toLocaleDateString()
     : '';
@@ -87,7 +94,7 @@ export default function PrivacyScreen() {
               {updatedLabel ? `Last Updated: ${updatedLabel}` : 'Latest privacy policy'}
             </Text>
             <Text style={styles.pageTitle}>{policy?.title || 'Privacy Policy'}</Text>
-            {sections.map((section, index) => {
+            {normalizedSections.map((section, index) => {
               const lines = section.split('\n').map((line) => line.trim()).filter(Boolean);
               const [firstLine, ...restLines] = lines;
               const firstIsHeading = /^\d+\./.test(firstLine || '');

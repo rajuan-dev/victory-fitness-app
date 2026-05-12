@@ -16,11 +16,14 @@ export default function WorkoutSection() {
         </Text>
         <TouchableOpacity 
           style={styles.workoutBtnPrimary}
-          onPress={() => router.push('/mealPlan')}
+          onPress={() => router.push('/workoutplan/video-wizard')}
         >
           <Text style={styles.workoutBtnPrimaryText}>7-DAY VIDEO PLAN</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={styles.workoutBtnOutline}>
+        <TouchableOpacity
+          style={styles.workoutBtnOutline}
+          onPress={() => router.push('/workoutplan/strength-wizard')}
+        >
           <Text style={styles.workoutBtnOutlineText}>CUSTOM STRENGTH PLAN</Text>
         </TouchableOpacity>
       </View>

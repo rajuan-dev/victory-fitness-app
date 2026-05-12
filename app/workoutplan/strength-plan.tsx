@@ -67,7 +67,7 @@ export default function StrengthPlanResult() {
         headerTintColor: '#fff',
         headerTitleStyle: { fontFamily: 'Inter_700Bold', fontSize: 13, letterSpacing: 2 } as any,
         headerLeft: () => (
-          <TouchableOpacity onPress={() => router.push('/workoutplan')} style={{ marginLeft: 16 }}>
+          <TouchableOpacity onPress={() => router.back()} style={{ marginLeft: 16 }}>
             <Ionicons name="close" size={24} color="#fff" />
           </TouchableOpacity>
         ),
