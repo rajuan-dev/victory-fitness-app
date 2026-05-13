@@ -8,45 +8,77 @@ import {
   TextInput,
   Dimensions,
   ActivityIndicator,
+  Image,
+  Alert,
+  Modal,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
+import * as ImagePicker from 'expo-image-picker';
 import { Colors } from '../../constants/Colors';
-import { apiRequest } from '../../lib/api';
+import { apiRequest, getAuthUser } from '../../lib/api';
 
 const { width } = Dimensions.get('window');
 
 const TABS = ['CHALLENGES', 'COMMUNITY'];
 
-// ── Active Challenge Chats ──
-const activeChats = [
-  { id: 'c1', name: '30-Day Push-Up Challenge', lastMsg: 'Coach: Day 12 — keep pushing! 💪', time: '2m ago', unread: 3, avatar: '💪' },
-  { id: 'c2', name: '7-Day Morning Run', lastMsg: 'You: Done! 5km in 28 mins 🏃', time: '1h ago', unread: 0, avatar: '🏃' },
-  { id: 'c3', name: '3-Day Screen-Free Dinner', lastMsg: 'Sarah K.: Amazing dinner tonight!', time: '3h ago', unread: 1, avatar: '🍽️' },
-];
+type ChallengeChat = {
+  id: string;
+  challenge_id: string;
+  name: string;
+  last_message: string;
+  last_message_at: string | null;
+  unread_count: number;
+  avatar: string;
+};
 
-// ── Your Active Challenges ──
-const activeChallenges = [
-  { id: 'a1', title: '30-Day Push-Up Challenge', type: 'Strength', daysLeft: 18, totalDays: 30, progress: 0.4, points: 500, color: '#4F8EF7' },
-  { id: 'a2', title: '7-Day Morning Run', type: 'Cardio', daysLeft: 4, totalDays: 7, progress: 0.57, points: 150, color: Colors.primary },
-  { id: 'a3', title: '3-Day Screen-Free Dinner', type: 'Family', daysLeft: 1, totalDays: 3, progress: 0.67, points: 75, color: '#A855F7' },
-];
+type ActiveChallenge = {
+  id: string;
+  challenge_id: string;
+  title: string;
+  type: string;
+  days_left: number;
+  total_days: number;
+  progress: number;
+  points: number;
+  color: string;
+};
 
-// ── Completed Challenges ──
-const completedChallenges = [
-  { id: 'd1', title: '5-Day Meditation Reset', type: 'Mindfulness', earnedPoints: 100, completedDate: 'Mar 28', color: '#22C55E' },
-  { id: 'd2', title: '14-Day Clean Eating', type: 'Nutrition', earnedPoints: 200, completedDate: 'Mar 12', color: '#F59E0B' },
-];
+type CompletedChallenge = {
+  id: string;
+  challenge_id: string;
+  title: string;
+  type: string;
+  earned_points: number;
+  completed_at: string;
+  color: string;
+};
 
-// ── Ready to Start ──
-const readyToStart = [
-  { id: 'r1', title: '21-Day No Sugar Detox', description: 'Eliminate all added sugar for 21 days.', duration: '21 Days', type: 'Nutrition', points: 350, participants: 9, difficulty: 'ADVANCED', difficultyColor: '#EF4444' },
-  { id: 'r2', title: '14-Day Clean Eating', description: 'Whole foods only — no processed snacks.', duration: '14 Days', type: 'Nutrition', points: 200, participants: 22, difficulty: 'INTERMEDIATE', difficultyColor: '#F59E0B' },
-  { id: 'r3', title: '5-Day Meditation Reset', description: 'Meditate 10 minutes every day.', duration: '5 Days', type: 'Mindfulness', points: 100, participants: 18, difficulty: 'BEGINNER', difficultyColor: '#22C55E' },
-];
+type ReadyChallenge = {
+  id: string;
+  title: string;
+  description: string;
+  duration_days: number;
+  type: string;
+  points: number;
+  participants: number;
+  difficulty: string;
+  difficulty_color: string;
+  status: string;
+  thumbnail: string;
+};
+
+type ChallengeOverview = {
+  active_chats: ChallengeChat[];
+  active_challenges: ActiveChallenge[];
+  completed_challenges: CompletedChallenge[];
+  ready_to_start: ReadyChallenge[];
+};
 
 // ── Community Posts ──
 type CommunityPost = {
   id: string;
+  author_id: string;
   author_name: string;
   author_role: string;
   author_profile_image: string;
@@ -55,8 +87,35 @@ type CommunityPost = {
   image_url: string;
   like_count: number;
   comment_count: number;
+  viewer_has_liked: boolean;
+  can_delete: boolean;
+  comments: CommunityComment[];
+  reactions?: CommunityReactionUser[];
   created_at: string;
   updated_at: string;
+};
+
+type CommunityComment = {
+  id: string;
+  post_id: string;
+  author_name: string;
+  author_role: string;
+  author_profile_image: string;
+  content: string;
+  created_at: string;
+};
+
+type CurrentCommunityUser = {
+  name: string;
+  profileImage: string;
+};
+
+type CommunityReactionUser = {
+  user_id: string;
+  user_name: string;
+  user_role: string;
+  user_profile_image: string;
+  created_at: string;
 };
 function formatCommunityPostTime(value: string) {
   const createdAt = new Date(value);
@@ -86,13 +145,146 @@ function formatCommunityPostTime(value: string) {
   return createdAt.toLocaleDateString();
 }
 
+function formatChallengeTime(value: string | null) {
+  if (!value) {
+    return '';
+  }
+
+  const createdAt = new Date(value);
+  if (Number.isNaN(createdAt.getTime())) {
+    return '';
+  }
+
+  const diffMs = Date.now() - createdAt.getTime();
+  const diffMinutes = Math.max(Math.floor(diffMs / 60000), 0);
+  if (diffMinutes < 1) {
+    return 'Now';
+  }
+  if (diffMinutes < 60) {
+    return `${diffMinutes}m ago`;
+  }
+
+  const diffHours = Math.floor(diffMinutes / 60);
+  if (diffHours < 24) {
+    return `${diffHours}h ago`;
+  }
+
+  const diffDays = Math.floor(diffHours / 24);
+  if (diffDays < 7) {
+    return `${diffDays}d ago`;
+  }
+
+  return createdAt.toLocaleDateString();
+}
+
+function formatCompletedDate(value: string) {
+  const completedAt = new Date(value);
+  if (Number.isNaN(completedAt.getTime())) {
+    return '';
+  }
+
+  return completedAt.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
+
+function formatDurationLabel(days: number) {
+  return `${days} Day${days === 1 ? '' : 's'}`;
+}
+
 export default function ChallengesScreen() {
+  const router = useRouter();
   const [activeTab, setActiveTab] = useState('CHALLENGES');
+  const [challengeOverview, setChallengeOverview] = useState<ChallengeOverview>({
+    active_chats: [],
+    active_challenges: [],
+    completed_challenges: [],
+    ready_to_start: [],
+  });
+  const [challengeLoading, setChallengeLoading] = useState(false);
+  const [challengeError, setChallengeError] = useState('');
+  const [challengeStarting, setChallengeStarting] = useState<Record<string, boolean>>({});
   const [communityPosts, setCommunityPosts] = useState<CommunityPost[]>([]);
   const [communityDraft, setCommunityDraft] = useState('');
   const [communityLoading, setCommunityLoading] = useState(false);
   const [communityPosting, setCommunityPosting] = useState(false);
   const [communityError, setCommunityError] = useState('');
+  const [communityImage, setCommunityImage] = useState<ImagePicker.ImagePickerAsset | null>(null);
+  const [expandedComments, setExpandedComments] = useState<Record<string, boolean>>({});
+  const [commentDrafts, setCommentDrafts] = useState<Record<string, string>>({});
+  const [commentSubmitting, setCommentSubmitting] = useState<Record<string, boolean>>({});
+  const [reactionSubmitting, setReactionSubmitting] = useState<Record<string, boolean>>({});
+  const [deleteSubmitting, setDeleteSubmitting] = useState<Record<string, boolean>>({});
+  const [selectedCommunityPost, setSelectedCommunityPost] = useState<CommunityPost | null>(null);
+  const [currentCommunityUser, setCurrentCommunityUser] = useState<CurrentCommunityUser>({
+    name: 'You',
+    profileImage: '',
+  });
+  const readyToStartChallenges = challengeOverview.ready_to_start.filter((challenge) => challenge.status === 'ACTIVE');
+  const hasActiveChats = challengeOverview.active_chats.length > 0;
+  const hasActiveChallenges = challengeOverview.active_challenges.length > 0;
+  const hasCompletedChallenges = challengeOverview.completed_challenges.length > 0;
+  const hasReadyToStartChallenges = readyToStartChallenges.length > 0;
+  const hasVisibleChallengeSections =
+    hasReadyToStartChallenges || hasActiveChats || hasActiveChallenges || hasCompletedChallenges;
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadCurrentCommunityUser = async () => {
+      const authUser = await getAuthUser();
+      if (!isMounted || !authUser) {
+        return;
+      }
+
+      setCurrentCommunityUser({
+        name: authUser.name || 'You',
+        profileImage: authUser.profileImage || '',
+      });
+    };
+
+    loadCurrentCommunityUser();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (activeTab !== 'CHALLENGES') {
+      return;
+    }
+
+    let isMounted = true;
+
+    const loadChallengeOverview = async () => {
+      setChallengeLoading(true);
+      setChallengeError('');
+      try {
+        const response = await apiRequest<ChallengeOverview>('/challenges/overview');
+        if (isMounted) {
+          setChallengeOverview({
+            active_chats: Array.isArray(response.active_chats) ? response.active_chats : [],
+            active_challenges: Array.isArray(response.active_challenges) ? response.active_challenges : [],
+            completed_challenges: Array.isArray(response.completed_challenges) ? response.completed_challenges : [],
+            ready_to_start: Array.isArray(response.ready_to_start) ? response.ready_to_start : [],
+          });
+        }
+      } catch (error) {
+        if (isMounted) {
+          setChallengeError(error instanceof Error ? error.message : 'Failed to load challenges');
+        }
+      } finally {
+        if (isMounted) {
+          setChallengeLoading(false);
+        }
+      }
+    };
+
+    loadChallengeOverview();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [activeTab]);
 
   useEffect(() => {
     if (activeTab !== 'COMMUNITY') {
@@ -141,15 +333,241 @@ export default function ChallengesScreen() {
         method: 'POST',
         body: {
           content,
+          image_base64: communityImage?.base64 ?? undefined,
+          mime_type: communityImage?.mimeType ?? 'image/jpeg',
+          file_name: communityImage?.fileName ?? null,
         },
       });
       setCommunityDraft('');
+      setCommunityImage(null);
       setCommunityPosts((current) => [response, ...current]);
     } catch (error) {
       setCommunityError(error instanceof Error ? error.message : 'Failed to publish post');
     } finally {
       setCommunityPosting(false);
     }
+  };
+
+  const handlePickCommunityImage = async () => {
+    try {
+      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!permission.granted) {
+        Alert.alert('Permission needed', 'Please allow photo library access to add an image.');
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        allowsEditing: true,
+        quality: 0.9,
+        base64: true,
+      });
+
+      if (result.canceled || result.assets.length === 0) {
+        return;
+      }
+
+      const asset = result.assets[0];
+      if (!asset.base64) {
+        throw new Error('The selected image could not be processed for upload.');
+      }
+
+      setCommunityImage(asset);
+      setCommunityError('');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unable to choose an image right now.';
+      Alert.alert('Image unavailable', message);
+    }
+  };
+
+  const updatePostInState = (postId: string, updater: (post: CommunityPost) => CommunityPost) => {
+    setCommunityPosts((current) => current.map((post) => (post.id === postId ? updater(post) : post)));
+    setSelectedCommunityPost((current) => {
+      if (!current || current.id !== postId) {
+        return current;
+      }
+      return updater(current);
+    });
+  };
+
+  const handleToggleReaction = async (postId: string) => {
+    if (reactionSubmitting[postId]) {
+      return;
+    }
+
+    let previousLikeCount = 0;
+    let previousViewerHasLiked = false;
+    updatePostInState(postId, (post) => {
+      previousLikeCount = post.like_count;
+      previousViewerHasLiked = post.viewer_has_liked;
+      const nextViewerHasLiked = !post.viewer_has_liked;
+      return {
+        ...post,
+        viewer_has_liked: nextViewerHasLiked,
+        like_count: Math.max(0, post.like_count + (nextViewerHasLiked ? 1 : -1)),
+      };
+    });
+
+    setReactionSubmitting((current) => ({ ...current, [postId]: true }));
+    try {
+      const response = await apiRequest<{ post_id: string; like_count: number; viewer_has_liked: boolean }>(
+        `/community/posts/${encodeURIComponent(postId)}/reactions/toggle`,
+        { method: 'POST' }
+      );
+      updatePostInState(postId, (post) => ({
+        ...post,
+        like_count: response.like_count,
+        viewer_has_liked: response.viewer_has_liked,
+      }));
+    } catch (error) {
+      updatePostInState(postId, (post) => ({
+        ...post,
+        like_count: previousLikeCount,
+        viewer_has_liked: previousViewerHasLiked,
+      }));
+      setCommunityError(error instanceof Error ? error.message : 'Failed to update reaction');
+    } finally {
+      setReactionSubmitting((current) => ({ ...current, [postId]: false }));
+    }
+  };
+
+  const handleSubmitComment = async (postId: string) => {
+    const content = (commentDrafts[postId] || '').trim();
+    if (!content || commentSubmitting[postId]) {
+      return;
+    }
+
+    const optimisticComment: CommunityComment = {
+      id: `temp-${Date.now()}`,
+      post_id: postId,
+      author_name: currentCommunityUser.name,
+      author_role: 'user',
+      author_profile_image: currentCommunityUser.profileImage,
+      content,
+      created_at: new Date().toISOString(),
+    };
+
+    setCommentDrafts((current) => ({ ...current, [postId]: '' }));
+    setExpandedComments((current) => ({ ...current, [postId]: true }));
+    updatePostInState(postId, (post) => {
+      const nextComments = [...(post.comments || []), optimisticComment];
+      return {
+        ...post,
+        comment_count: post.comment_count + 1,
+        comments: nextComments.slice(-3),
+      };
+    });
+
+    setCommentSubmitting((current) => ({ ...current, [postId]: true }));
+    try {
+      const response = await apiRequest<CommunityComment>(`/community/posts/${encodeURIComponent(postId)}/comments`, {
+        method: 'POST',
+        body: { content },
+      });
+      updatePostInState(postId, (post) => ({
+        ...post,
+        comments: (post.comments || []).map((comment) => (comment.id === optimisticComment.id ? response : comment)),
+      }));
+    } catch (error) {
+      setCommentDrafts((current) => ({ ...current, [postId]: content }));
+      updatePostInState(postId, (post) => ({
+        ...post,
+        comment_count: Math.max(0, post.comment_count - 1),
+        comments: (post.comments || []).filter((comment) => comment.id !== optimisticComment.id),
+      }));
+      setCommunityError(error instanceof Error ? error.message : 'Failed to add comment');
+    } finally {
+      setCommentSubmitting((current) => ({ ...current, [postId]: false }));
+    }
+  };
+
+  const handleStartChallenge = async (challenge: ReadyChallenge) => {
+    if (challengeStarting[challenge.id]) {
+      return;
+    }
+
+    setChallengeStarting((current) => ({ ...current, [challenge.id]: true }));
+    setChallengeError('');
+    try {
+      await apiRequest(`/challenges/${encodeURIComponent(challenge.id)}/start`, {
+        method: 'POST',
+      });
+
+      setChallengeOverview((current) => ({
+        active_chats: [
+          {
+            id: `chat-${challenge.id}`,
+            challenge_id: challenge.id,
+            name: challenge.title,
+            last_message: 'Coach: Welcome to the challenge.',
+            last_message_at: new Date().toISOString(),
+            unread_count: 0,
+            avatar: challenge.thumbnail,
+          },
+          ...current.active_chats.filter((item) => item.challenge_id !== challenge.id),
+        ],
+        active_challenges: [
+          {
+            id: challenge.id,
+            challenge_id: challenge.id,
+            title: challenge.title,
+            type: challenge.type,
+            days_left: challenge.duration_days,
+            total_days: challenge.duration_days,
+            progress: 0,
+            points: challenge.points,
+            color: challenge.difficulty_color || Colors.primary,
+          },
+          ...current.active_challenges.filter((item) => item.challenge_id !== challenge.id),
+        ],
+        completed_challenges: current.completed_challenges,
+        ready_to_start: current.ready_to_start.filter((item) => item.id !== challenge.id),
+      }));
+    } catch (error) {
+      setChallengeError(error instanceof Error ? error.message : 'Failed to start challenge');
+    } finally {
+      setChallengeStarting((current) => ({ ...current, [challenge.id]: false }));
+    }
+  };
+
+  const performDeleteCommunityPost = async (postId: string) => {
+    if (deleteSubmitting[postId]) {
+      return;
+    }
+
+    setDeleteSubmitting((current) => ({ ...current, [postId]: true }));
+    setCommunityError('');
+    try {
+      await apiRequest(`/community/posts/${encodeURIComponent(postId)}`, {
+        method: 'DELETE',
+      });
+      setCommunityPosts((current) => current.filter((post) => post.id !== postId));
+      setSelectedCommunityPost((current) => (current?.id === postId ? null : current));
+    } catch (error) {
+      setCommunityError(error instanceof Error ? error.message : 'Failed to delete post');
+    } finally {
+      setDeleteSubmitting((current) => ({ ...current, [postId]: false }));
+    }
+  };
+
+  const handleDeleteCommunityPost = (postId: string) => {
+    if (deleteSubmitting[postId]) {
+      return;
+    }
+
+    Alert.alert('Delete post', 'Are you sure you want to delete this post?', [
+      {
+        text: 'Cancel',
+        style: 'cancel',
+      },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: () => {
+          void performDeleteCommunityPost(postId);
+        },
+      },
+    ]);
   };
 
   return (
@@ -180,119 +598,184 @@ export default function ChallengesScreen() {
         {/* ── CHALLENGES TAB ── */}
         {activeTab === 'CHALLENGES' && (
           <View style={styles.section}>
+            {challengeError ? (
+              <View style={styles.challengeStatusCard}>
+                <Text style={styles.challengeStatusText}>{challengeError}</Text>
+              </View>
+            ) : null}
+            {challengeLoading ? (
+              <View style={styles.challengeLoadingWrap}>
+                <ActivityIndicator color={Colors.primary} />
+                <Text style={styles.challengeLoadingText}>Loading challenges...</Text>
+              </View>
+            ) : null}
 
             {/* ─ Active Challenge Chats ─ */}
-            <View style={styles.subSectionHeader}>
-              <Ionicons name="chatbubbles" size={16} color={Colors.primary} />
-              <Text style={styles.subSectionTitle}>Active Challenge Chats</Text>
-            </View>
-            {activeChats.map((chat) => (
-              <TouchableOpacity key={chat.id} style={styles.chatCard} activeOpacity={0.85}>
-                <View style={styles.chatAvatarWrap}>
-                  <Text style={styles.chatAvatarEmoji}>{chat.avatar}</Text>
+            {hasActiveChats ? (
+              <>
+                <View style={styles.subSectionHeader}>
+                  <Ionicons name="chatbubbles" size={16} color={Colors.primary} />
+                  <Text style={styles.subSectionTitle}>Active Challenge Chats</Text>
                 </View>
-                <View style={styles.chatContent}>
-                  <Text style={styles.chatName}>{chat.name}</Text>
-                  <Text style={styles.chatLastMsg} numberOfLines={1}>{chat.lastMsg}</Text>
-                </View>
-                <View style={styles.chatRight}>
-                  <Text style={styles.chatTime}>{chat.time}</Text>
-                  {chat.unread > 0 && (
-                    <View style={styles.unreadBadge}>
-                      <Text style={styles.unreadText}>{chat.unread}</Text>
+                {challengeOverview.active_chats.map((chat) => (
+                  <TouchableOpacity
+                    key={chat.id}
+                    style={styles.chatCard}
+                    activeOpacity={0.85}
+                    onPress={() => router.push(`/challenges/chat/${chat.challenge_id}` as any)}
+                  >
+                    <View style={styles.chatAvatarWrap}>
+                      {chat.avatar ? (
+                        <Image source={{ uri: chat.avatar }} style={styles.chatAvatarImage} />
+                      ) : (
+                        <Text style={styles.chatAvatarEmoji}>{(chat.name || 'C')[0]}</Text>
+                      )}
                     </View>
-                  )}
-                </View>
-              </TouchableOpacity>
-            ))}
+                    <View style={styles.chatContent}>
+                      <Text style={styles.chatName}>{chat.name}</Text>
+                      <Text style={styles.chatLastMsg} numberOfLines={1}>{chat.last_message}</Text>
+                    </View>
+                    <View style={styles.chatRight}>
+                      <Text style={styles.chatTime}>{formatChallengeTime(chat.last_message_at)}</Text>
+                      {chat.unread_count > 0 && (
+                        <View style={styles.unreadBadge}>
+                          <Text style={styles.unreadText}>{chat.unread_count}</Text>
+                        </View>
+                      )}
+                    </View>
+                  </TouchableOpacity>
+                ))}
+              </>
+            ) : null}
 
             {/* ─ Your Active Challenges ─ */}
-            <View style={[styles.subSectionHeader, { marginTop: 24 }]}>
-              <Ionicons name="flash" size={16} color={Colors.primary} />
-              <Text style={styles.subSectionTitle}>Your Active Challenges</Text>
-            </View>
-            {activeChallenges.map((ch) => (
-              <View key={ch.id} style={styles.activeCard}>
-                <View style={styles.activeCardTop}>
-                  <View style={[styles.activeColorDot, { backgroundColor: ch.color }]} />
-                  <Text style={styles.activeCardTitle}>{ch.title}</Text>
-                  <View style={styles.activePointsBadge}>
-                    <Ionicons name="star" size={11} color="#F59E0B" />
-                    <Text style={styles.activePointsText}>+{ch.points}</Text>
-                  </View>
+            {hasActiveChallenges ? (
+              <>
+                <View
+                  style={[
+                    styles.subSectionHeader,
+                    hasActiveChats || hasActiveChallenges || hasCompletedChallenges ? { marginTop: 24 } : null,
+                  ]}
+                >
+                  <Ionicons name="flash" size={16} color={Colors.primary} />
+                  <Text style={styles.subSectionTitle}>Your Active Challenges</Text>
                 </View>
-                <View style={styles.activeProgressRow}>
-                  <View style={styles.progressBarBg}>
-                    <View style={[styles.progressBarFill, { width: `${ch.progress * 100}%` as any, backgroundColor: ch.color }]} />
-                  </View>
-                  <Text style={styles.progressLabel}>
-                    {Math.round(ch.progress * ch.totalDays)}/{ch.totalDays} days
-                  </Text>
-                </View>
-                <View style={styles.activeCardMeta}>
-                  <Text style={styles.activeMetaText}>{ch.type}</Text>
-                  <Text style={[styles.daysLeftText, { color: ch.daysLeft <= 2 ? '#EF4444' : Colors.textMuted }]}>
-                    {ch.daysLeft} days left
-                  </Text>
-                </View>
-              </View>
-            ))}
+                {challengeOverview.active_challenges.map((ch) => (
+                  <TouchableOpacity
+                    key={ch.id}
+                    style={styles.activeCard}
+                    activeOpacity={0.88}
+                    onPress={() => router.push(`/challenges/chat/${ch.challenge_id}` as any)}
+                  >
+                    <View style={styles.activeCardTop}>
+                      <View style={[styles.activeColorDot, { backgroundColor: ch.color }]} />
+                      <Text style={styles.activeCardTitle}>{ch.title}</Text>
+                      <View style={styles.activePointsBadge}>
+                        <Ionicons name="star" size={11} color="#F59E0B" />
+                        <Text style={styles.activePointsText}>+{ch.points}</Text>
+                      </View>
+                    </View>
+                    <View style={styles.activeProgressRow}>
+                      <View style={styles.progressBarBg}>
+                        <View style={[styles.progressBarFill, { width: `${ch.progress * 100}%` as any, backgroundColor: ch.color }]} />
+                      </View>
+                      <Text style={styles.progressLabel}>
+                        {Math.round(ch.progress * ch.total_days)}/{ch.total_days} days
+                      </Text>
+                    </View>
+                    <View style={styles.activeCardMeta}>
+                      <Text style={styles.activeMetaText}>{ch.type}</Text>
+                      <Text style={[styles.daysLeftText, { color: ch.days_left <= 2 ? '#EF4444' : Colors.textMuted }]}>
+                        {ch.days_left} days left
+                      </Text>
+                    </View>
+                  </TouchableOpacity>
+                ))}
+              </>
+            ) : null}
 
             {/* ─ Completed ─ */}
-            <View style={[styles.subSectionHeader, { marginTop: 24 }]}>
-              <Ionicons name="checkmark-circle" size={16} color="#22C55E" />
-              <Text style={[styles.subSectionTitle, { color: '#22C55E' }]}>Completed</Text>
-            </View>
-            {completedChallenges.map((ch) => (
+            {hasCompletedChallenges ? (
+              <>
+                <View style={[styles.subSectionHeader, { marginTop: 24 }]}>
+                  <Ionicons name="checkmark-circle" size={16} color="#22C55E" />
+                  <Text style={[styles.subSectionTitle, { color: '#22C55E' }]}>Completed</Text>
+                </View>
+                {challengeOverview.completed_challenges.map((ch) => (
               <View key={ch.id} style={styles.completedCard}>
                 <View style={[styles.completedIcon, { backgroundColor: `${ch.color}22` }]}>
                   <Ionicons name="trophy" size={20} color={ch.color} />
                 </View>
                 <View style={styles.completedInfo}>
                   <Text style={styles.completedTitle}>{ch.title}</Text>
-                  <Text style={styles.completedMeta}>{ch.type} · {ch.completedDate}</Text>
+                  <Text style={styles.completedMeta}>{ch.type} · {formatCompletedDate(ch.completed_at)}</Text>
                 </View>
                 <View style={styles.completedPts}>
                   <Ionicons name="star" size={12} color="#F59E0B" />
-                  <Text style={styles.completedPtsText}>+{ch.earnedPoints} Pts</Text>
+                  <Text style={styles.completedPtsText}>+{ch.earned_points} Pts</Text>
                 </View>
               </View>
             ))}
+              </>
+            ) : null}
 
             {/* ─ Ready to Start ─ */}
-            <View style={[styles.subSectionHeader, { marginTop: 24 }]}>
-              <Ionicons name="rocket" size={16} color="#4F8EF7" />
-              <Text style={[styles.subSectionTitle, { color: '#4F8EF7' }]}>Ready to Start</Text>
-            </View>
-            {readyToStart.map((ch) => (
-              <View key={ch.id} style={styles.readyCard}>
-                <View style={styles.readyCardTop}>
-                  <Text style={styles.readyTitle}>{ch.title}</Text>
-                  <View style={[styles.difficultyBadge, { backgroundColor: `${ch.difficultyColor}22` }]}>
-                    <Text style={[styles.difficultyText, { color: ch.difficultyColor }]}>{ch.difficulty}</Text>
-                  </View>
+            {hasReadyToStartChallenges ? (
+              <>
+                <View style={[styles.subSectionHeader, { marginTop: 24 }]}>
+                  <Ionicons name="rocket" size={16} color="#4F8EF7" />
+                  <Text style={[styles.subSectionTitle, { color: '#4F8EF7' }]}>Ready to Start</Text>
                 </View>
-                <Text style={styles.readyDesc} numberOfLines={2}>{ch.description}</Text>
-                <View style={styles.readyMeta}>
-                  <View style={styles.metaItem}>
-                    <Ionicons name="time-outline" size={12} color={Colors.textMuted} />
-                    <Text style={styles.metaText}>{ch.duration}</Text>
+                {readyToStartChallenges.map((ch) => (
+                  <View key={ch.id} style={styles.readyCard}>
+                    <View style={styles.readyCardTop}>
+                      <Text style={styles.readyTitle}>{ch.title}</Text>
+                      <View style={[styles.difficultyBadge, { backgroundColor: `${ch.difficulty_color}22` }]}>
+                        <Text style={[styles.difficultyText, { color: ch.difficulty_color }]}>{ch.difficulty}</Text>
+                      </View>
+                    </View>
+                    <Text style={styles.readyDesc} numberOfLines={2}>{ch.description}</Text>
+                    <View style={styles.readyMeta}>
+                      <View style={styles.metaItem}>
+                        <Ionicons name="time-outline" size={12} color={Colors.textMuted} />
+                        <Text style={styles.metaText}>{formatDurationLabel(ch.duration_days)}</Text>
+                      </View>
+                      <View style={styles.metaItem}>
+                        <Ionicons name="people-outline" size={12} color={Colors.textMuted} />
+                        <Text style={styles.metaText}>{ch.participants} joined</Text>
+                      </View>
+                      <View style={styles.metaItem}>
+                        <Ionicons name="star" size={12} color="#F59E0B" />
+                        <Text style={[styles.metaText, { color: '#F59E0B' }]}>+{ch.points} Pts</Text>
+                      </View>
+                    </View>
+                    <TouchableOpacity
+                      style={[
+                        styles.startBtn,
+                        (challengeStarting[ch.id] || ch.status !== 'ACTIVE') && { opacity: 0.55 },
+                      ]}
+                      activeOpacity={0.85}
+                      onPress={() => handleStartChallenge(ch)}
+                      disabled={challengeStarting[ch.id] || ch.status !== 'ACTIVE'}
+                    >
+                      {challengeStarting[ch.id] ? (
+                        <ActivityIndicator size="small" color="#000" />
+                      ) : (
+                        <>
+                          <Text style={styles.startBtnText}>START CHALLENGE</Text>
+                          <Ionicons name="arrow-forward" size={14} color="#000" />
+                        </>
+                      )}
+                    </TouchableOpacity>
                   </View>
-                  <View style={styles.metaItem}>
-                    <Ionicons name="people-outline" size={12} color={Colors.textMuted} />
-                    <Text style={styles.metaText}>{ch.participants} joined</Text>
-                  </View>
-                  <View style={styles.metaItem}>
-                    <Ionicons name="star" size={12} color="#F59E0B" />
-                    <Text style={[styles.metaText, { color: '#F59E0B' }]}>+{ch.points} Pts</Text>
-                  </View>
-                </View>
-                <TouchableOpacity style={styles.startBtn} activeOpacity={0.85}>
-                  <Text style={styles.startBtnText}>START CHALLENGE</Text>
-                  <Ionicons name="arrow-forward" size={14} color="#000" />
-                </TouchableOpacity>
+                ))}
+              </>
+            ) : null}
+            {!challengeLoading && !hasVisibleChallengeSections ? (
+              <View style={styles.challengeEmptyCard}>
+                <Text style={styles.challengeEmptyText}>No challenges available right now.</Text>
               </View>
-            ))}
+            ) : null}
 
           </View>
         )}
@@ -314,8 +797,8 @@ export default function ChallengesScreen() {
               />
               <View style={styles.composerDivider} />
               <View style={styles.composerActions}>
-                <TouchableOpacity style={styles.composerImgBtn}>
-                  <Ionicons name="image-outline" size={22} color="rgba(255,255,255,0.45)" />
+                <TouchableOpacity style={styles.composerImgBtn} onPress={handlePickCommunityImage}>
+                  <Ionicons name="image-outline" size={22} color={communityImage ? Colors.primary : 'rgba(255,255,255,0.45)'} />
                 </TouchableOpacity>
 
                 {/* Tier Dropdown */}
@@ -371,6 +854,15 @@ export default function ChallengesScreen() {
               </View>
             </View>
 
+            {communityImage?.uri ? (
+              <View style={styles.communityPreviewCard}>
+                <Image source={{ uri: communityImage.uri }} style={styles.communityPreviewImage} />
+                <TouchableOpacity onPress={() => setCommunityImage(null)} style={styles.communityPreviewRemove}>
+                  <Text style={styles.communityPreviewRemoveText}>Remove image</Text>
+                </TouchableOpacity>
+              </View>
+            ) : null}
+
             {communityError ? (
               <View style={styles.communityErrorCard}>
                 <Text style={styles.communityErrorText}>{communityError}</Text>
@@ -387,39 +879,117 @@ export default function ChallengesScreen() {
             {/* Community Posts */}
             {communityPosts.map((post) => (
               <View key={post.id} style={styles.postCard}>
-                {/* Post Header */}
-                <View style={styles.postHeader}>
-                  <View style={styles.postAvatar}>
-                    <Text style={styles.postAvatarText}>{(post.author_name || 'U')[0]}</Text>
-                  </View>
-                  <View style={styles.postMeta}>
-                    <View style={styles.postMetaRow}>
-                      <Text style={styles.postAuthor}>{post.author_name}</Text>
-                      <Text style={styles.postTime}>{formatCommunityPostTime(post.created_at)}</Text>
-                      <View style={[styles.tierBadge, { backgroundColor: post.audience === 'ALL' ? '#22C55E' : '#A855F7' }]}>
-                        <Text style={styles.tierBadgeText}>{post.audience}</Text>
+                <TouchableOpacity activeOpacity={0.92} onPress={() => setSelectedCommunityPost(post)}>
+                  <View style={styles.postHeader}>
+                    {post.author_profile_image ? (
+                      <Image source={{ uri: post.author_profile_image }} style={styles.postAvatarImage} />
+                    ) : (
+                      <View style={styles.postAvatar}>
+                        <Text style={styles.postAvatarText}>{(post.author_name || 'U')[0]}</Text>
+                      </View>
+                    )}
+                    <View style={styles.postMeta}>
+                      <View style={styles.postMetaRow}>
+                        <Text style={styles.postAuthor}>{post.author_name}</Text>
+                        <Text style={styles.postTime}>{formatCommunityPostTime(post.created_at)}</Text>
+                        <View style={[styles.tierBadge, { backgroundColor: post.audience === 'ALL' ? '#22C55E' : '#A855F7' }]}>
+                          <Text style={styles.tierBadgeText}>{post.audience}</Text>
+                        </View>
                       </View>
                     </View>
                   </View>
-                </View>
 
-                {/* Post Body */}
-                <Text style={styles.postBody}>{post.content}</Text>
-                {post.image_url ? (
-                  <Text style={styles.postImageLink}>{post.image_url}</Text>
-                ) : null}
+                  <Text style={styles.postBody}>{post.content}</Text>
+                  {post.image_url ? (
+                    <Image source={{ uri: post.image_url }} style={styles.postImagePreview} />
+                  ) : null}
+                </TouchableOpacity>
 
                 {/* Post Footer */}
                 <View style={styles.postFooter}>
-                  <TouchableOpacity style={styles.postAction}>
-                    <Ionicons name="thumbs-up-outline" size={16} color="rgba(255,255,255,0.5)" />
-                    <Text style={styles.postActionText}>{post.like_count}</Text>
+                  <TouchableOpacity
+                    style={styles.postAction}
+                    onPress={() => handleToggleReaction(post.id)}
+                    disabled={reactionSubmitting[post.id]}
+                  >
+                    <Ionicons
+                      name={post.viewer_has_liked ? 'heart' : 'heart-outline'}
+                      size={16}
+                      color={post.viewer_has_liked ? '#F87171' : 'rgba(255,255,255,0.5)'}
+                    />
+                    <Text style={[styles.postActionText, post.viewer_has_liked && styles.postActionTextActive]}>{post.like_count}</Text>
                   </TouchableOpacity>
-                  <TouchableOpacity style={styles.postAction}>
+                  <TouchableOpacity
+                    style={styles.postAction}
+                    onPress={() =>
+                      setExpandedComments((current) => ({
+                        ...current,
+                        [post.id]: !current[post.id],
+                      }))
+                    }
+                  >
                     <Ionicons name="chatbubble-outline" size={16} color="rgba(255,255,255,0.5)" />
                     <Text style={styles.postActionText}>{post.comment_count}</Text>
                   </TouchableOpacity>
+                  {post.can_delete ? (
+                    <TouchableOpacity
+                      style={styles.postDeleteAction}
+                      onPress={() => handleDeleteCommunityPost(post.id)}
+                      disabled={deleteSubmitting[post.id]}
+                      accessibilityLabel={deleteSubmitting[post.id] ? 'Deleting post' : 'Delete post'}
+                    >
+                      {deleteSubmitting[post.id] ? (
+                        <ActivityIndicator size="small" color="#F87171" />
+                      ) : (
+                        <Ionicons name="trash-outline" size={16} color="rgba(248,113,113,0.9)" />
+                      )}
+                    </TouchableOpacity>
+                  ) : null}
                 </View>
+
+                {(expandedComments[post.id] || (post.comments?.length ?? 0) > 0) ? (
+                  <View style={styles.commentsWrap}>
+                    {(post.comments || []).map((comment) => (
+                      <View key={comment.id} style={styles.commentRow}>
+                        {comment.author_profile_image ? (
+                          <Image source={{ uri: comment.author_profile_image }} style={styles.commentAvatarImage} />
+                        ) : (
+                          <View style={styles.commentAvatar}>
+                            <Text style={styles.commentAvatarText}>{(comment.author_name || 'U')[0]}</Text>
+                          </View>
+                        )}
+                        <View style={styles.commentBubble}>
+                          <View style={styles.commentMetaRow}>
+                            <Text style={styles.commentAuthor}>{comment.author_name}</Text>
+                            <Text style={styles.commentTime}>{formatCommunityPostTime(comment.created_at)}</Text>
+                          </View>
+                          <Text style={styles.commentContent}>{comment.content}</Text>
+                        </View>
+                      </View>
+                    ))}
+
+                    <View style={styles.commentComposer}>
+                      <TextInput
+                        style={styles.commentInput}
+                        placeholder="Write a comment..."
+                        placeholderTextColor="rgba(255,255,255,0.35)"
+                        value={commentDrafts[post.id] || ''}
+                        onChangeText={(text) => setCommentDrafts((current) => ({ ...current, [post.id]: text }))}
+                      />
+                      <TouchableOpacity
+                        style={[styles.commentSendBtn, commentSubmitting[post.id] && { opacity: 0.7 }]}
+                        onPress={() => handleSubmitComment(post.id)}
+                        disabled={commentSubmitting[post.id]}
+                      >
+                        {commentSubmitting[post.id] ? (
+                          <ActivityIndicator size="small" color="#0A0A14" />
+                        ) : (
+                          <Text style={styles.commentSendText}>Send</Text>
+                        )}
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                ) : null}
               </View>
             ))}
 
@@ -427,6 +997,50 @@ export default function ChallengesScreen() {
         )}
 
       </ScrollView>
+
+      <Modal
+        visible={selectedCommunityPost !== null}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setSelectedCommunityPost(null)}
+      >
+        <View style={styles.postModalOverlay}>
+          <View style={styles.postModalCard}>
+            <TouchableOpacity style={styles.postModalClose} onPress={() => setSelectedCommunityPost(null)}>
+              <Ionicons name="close" size={22} color="#fff" />
+            </TouchableOpacity>
+
+            {selectedCommunityPost ? (
+              <ScrollView showsVerticalScrollIndicator={false}>
+                <View style={styles.postHeader}>
+                  {selectedCommunityPost.author_profile_image ? (
+                    <Image source={{ uri: selectedCommunityPost.author_profile_image }} style={styles.postAvatarImage} />
+                  ) : (
+                    <View style={styles.postAvatar}>
+                      <Text style={styles.postAvatarText}>{(selectedCommunityPost.author_name || 'U')[0]}</Text>
+                    </View>
+                  )}
+                  <View style={styles.postMeta}>
+                    <View style={styles.postMetaRow}>
+                      <Text style={styles.postAuthor}>{selectedCommunityPost.author_name}</Text>
+                      <Text style={styles.postTime}>{formatCommunityPostTime(selectedCommunityPost.created_at)}</Text>
+                    </View>
+                    <View style={[styles.modalTierBadge, { backgroundColor: selectedCommunityPost.audience === 'ALL' ? '#22C55E' : '#A855F7' }]}>
+                      <Text style={styles.tierBadgeText}>{selectedCommunityPost.audience}</Text>
+                    </View>
+                  </View>
+                </View>
+
+                <Text style={styles.postModalBody}>{selectedCommunityPost.content}</Text>
+
+                {selectedCommunityPost.image_url ? (
+                  <Image source={{ uri: selectedCommunityPost.image_url }} style={styles.postModalImage} />
+                ) : null}
+              </ScrollView>
+            ) : null}
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -547,6 +1161,44 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
     fontFamily: 'Inter_700Bold',
   },
+  challengeStatusCard: {
+    backgroundColor: 'rgba(239,68,68,0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(239,68,68,0.28)',
+    borderRadius: 16,
+    padding: 14,
+    marginBottom: 16,
+  },
+  challengeStatusText: {
+    color: '#FCA5A5',
+    fontSize: 13,
+    fontFamily: 'Inter_400Regular',
+  },
+  challengeLoadingWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 8,
+    marginBottom: 10,
+  },
+  challengeLoadingText: {
+    color: Colors.textMuted,
+    fontSize: 13,
+    fontFamily: 'Inter_400Regular',
+  },
+  challengeEmptyCard: {
+    backgroundColor: 'rgba(255,255,255,0.03)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.06)',
+    borderRadius: 16,
+    padding: 14,
+    marginBottom: 10,
+  },
+  challengeEmptyText: {
+    color: Colors.textMuted,
+    fontSize: 13,
+    fontFamily: 'Inter_400Regular',
+  },
 
   /* Active Challenge Chats */
   chatCard: {
@@ -572,6 +1224,13 @@ const styles = StyleSheet.create({
   },
   chatAvatarEmoji: {
     fontSize: 22,
+    color: '#fff',
+    fontFamily: 'Inter_700Bold',
+  },
+  chatAvatarImage: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 24,
   },
   chatContent: {
     flex: 1,
@@ -1002,6 +1661,31 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontFamily: 'Inter_400Regular',
   },
+  communityPreviewCard: {
+    backgroundColor: '#13132A',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+    padding: 10,
+    marginBottom: 12,
+  },
+  communityPreviewImage: {
+    width: '100%',
+    height: 180,
+    borderRadius: 12,
+    resizeMode: 'cover',
+    marginBottom: 10,
+  },
+  communityPreviewRemove: {
+    alignSelf: 'flex-end',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  communityPreviewRemoveText: {
+    color: '#FCA5A5',
+    fontSize: 12,
+    fontFamily: 'Inter_700Bold',
+  },
 
   /* Post Card */
   postCard: {
@@ -1025,6 +1709,11 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.primary,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  postAvatarImage: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
   },
   postAvatarText: {
     color: '#000',
@@ -1072,10 +1761,11 @@ const styles = StyleSheet.create({
     lineHeight: 22,
     marginBottom: 14,
   },
-  postImageLink: {
-    color: Colors.primary,
-    fontSize: 12,
-    fontFamily: 'Inter_400Regular',
+  postImagePreview: {
+    width: '100%',
+    height: 140,
+    borderRadius: 14,
+    resizeMode: 'cover',
     marginBottom: 14,
   },
   postFooter: {
@@ -1090,10 +1780,149 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 6,
   },
+  postDeleteAction: {
+    width: 28,
+    height: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   postActionText: {
     color: 'rgba(255,255,255,0.5)',
     fontSize: 13,
     fontFamily: 'Inter_400Regular',
+  },
+  postActionTextActive: {
+    color: '#FCA5A5',
+  },
+  postModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.82)',
+    justifyContent: 'center',
+    paddingHorizontal: 18,
+    paddingVertical: 32,
+  },
+  postModalCard: {
+    backgroundColor: '#13132A',
+    borderRadius: 22,
+    padding: 18,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+    maxHeight: '88%',
+  },
+  postModalClose: {
+    alignSelf: 'flex-end',
+    marginBottom: 8,
+  },
+  modalTierBadge: {
+    alignSelf: 'flex-start',
+    marginTop: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  postModalBody: {
+    color: 'rgba(255,255,255,0.9)',
+    fontSize: 15,
+    lineHeight: 24,
+    fontFamily: 'Inter_400Regular',
+    marginBottom: 16,
+  },
+  postModalImage: {
+    width: '100%',
+    height: 320,
+    borderRadius: 16,
+    resizeMode: 'cover',
+  },
+  commentsWrap: {
+    marginTop: 14,
+    paddingTop: 14,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255,255,255,0.06)',
+    gap: 10,
+  },
+  commentRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+  },
+  commentAvatar: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  commentAvatarImage: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+  },
+  commentAvatarText: {
+    color: '#fff',
+    fontSize: 12,
+    fontFamily: 'Inter_700Bold',
+  },
+  commentBubble: {
+    flex: 1,
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    borderRadius: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  commentMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 4,
+    flexWrap: 'wrap',
+  },
+  commentAuthor: {
+    color: '#fff',
+    fontSize: 12,
+    fontFamily: 'Inter_700Bold',
+  },
+  commentTime: {
+    color: Colors.textMuted,
+    fontSize: 11,
+    fontFamily: 'Inter_400Regular',
+  },
+  commentContent: {
+    color: 'rgba(255,255,255,0.82)',
+    fontSize: 13,
+    lineHeight: 18,
+    fontFamily: 'Inter_400Regular',
+  },
+  commentComposer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginTop: 4,
+  },
+  commentInput: {
+    flex: 1,
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    color: '#fff',
+    fontSize: 13,
+    fontFamily: 'Inter_400Regular',
+    outlineStyle: 'none' as any,
+  },
+  commentSendBtn: {
+    backgroundColor: Colors.primary,
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+    minWidth: 66,
+  },
+  commentSendText: {
+    color: '#000',
+    fontSize: 12,
+    fontFamily: 'Inter_700Bold',
   },
 
   /* Tier Dropdown */
