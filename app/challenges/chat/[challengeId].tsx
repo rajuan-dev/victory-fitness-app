@@ -17,7 +17,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { Colors } from '../../../constants/Colors';
-import { apiRequest, getValidAuthTokens } from '../../../lib/api';
+import { apiRequest, fetchCurrentUser, getValidAuthTokens } from '../../../lib/api';
 import { ErrorPopupModal } from '../../../components/ErrorPopupModal';
 import { formatAppError } from '../../../lib/error';
 
@@ -459,6 +459,10 @@ export default function ChallengeChatScreen() {
     });
   }, []);
 
+  const refreshUserProfile = useCallback(() => {
+    void fetchCurrentUser().catch(() => undefined);
+  }, []);
+
   const sendMessage = async () => {
     if (!challengeId) {
       return;
@@ -514,6 +518,7 @@ export default function ChallengeChatScreen() {
           }
         );
         applyPlanProgress(response);
+        refreshUserProfile();
       } else {
         await apiRequest(`/challenges/${encodeURIComponent(challengeId)}/progress`, {
           method: 'POST',
@@ -522,6 +527,7 @@ export default function ChallengeChatScreen() {
             note: `Completed day ${Math.min(thread.viewer_progress_days_completed + 1, thread.duration_days)}.`,
           },
         });
+        refreshUserProfile();
       }
     } catch (error) {
       setErrorDialog(formatAppError(error, 'Failed to share progress.'));
@@ -545,6 +551,7 @@ export default function ChallengeChatScreen() {
         }
       );
       applyPlanProgress(response);
+      refreshUserProfile();
     } catch (error) {
       setErrorDialog(formatAppError(error, 'Failed to update day completion.'));
     } finally {
@@ -567,6 +574,7 @@ export default function ChallengeChatScreen() {
         }
       );
       applyPlanProgress(response);
+      refreshUserProfile();
     } catch (error) {
       setErrorDialog(formatAppError(error, 'Failed to update section completion.'));
     } finally {

@@ -7,17 +7,49 @@ import {
   TouchableOpacity,
   Linking,
   TextInput,
+  Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Stack, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../constants/Colors';
+import { submitSupportMessage } from '../../lib/api';
 
 export default function ContactUsScreen() {
   const router = useRouter();
+  const [subject, setSubject] = React.useState('');
+  const [message, setMessage] = React.useState('');
+  const [submitting, setSubmitting] = React.useState(false);
 
   const handleEmail = () => {
     Linking.openURL('mailto:office@victorakko.com');
+  };
+
+  const handleSubmit = async () => {
+    if (submitting) {
+      return;
+    }
+    if (!subject.trim() || !message.trim()) {
+      Alert.alert('Missing details', 'Please enter both a subject and a message.');
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      await submitSupportMessage({
+        subject: subject.trim(),
+        message: message.trim(),
+      });
+      setSubject('');
+      setMessage('');
+      Alert.alert('Message sent', 'Your support message has been sent successfully.');
+    } catch (error) {
+      const details = error instanceof Error ? error.message : 'Unable to send your support message right now.';
+      Alert.alert('Send failed', details);
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -74,6 +106,9 @@ export default function ContactUsScreen() {
               style={styles.input}
               placeholder="What can we help you with?"
               placeholderTextColor="rgba(255,255,255,0.2)"
+              value={subject}
+              onChangeText={setSubject}
+              editable={!submitting}
             />
           </View>
 
@@ -85,11 +120,14 @@ export default function ContactUsScreen() {
               placeholderTextColor="rgba(255,255,255,0.2)"
               multiline
               numberOfLines={4}
+              value={message}
+              onChangeText={setMessage}
+              editable={!submitting}
             />
           </View>
 
-          <TouchableOpacity style={styles.sendBtn} activeOpacity={0.8}>
-            <Text style={styles.sendBtnText}>SEND MESSAGE</Text>
+          <TouchableOpacity style={[styles.sendBtn, submitting && styles.sendBtnDisabled]} activeOpacity={0.8} onPress={handleSubmit} disabled={submitting}>
+            {submitting ? <ActivityIndicator color="#000" size="small" /> : <Text style={styles.sendBtnText}>SEND MESSAGE</Text>}
           </TouchableOpacity>
         </View>
         <View style={{ height: 40 }} />
@@ -211,6 +249,9 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     alignItems: 'center',
     marginTop: 10,
+  },
+  sendBtnDisabled: {
+    opacity: 0.7,
   },
   sendBtnText: {
     color: '#000',

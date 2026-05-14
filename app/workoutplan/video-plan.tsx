@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -13,40 +13,16 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Stack, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../constants/Colors';
+import { getLatestVideoWorkoutPlan } from '../../lib/workout-plans';
 
 const { width } = Dimensions.get('window');
 
-const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-
-const SAMPLE_WORKOUTS = [
-  {
-    id: '1',
-    title: '10 Reps Workout with Josy',
-    duration: '22 Min.',
-    category: 'Full Body',
-    image: 'https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?w=600&q=80',
-    tag: 'Recommended',
-  },
-  {
-    id: '2',
-    title: 'Legendary Leg Day',
-    duration: '20 Min.',
-    category: 'Lower Body',
-    image: 'https://images.unsplash.com/photo-1434682881908-b43d0467b798?w=600&q=80',
-    tag: 'Intensity',
-  },
-  {
-    id: '3',
-    title: 'Core Crusher HIIT',
-    duration: '18 Min.',
-    category: 'HIIT',
-    image: 'https://images.unsplash.com/photo-1541534741688-6078c6bd35e5?w=600&q=80',
-  },
-];
-
 export default function VideoPlanResult() {
   const router = useRouter();
-  const [selectedDay, setSelectedDay] = useState('Mon');
+  const plan = getLatestVideoWorkoutPlan();
+  const dayLabels = useMemo(() => (plan?.days?.length ? plan.days.map((day) => day.day) : ['Mon']), [plan]);
+  const [selectedDay, setSelectedDay] = useState(dayLabels[0] ?? 'Mon');
+  const selectedPlanDay = plan?.days?.find((day) => day.day === selectedDay) ?? plan?.days?.[0] ?? null;
 
   return (
     <SafeAreaView style={styles.container}>
@@ -66,14 +42,14 @@ export default function VideoPlanResult() {
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         {/* Profile/Welcome Section */}
         <View style={styles.topSection}>
-          <Text style={styles.welcomeText}>Your Weekly Path</Text>
-          <Text style={styles.dateText}>Ready for Day {DAYS.indexOf(selectedDay) + 1}?</Text>
+          <Text style={styles.welcomeText}>{plan?.summary ?? 'Your Weekly Path'}</Text>
+          <Text style={styles.dateText}>Ready for Day {dayLabels.indexOf(selectedDay) + 1}?</Text>
         </View>
 
         {/* Premium Day Selector */}
         <View style={styles.daySelectorContainer}>
-          <View style={styles.daySelector}>
-            {DAYS.map((day) => {
+            <View style={styles.daySelector}>
+            {dayLabels.map((day) => {
               const isActive = selectedDay === day;
               return (
                 <TouchableOpacity
@@ -98,7 +74,7 @@ export default function VideoPlanResult() {
             </View>
             <View>
               <Text style={styles.statLabel}>DURATION</Text>
-              <Text style={styles.statValue}>45m</Text>
+              <Text style={styles.statValue}>{selectedPlanDay?.duration_label ?? '-'}</Text>
             </View>
           </View>
 
@@ -108,7 +84,7 @@ export default function VideoPlanResult() {
             </View>
             <View>
               <Text style={styles.statLabel}>WORKOUTS</Text>
-              <Text style={styles.statValue}>3</Text>
+              <Text style={styles.statValue}>{selectedPlanDay?.workouts_count ?? 0}</Text>
             </View>
           </View>
         </View>
@@ -122,9 +98,9 @@ export default function VideoPlanResult() {
         </View>
 
         <View style={styles.workoutList}>
-          {SAMPLE_WORKOUTS.map((workout) => (
+          {(selectedPlanDay?.workouts ?? []).map((workout) => (
             <TouchableOpacity key={workout.id} style={styles.workoutCard} activeOpacity={0.95}>
-              <Image source={{ uri: workout.image }} style={styles.workoutImage} />
+              <Image source={{ uri: workout.image || 'https://images.unsplash.com/photo-1517836357463-d25dfeac3438?w=600&q=80' }} style={styles.workoutImage} />
               <View style={styles.workoutOverlay}>
                 {workout.tag && (
                   <View style={styles.tagBadge}>

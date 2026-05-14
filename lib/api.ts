@@ -21,6 +21,23 @@ function resolveApiUrl(url: string): string {
 
 const API_URL = resolveApiUrl(RAW_API_URL);
 
+export function resolveRemoteAssetUrl(url: string | null | undefined): string {
+  const normalizedUrl = String(url || '').trim();
+  if (!normalizedUrl) {
+    return '';
+  }
+
+  if (normalizedUrl.startsWith('data:')) {
+    return normalizedUrl;
+  }
+
+  if (normalizedUrl.startsWith('/')) {
+    return `${API_URL}${normalizedUrl}`;
+  }
+
+  return resolveApiUrl(normalizedUrl);
+}
+
 type RequestOptions = {
   method?: string;
   body?: unknown;
@@ -50,6 +67,14 @@ export type AuthUser = {
   is_verified: boolean;
   country?: string;
   profileImage?: string;
+  points?: number;
+  workouts_completed?: number;
+  workouts_total?: number;
+  streak_days?: number;
+  rank?: string;
+  next_rank?: string;
+  points_to_next_rank?: number;
+  rank_progress_fraction?: number;
 };
 
 export type BodyMetrics = {
@@ -57,6 +82,100 @@ export type BodyMetrics = {
   height: string;
   weight: string;
   gender: string;
+};
+
+export type CoachingApplicationPayload = {
+  first_name: string;
+  last_name: string;
+  email: string;
+  phone_number?: string;
+  goal: string;
+  obstacle: string;
+  investment: string;
+  commitment: string;
+  injury: string;
+  additional_notes?: string;
+  agreement_accepted: boolean;
+};
+
+export type SupportMessagePayload = {
+  subject: string;
+  message: string;
+};
+
+export type LongevityOverview = {
+  biological_age: string;
+  chronological_age: string;
+  trending_years_younger: number;
+  recovery_score: number;
+  hrv_ms: number;
+  sleep_score: number;
+};
+
+export type LongevityQuickAction = {
+  id: string;
+  label: string;
+  image: string;
+  color: string;
+};
+
+export type LongevityWearableDevice = {
+  id: string;
+  name: string;
+  status: string;
+  active: boolean;
+  image: string;
+};
+
+export type LongevityWearables = {
+  devices: LongevityWearableDevice[];
+  last_synced_at?: string | null;
+  has_data: boolean;
+  sync_message: string;
+};
+
+export type LongevityHabit = {
+  id: string;
+  title: string;
+  subtitle: string;
+  icon: string;
+  done: boolean;
+};
+
+export type LongevityHabits = {
+  streak_days: number;
+  habits: LongevityHabit[];
+};
+
+export type LongevityHealCategory = {
+  id: string;
+  label: string;
+  image: string;
+  color: string;
+};
+
+export type LongevityMasterclass = {
+  id: string;
+  title: string;
+  description: string;
+  thumbnail: string;
+};
+
+export type LongevityCircle = {
+  id: string;
+  name: string;
+  member_count: number;
+  description: string;
+};
+
+export type LongevityDashboard = {
+  overview: LongevityOverview;
+  quick_actions: LongevityQuickAction[];
+  wearables: LongevityWearables;
+  habits: LongevityHabits;
+  heal_categories: LongevityHealCategory[];
+  masterclasses: LongevityMasterclass[];
+  circles: LongevityCircle[];
 };
 
 const AUTH_STORAGE_KEY = 'victory-auth-tokens';
@@ -251,6 +370,14 @@ export async function fetchCurrentUser() {
     is_verified: user.is_verified,
     country: user.country,
     profileImage: user.profileImage,
+    points: user.points,
+    workouts_completed: user.workouts_completed,
+    workouts_total: user.workouts_total,
+    streak_days: user.streak_days,
+    rank: user.rank,
+    next_rank: user.next_rank,
+    points_to_next_rank: user.points_to_next_rank,
+    rank_progress_fraction: user.rank_progress_fraction,
   };
   authUserLoaded = true;
   await persistAuthUser(authUser);
@@ -277,6 +404,14 @@ export async function updateCurrentUserProfile(payload: {
     is_verified: user.is_verified,
     country: user.country,
     profileImage: user.profileImage,
+    points: user.points,
+    workouts_completed: user.workouts_completed,
+    workouts_total: user.workouts_total,
+    streak_days: user.streak_days,
+    rank: user.rank,
+    next_rank: user.next_rank,
+    points_to_next_rank: user.points_to_next_rank,
+    rank_progress_fraction: user.rank_progress_fraction,
   };
   authUserLoaded = true;
   await persistAuthUser(authUser);
@@ -311,6 +446,43 @@ export async function updateCurrentUserBodyMetrics(payload: Partial<BodyMetrics>
   return apiRequest<BodyMetrics>('/me/body-metrics', {
     method: 'PATCH',
     body: payload,
+  });
+}
+
+export async function submitCoachingApplication(payload: CoachingApplicationPayload) {
+  return apiRequest('/applications', {
+    method: 'POST',
+    body: payload,
+  });
+}
+
+export async function submitSupportMessage(payload: SupportMessagePayload) {
+  return apiRequest('/support/messages', {
+    method: 'POST',
+    body: payload,
+  });
+}
+
+export async function fetchLongevityDashboard() {
+  return apiRequest<LongevityDashboard>('/longevity-os/dashboard');
+}
+
+export async function syncLongevityWearables() {
+  return apiRequest<LongevityWearables>('/longevity-os/wearables/sync', {
+    method: 'POST',
+  });
+}
+
+export async function updateLongevityHabit(habitId: string, done: boolean) {
+  return apiRequest<LongevityHabits>(`/longevity-os/habits/${encodeURIComponent(habitId)}`, {
+    method: 'PATCH',
+    body: { done },
+  });
+}
+
+export async function generateLongevityWeeklyPlan() {
+  return apiRequest<{ status: string; message: string; generated_at: string }>('/longevity-os/heal/weekly-plan', {
+    method: 'POST',
   });
 }
 
@@ -471,5 +643,13 @@ export type AuthResponse = {
     is_verified: boolean;
     country?: string;
     profileImage?: string;
+    points?: number;
+    workouts_completed?: number;
+    workouts_total?: number;
+    streak_days?: number;
+    rank?: string;
+    next_rank?: string;
+    points_to_next_rank?: number;
+    rank_progress_fraction?: number;
   };
 };

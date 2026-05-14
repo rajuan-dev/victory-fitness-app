@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -6,17 +6,57 @@ import {
   TouchableOpacity,
   Dimensions,
   Modal,
+  ActivityIndicator,
+  ScrollView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Stack, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../constants/Colors';
+import {
+  fetchLatestStrengthWorkoutPlan,
+  loadLatestVideoWorkoutPlan,
+  StrengthPlanResponse,
+  VideoPlanResponse,
+} from '../../lib/workout-plans';
 
 const { width } = Dimensions.get('window');
 
 export default function WorkoutPlanScreen() {
   const router = useRouter();
   const [isModalVisible, setIsModalVisible] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [strengthPlan, setStrengthPlan] = useState<StrengthPlanResponse | null>(null);
+  const [videoPlan, setVideoPlan] = useState<VideoPlanResponse | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadPlans = async () => {
+      try {
+        const [latestStrength, latestVideo] = await Promise.all([
+          fetchLatestStrengthWorkoutPlan().catch(() => null),
+          loadLatestVideoWorkoutPlan().catch(() => null),
+        ]);
+        if (!cancelled) {
+          setStrengthPlan(latestStrength);
+          setVideoPlan(latestVideo);
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
+    };
+
+    void loadPlans();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const hasSavedPlan = Boolean(strengthPlan || videoPlan);
 
   return (
     <SafeAreaView style={styles.container}>
@@ -33,6 +73,48 @@ export default function WorkoutPlanScreen() {
         ),
       }} />
 
+      {loading ? (
+        <View style={styles.centerContent}>
+          <ActivityIndicator size="large" color={Colors.accentBlue} />
+          <Text style={styles.loadingText}>Loading saved workout plans...</Text>
+        </View>
+      ) : hasSavedPlan ? (
+        <ScrollView contentContainerStyle={styles.savedContent} showsVerticalScrollIndicator={false}>
+          <Text style={styles.savedHeading}>Saved Workout Plans</Text>
+
+          {strengthPlan ? (
+            <TouchableOpacity
+              style={styles.savedPlanCard}
+              activeOpacity={0.85}
+              onPress={() => router.push('/workoutplan/strength-plan')}
+            >
+              <Text style={styles.savedPlanEyebrow}>CUSTOM STRENGTH PLAN</Text>
+              <Text style={styles.savedPlanTitle}>{strengthPlan.summary}</Text>
+              <Text style={styles.savedPlanMeta}>{strengthPlan.days.length} training day{strengthPlan.days.length === 1 ? '' : 's'}</Text>
+            </TouchableOpacity>
+          ) : null}
+
+          {videoPlan ? (
+            <TouchableOpacity
+              style={styles.savedPlanCard}
+              activeOpacity={0.85}
+              onPress={() => router.push('/workoutplan/video-plan')}
+            >
+              <Text style={styles.savedPlanEyebrow}>7-DAY VIDEO PLAN</Text>
+              <Text style={styles.savedPlanTitle}>{videoPlan.summary}</Text>
+              <Text style={styles.savedPlanMeta}>{videoPlan.days.filter((day) => day.workouts_count > 0).length} active day{videoPlan.days.filter((day) => day.workouts_count > 0).length === 1 ? '' : 's'}</Text>
+            </TouchableOpacity>
+          ) : null}
+
+          <TouchableOpacity
+            style={styles.createBtn}
+            activeOpacity={0.8}
+            onPress={() => setIsModalVisible(true)}
+          >
+            <Text style={styles.createBtnText}>Create Another Plan</Text>
+          </TouchableOpacity>
+        </ScrollView>
+      ) : (
       <View style={styles.centerContent}>
         <View style={styles.emptyCard}>
           <View style={styles.iconCircle}>
@@ -53,6 +135,7 @@ export default function WorkoutPlanScreen() {
           </TouchableOpacity>
         </View>
       </View>
+      )}
 
       {/* Plan Selection Modal */}
       <Modal
@@ -121,6 +204,50 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: 24,
+  },
+  savedContent: {
+    paddingHorizontal: 24,
+    paddingTop: 120,
+    paddingBottom: 60,
+    gap: 16,
+  },
+  loadingText: {
+    color: 'rgba(255,255,255,0.55)',
+    fontSize: 14,
+    fontFamily: 'Inter_400Regular',
+    marginTop: 14,
+  },
+  savedHeading: {
+    color: '#fff',
+    fontSize: 24,
+    fontFamily: 'Inter_700Bold',
+    marginBottom: 6,
+  },
+  savedPlanCard: {
+    backgroundColor: '#161616',
+    borderRadius: 24,
+    padding: 22,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+  },
+  savedPlanEyebrow: {
+    color: Colors.accentBlue,
+    fontSize: 11,
+    fontFamily: 'Inter_700Bold',
+    letterSpacing: 1.2,
+    marginBottom: 10,
+  },
+  savedPlanTitle: {
+    color: '#fff',
+    fontSize: 18,
+    fontFamily: 'Inter_700Bold',
+    lineHeight: 26,
+    marginBottom: 8,
+  },
+  savedPlanMeta: {
+    color: 'rgba(255,255,255,0.45)',
+    fontSize: 13,
+    fontFamily: 'Inter_400Regular',
   },
   emptyCard: {
     width: '100%',

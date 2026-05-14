@@ -11,13 +11,14 @@ import {
   Image,
   Alert,
   Modal,
+  RefreshControl,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import { useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { Colors } from '../../constants/Colors';
-import { apiRequest, getAuthUser } from '../../lib/api';
+import { apiRequest, getAuthUser, resolveRemoteAssetUrl } from '../../lib/api';
 
 const { width } = Dimensions.get('window');
 
@@ -147,6 +148,23 @@ function formatCommunityPostTime(value: string) {
   return createdAt.toLocaleDateString();
 }
 
+function getImageSource(url: string | null | undefined) {
+  const resolvedUrl = resolveRemoteAssetUrl(url);
+  return resolvedUrl ? { uri: resolvedUrl } : null;
+}
+
+function SkeletonBlock({
+  width = '100%',
+  height,
+  style,
+}: {
+  width?: number | `${number}%` | '100%';
+  height: number;
+  style?: any;
+}) {
+  return <View style={[styles.skeletonBlock, { width, height }, style]} />;
+}
+
 function formatChallengeTime(value: string | null) {
   if (!value) {
     return '';
@@ -209,6 +227,7 @@ export default function ChallengesScreen() {
   const [communityLoading, setCommunityLoading] = useState(false);
   const [communityPosting, setCommunityPosting] = useState(false);
   const [communityError, setCommunityError] = useState('');
+  const [screenRefreshing, setScreenRefreshing] = useState(false);
   const [communityImage, setCommunityImage] = useState<ImagePicker.ImagePickerAsset | null>(null);
   const [expandedComments, setExpandedComments] = useState<Record<string, boolean>>({});
   const [commentDrafts, setCommentDrafts] = useState<Record<string, string>>({});
@@ -252,96 +271,172 @@ export default function ChallengesScreen() {
     };
   }, []);
 
+  const loadChallengeOverview = useCallback(async (showLoading = true) => {
+    if (showLoading) {
+      setChallengeLoading(true);
+    }
+    setChallengeError('');
+    try {
+      const response = await apiRequest<ChallengeOverview>('/challenges/overview');
+      setChallengeOverview({
+        active_chats: Array.isArray(response.active_chats) ? response.active_chats : [],
+        active_challenges: Array.isArray(response.active_challenges) ? response.active_challenges : [],
+        completed_challenges: Array.isArray(response.completed_challenges) ? response.completed_challenges : [],
+        ready_to_start: Array.isArray(response.ready_to_start) ? response.ready_to_start : [],
+      });
+    } catch (error) {
+      setChallengeError(error instanceof Error ? error.message : 'Failed to load challenges');
+    } finally {
+      if (showLoading) {
+        setChallengeLoading(false);
+      }
+    }
+  }, []);
+
+  const loadCommunityPosts = useCallback(async (showLoading = true) => {
+    if (showLoading) {
+      setCommunityLoading(true);
+    }
+    setCommunityError('');
+    try {
+      const response = await apiRequest<{ posts: CommunityPost[] }>('/community/posts');
+      setCommunityPosts(Array.isArray(response.posts) ? response.posts : []);
+    } catch (error) {
+      setCommunityError(error instanceof Error ? error.message : 'Failed to load community posts');
+    } finally {
+      if (showLoading) {
+        setCommunityLoading(false);
+      }
+    }
+  }, []);
+
   useEffect(() => {
     if (activeTab !== 'CHALLENGES') {
       return;
     }
-
-    let isMounted = true;
-
-    const loadChallengeOverview = async () => {
-      setChallengeLoading(true);
-      setChallengeError('');
-      try {
-        const response = await apiRequest<ChallengeOverview>('/challenges/overview');
-        if (isMounted) {
-          setChallengeOverview({
-            active_chats: Array.isArray(response.active_chats) ? response.active_chats : [],
-            active_challenges: Array.isArray(response.active_challenges) ? response.active_challenges : [],
-            completed_challenges: Array.isArray(response.completed_challenges) ? response.completed_challenges : [],
-            ready_to_start: Array.isArray(response.ready_to_start) ? response.ready_to_start : [],
-          });
-        }
-      } catch (error) {
-        if (isMounted) {
-          setChallengeError(error instanceof Error ? error.message : 'Failed to load challenges');
-        }
-      } finally {
-        if (isMounted) {
-          setChallengeLoading(false);
-        }
-      }
-    };
-
-    loadChallengeOverview();
-
-    return () => {
-      isMounted = false;
-    };
-  }, [activeTab]);
+    void loadChallengeOverview(true);
+  }, [activeTab, loadChallengeOverview]);
 
   useFocusEffect(
     useCallback(() => {
       if (activeTab === 'CHALLENGES') {
-        void (async () => {
-          try {
-            const response = await apiRequest<ChallengeOverview>('/challenges/overview');
-            setChallengeOverview({
-              active_chats: Array.isArray(response.active_chats) ? response.active_chats : [],
-              active_challenges: Array.isArray(response.active_challenges) ? response.active_challenges : [],
-              completed_challenges: Array.isArray(response.completed_challenges) ? response.completed_challenges : [],
-              ready_to_start: Array.isArray(response.ready_to_start) ? response.ready_to_start : [],
-            });
-          } catch {
-            return;
-          }
-        })();
+        void loadChallengeOverview(false);
       }
-    }, [activeTab])
+      if (activeTab === 'COMMUNITY') {
+        void loadCommunityPosts(false);
+      }
+    }, [activeTab, loadChallengeOverview, loadCommunityPosts])
   );
 
   useEffect(() => {
     if (activeTab !== 'COMMUNITY') {
       return;
     }
+    void loadCommunityPosts(true);
+  }, [activeTab, loadCommunityPosts]);
 
-    let isMounted = true;
-
-    const loadCommunityPosts = async () => {
-      setCommunityLoading(true);
-      setCommunityError('');
-      try {
-        const response = await apiRequest<{ posts: CommunityPost[] }>('/community/posts');
-        if (isMounted) {
-          setCommunityPosts(Array.isArray(response.posts) ? response.posts : []);
-        }
-      } catch (error) {
-        if (isMounted) {
-          setCommunityError(error instanceof Error ? error.message : 'Failed to load community posts');
-        }
-      } finally {
-        if (isMounted) {
-          setCommunityLoading(false);
-        }
+  const handleRefresh = useCallback(async () => {
+    setScreenRefreshing(true);
+    try {
+      if (activeTab === 'COMMUNITY') {
+        await loadCommunityPosts(false);
+        return;
       }
-    };
+      await loadChallengeOverview(false);
+    } finally {
+      setScreenRefreshing(false);
+    }
+  }, [activeTab, loadChallengeOverview, loadCommunityPosts]);
 
-    loadCommunityPosts();
+  const renderChallengeSkeleton = () => (
+    <>
+      <View style={styles.subSectionHeader}>
+        <SkeletonBlock width={170} height={16} />
+      </View>
+      {[0, 1].map((item) => (
+        <View key={`challenge-chat-skeleton-${item}`} style={styles.chatCard}>
+          <View style={styles.chatAvatarWrap}>
+            <SkeletonBlock width={44} height={44} style={styles.skeletonCircle} />
+          </View>
+          <View style={styles.chatContent}>
+            <SkeletonBlock width="55%" height={14} style={styles.skeletonGapSm} />
+            <SkeletonBlock width="85%" height={12} />
+          </View>
+          <View style={styles.chatRight}>
+            <SkeletonBlock width={38} height={12} />
+          </View>
+        </View>
+      ))}
 
-    return () => {
-      isMounted = false;
-    };
-  }, [activeTab]);
+      <View style={[styles.subSectionHeader, { marginTop: 24 }]}>
+        <SkeletonBlock width={180} height={16} />
+      </View>
+      {[0, 1].map((item) => (
+        <View key={`challenge-card-skeleton-${item}`} style={styles.activeCard}>
+          <View style={styles.activeCardTop}>
+            <SkeletonBlock width={12} height={12} style={styles.skeletonCircle} />
+            <SkeletonBlock width="50%" height={15} />
+            <SkeletonBlock width={56} height={22} style={styles.skeletonBadge} />
+          </View>
+          <View style={styles.activeProgressRow}>
+            <SkeletonBlock width="72%" height={8} style={styles.skeletonRounded} />
+            <SkeletonBlock width={64} height={12} />
+          </View>
+          <View style={styles.activeCardMeta}>
+            <SkeletonBlock width={80} height={12} />
+            <SkeletonBlock width={74} height={12} />
+          </View>
+        </View>
+      ))}
+
+      <View style={[styles.subSectionHeader, { marginTop: 24 }]}>
+        <SkeletonBlock width={150} height={16} />
+      </View>
+      {[0, 1].map((item) => (
+        <View key={`challenge-ready-skeleton-${item}`} style={styles.readyCard}>
+          <View style={styles.readyCardTop}>
+            <SkeletonBlock width="58%" height={16} />
+            <SkeletonBlock width={60} height={20} style={styles.skeletonBadge} />
+          </View>
+          <SkeletonBlock width="92%" height={12} style={styles.skeletonGapSm} />
+          <SkeletonBlock width="68%" height={12} style={styles.skeletonGapMd} />
+          <View style={styles.readyMeta}>
+            <SkeletonBlock width={72} height={12} />
+            <SkeletonBlock width={72} height={12} />
+            <SkeletonBlock width={72} height={12} />
+          </View>
+          <SkeletonBlock width="100%" height={44} style={styles.skeletonButton} />
+        </View>
+      ))}
+    </>
+  );
+
+  const renderCommunitySkeleton = () => (
+    <>
+      {[0, 1, 2].map((item) => (
+        <View key={`community-post-skeleton-${item}`} style={styles.postCard}>
+          <View style={styles.postHeader}>
+            <SkeletonBlock width={46} height={46} style={styles.skeletonCircle} />
+            <View style={styles.postMeta}>
+              <View style={styles.postMetaRow}>
+                <SkeletonBlock width={120} height={14} />
+                <SkeletonBlock width={56} height={12} />
+                <SkeletonBlock width={54} height={20} style={styles.skeletonBadge} />
+              </View>
+            </View>
+          </View>
+          <SkeletonBlock width="100%" height={12} style={styles.skeletonGapSm} />
+          <SkeletonBlock width="88%" height={12} style={styles.skeletonGapSm} />
+          <SkeletonBlock width="76%" height={12} style={styles.skeletonGapMd} />
+          <SkeletonBlock width="100%" height={180} style={styles.skeletonImage} />
+          <View style={styles.postFooter}>
+            <SkeletonBlock width={56} height={16} />
+            <SkeletonBlock width={56} height={16} />
+          </View>
+        </View>
+      ))}
+    </>
+  );
 
   const handleCommunityPost = async () => {
     const content = communityDraft.trim();
@@ -596,7 +691,20 @@ export default function ChallengesScreen() {
 
   return (
     <View style={styles.container}>
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.scrollContent}
+        refreshControl={
+          <RefreshControl
+            refreshing={screenRefreshing}
+            onRefresh={() => {
+              void handleRefresh();
+            }}
+            tintColor={Colors.primary}
+            colors={[Colors.primary]}
+          />
+        }
+      >
 
         {/* Brand Header */}
         <View style={styles.brandHeader}>
@@ -627,12 +735,7 @@ export default function ChallengesScreen() {
                 <Text style={styles.challengeStatusText}>{challengeError}</Text>
               </View>
             ) : null}
-            {challengeLoading ? (
-              <View style={styles.challengeLoadingWrap}>
-                <ActivityIndicator color={Colors.primary} />
-                <Text style={styles.challengeLoadingText}>Loading challenges...</Text>
-              </View>
-            ) : null}
+            {challengeLoading ? renderChallengeSkeleton() : null}
 
             {/* ─ Active Challenge Chats ─ */}
             {hasActiveChats ? (
@@ -938,21 +1041,15 @@ export default function ChallengesScreen() {
                 <Text style={styles.communityErrorText}>{communityError}</Text>
               </View>
             ) : null}
-
-            {communityLoading ? (
-              <View style={styles.communityLoadingWrap}>
-                <ActivityIndicator size="small" color={Colors.primary} />
-                <Text style={styles.communityLoadingText}>Loading community posts...</Text>
-              </View>
-            ) : null}
+            {communityLoading ? renderCommunitySkeleton() : null}
 
             {/* Community Posts */}
-            {communityPosts.map((post) => (
+            {!communityLoading && communityPosts.map((post) => (
               <View key={post.id} style={styles.postCard}>
                 <TouchableOpacity activeOpacity={0.92} onPress={() => setSelectedCommunityPost(post)}>
                   <View style={styles.postHeader}>
-                    {post.author_profile_image ? (
-                      <Image source={{ uri: post.author_profile_image }} style={styles.postAvatarImage} />
+                    {getImageSource(post.author_profile_image) ? (
+                      <Image source={getImageSource(post.author_profile_image)!} style={styles.postAvatarImage} />
                     ) : (
                       <View style={styles.postAvatar}>
                         <Text style={styles.postAvatarText}>{(post.author_name || 'U')[0]}</Text>
@@ -970,8 +1067,8 @@ export default function ChallengesScreen() {
                   </View>
 
                   <Text style={styles.postBody}>{post.content}</Text>
-                  {post.image_url ? (
-                    <Image source={{ uri: post.image_url }} style={styles.postImagePreview} />
+                  {getImageSource(post.image_url) ? (
+                    <Image source={getImageSource(post.image_url)!} style={styles.postImagePreview} />
                   ) : null}
                 </TouchableOpacity>
 
@@ -1021,8 +1118,8 @@ export default function ChallengesScreen() {
                   <View style={styles.commentsWrap}>
                     {(post.comments || []).map((comment) => (
                       <View key={comment.id} style={styles.commentRow}>
-                        {comment.author_profile_image ? (
-                          <Image source={{ uri: comment.author_profile_image }} style={styles.commentAvatarImage} />
+                        {getImageSource(comment.author_profile_image) ? (
+                          <Image source={getImageSource(comment.author_profile_image)!} style={styles.commentAvatarImage} />
                         ) : (
                           <View style={styles.commentAvatar}>
                             <Text style={styles.commentAvatarText}>{(comment.author_name || 'U')[0]}</Text>
@@ -1083,8 +1180,8 @@ export default function ChallengesScreen() {
             {selectedCommunityPost ? (
               <ScrollView showsVerticalScrollIndicator={false}>
                 <View style={styles.postHeader}>
-                  {selectedCommunityPost.author_profile_image ? (
-                    <Image source={{ uri: selectedCommunityPost.author_profile_image }} style={styles.postAvatarImage} />
+                  {getImageSource(selectedCommunityPost.author_profile_image) ? (
+                    <Image source={getImageSource(selectedCommunityPost.author_profile_image)!} style={styles.postAvatarImage} />
                   ) : (
                     <View style={styles.postAvatar}>
                       <Text style={styles.postAvatarText}>{(selectedCommunityPost.author_name || 'U')[0]}</Text>
@@ -1103,8 +1200,8 @@ export default function ChallengesScreen() {
 
                 <Text style={styles.postModalBody}>{selectedCommunityPost.content}</Text>
 
-                {selectedCommunityPost.image_url ? (
-                  <Image source={{ uri: selectedCommunityPost.image_url }} style={styles.postModalImage} />
+                {getImageSource(selectedCommunityPost.image_url) ? (
+                  <Image source={getImageSource(selectedCommunityPost.image_url)!} style={styles.postModalImage} />
                 ) : null}
               </ScrollView>
             ) : null}
@@ -1255,6 +1352,32 @@ const styles = StyleSheet.create({
     color: Colors.textMuted,
     fontSize: 13,
     fontFamily: 'Inter_400Regular',
+  },
+  skeletonBlock: {
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderRadius: 10,
+  },
+  skeletonCircle: {
+    borderRadius: 999,
+  },
+  skeletonRounded: {
+    borderRadius: 999,
+  },
+  skeletonBadge: {
+    borderRadius: 8,
+  },
+  skeletonGapSm: {
+    marginBottom: 8,
+  },
+  skeletonGapMd: {
+    marginBottom: 14,
+  },
+  skeletonButton: {
+    borderRadius: 12,
+  },
+  skeletonImage: {
+    borderRadius: 16,
+    marginBottom: 12,
   },
   challengeEmptyCard: {
     backgroundColor: 'rgba(255,255,255,0.03)',

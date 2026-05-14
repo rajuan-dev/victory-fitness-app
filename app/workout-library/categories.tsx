@@ -15,6 +15,13 @@ import { Colors } from '../../constants/Colors';
 import { formatAppError } from '../../lib/error';
 import { fetchWorkoutLibrary, WorkoutLibraryCategory } from '../../lib/workouts';
 
+const FALLBACK_WORKOUT_IMAGE = 'https://images.unsplash.com/photo-1517836357463-d25dfeac3438?w=600&q=80';
+
+function safeImageUri(value: string | null | undefined) {
+  const normalized = String(value || '').trim();
+  return normalized || FALLBACK_WORKOUT_IMAGE;
+}
+
 function pairCategories(categories: WorkoutLibraryCategory[]) {
   const rows: WorkoutLibraryCategory[][] = [];
   for (let index = 0; index < categories.length; index += 2) {
@@ -112,7 +119,7 @@ export default function WorkoutCategoriesScreen() {
                   activeOpacity={0.85}
                   onPress={() => openCategory(category)}
                 >
-                  <Image source={{ uri: category.image }} style={styles.categoryImage} />
+                  <Image source={{ uri: safeImageUri(category.image) }} style={styles.categoryImage} />
                   <View style={styles.categoryOverlay} />
                   <View style={styles.categoryContent}>
                     <Text style={styles.categoryName}>{category.name}</Text>

@@ -16,6 +16,7 @@ import { Stack, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../constants/Colors';
 import VictoryHeader from '../../components/VictoryHeader';
+import { createVideoWorkoutPlan } from '../../lib/workout-plans';
 
 const { width, height } = Dimensions.get('window');
 
@@ -80,12 +81,25 @@ export default function WorkoutVideoWizard() {
     if (step > 1) setStep(step - 1);
   };
 
-  const generatePlan = () => {
+  const generatePlan = async () => {
     setLoading(true);
-    setTimeout(() => {
+    try {
+      await createVideoWorkoutPlan({
+        goal: formData.goal,
+        level: formData.level,
+        days: formData.days,
+        duration: formData.duration,
+        time: formData.time,
+        notes: formData.notes,
+        countryCode: formData.countryCode,
+        phone: formData.phone,
+        equipment: formData.equipment,
+      });
       setLoading(false);
       router.replace('/workoutplan/video-plan');
-    }, 2500);
+    } catch {
+      setLoading(false);
+    }
   };
 
   const updateData = (key: string, value: any) => {

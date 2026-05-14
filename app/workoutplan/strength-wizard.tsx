@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -10,12 +10,15 @@ import {
   ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
+  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Stack, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../constants/Colors';
 import VictoryHeader from '../../components/VictoryHeader';
+import { fetchCurrentUser, fetchCurrentUserBodyMetrics } from '../../lib/api';
+import { createStrengthWorkoutPlan } from '../../lib/workout-plans';
 
 const { width } = Dimensions.get('window');
 
@@ -66,6 +69,47 @@ export default function StrengthWizard() {
   });
   const [loading, setLoading] = useState(false);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    const preloadProfileData = async () => {
+      try {
+        const [user, metrics] = await Promise.all([
+          fetchCurrentUser().catch(() => null),
+          fetchCurrentUserBodyMetrics().catch(() => null),
+        ]);
+
+        if (cancelled) {
+          return;
+        }
+
+        setFormData((current: any) => ({
+          ...current,
+          age: current.age || metrics?.age || '',
+          height: current.height || metrics?.height || '',
+          weight: current.weight || metrics?.weight || '',
+          gender: current.gender || metrics?.gender || '',
+          country: current.country || user?.country || '',
+        }));
+      } catch {
+        return;
+      }
+    };
+
+    void preloadProfileData();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const resolveGoalLabel = (goalId: string | undefined) => GOALS.find((item) => item.id === goalId)?.title ?? '';
+  const resolveSplitLabel = (splitId: string | undefined) => SPLITS.find((item) => item.id === splitId)?.title ?? '';
+  const resolveEquipmentLabels = (equipmentIds: string[] | undefined) =>
+    (equipmentIds ?? [])
+      .map((id) => EQUIPMENT.find((item) => item.id === id)?.label ?? '')
+      .filter(Boolean);
+
   const nextStep = () => {
     if (step < TOTAL_STEPS) setStep(step + 1);
     else generatePlan();
@@ -75,12 +119,30 @@ export default function StrengthWizard() {
     if (step > 1) setStep(step - 1);
   };
 
-  const generatePlan = () => {
+  const generatePlan = async () => {
     setLoading(true);
-    setTimeout(() => {
+    try {
+      await createStrengthWorkoutPlan({
+        goal: resolveGoalLabel(formData.goal),
+        level: formData.level,
+        split: resolveSplitLabel(formData.split),
+        height: formData.height,
+        gender: formData.gender,
+        bench: formData.bench,
+        squat: formData.squat,
+        deadlift: formData.deadlift,
+        equipment: resolveEquipmentLabels(formData.equipment),
+        frequency: formData.frequency,
+        days: formData.days,
+        age: formData.age,
+        weight: formData.weight,
+      });
       setLoading(false);
       router.replace('/workoutplan/strength-plan');
-    }, 3000);
+    } catch {
+      setLoading(false);
+      Alert.alert('Generation failed', 'Unable to create your custom strength plan right now.');
+    }
   };
 
   const updateData = (key: string, value: any) => {

@@ -8,14 +8,20 @@ import {
   TextInput,
   KeyboardAvoidingView,
   Platform,
+  Alert,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../constants/Colors';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { fetchCurrentUser, submitCoachingApplication } from '../../lib/api';
 
 export default function ApplicationScreen() {
   const router = useRouter();
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
+  const [email, setEmail] = useState('');
+  const [phoneNumber, setPhoneNumber] = useState('');
 
   // Form State
   const [goal, setGoal] = useState<string | null>(null);
@@ -24,6 +30,81 @@ export default function ApplicationScreen() {
   const [commitment, setCommitment] = useState<string | null>(null);
   const [injury, setInjury] = useState<string | null>(null);
   const [agreement, setAgreement] = useState<boolean>(false);
+  const [additionalNotes, setAdditionalNotes] = useState('');
+  const [loadingProfile, setLoadingProfile] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+
+  React.useEffect(() => {
+    let cancelled = false;
+
+    const loadProfile = async () => {
+      setLoadingProfile(true);
+      try {
+        const me = await fetchCurrentUser();
+        if (cancelled) {
+          return;
+        }
+        const nameParts = String(me.name || '').trim().split(/\s+/).filter(Boolean);
+        setFirstName(nameParts[0] || '');
+        setLastName(nameParts.slice(1).join(' '));
+        setEmail(me.email || '');
+      } catch {
+        return;
+      } finally {
+        if (!cancelled) {
+          setLoadingProfile(false);
+        }
+      }
+    };
+
+    loadProfile();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const handleSubmit = async () => {
+    if (submitting) {
+      return;
+    }
+    if (!firstName.trim() || !lastName.trim() || !email.trim()) {
+      Alert.alert('Missing details', 'Please complete your name and email before submitting.');
+      return;
+    }
+    if (!goal || !obstacle || !investment || !commitment || !injury) {
+      Alert.alert('Incomplete application', 'Please answer all application questions.');
+      return;
+    }
+    if (!agreement) {
+      Alert.alert('Agreement required', 'Please confirm the agreement before submitting.');
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      await submitCoachingApplication({
+        first_name: firstName.trim(),
+        last_name: lastName.trim(),
+        email: email.trim(),
+        phone_number: phoneNumber.trim(),
+        goal,
+        obstacle,
+        investment,
+        commitment,
+        injury,
+        additional_notes: additionalNotes.trim(),
+        agreement_accepted: true,
+      });
+      Alert.alert('Application sent', 'Your application has been submitted successfully.');
+      router.back();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unable to submit your application right now.';
+      Alert.alert('Submission failed', message);
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   const RadioOption = ({ label, selected, onSelect }: { label: string; selected: boolean; onSelect: () => void }) => (
     <TouchableOpacity
@@ -158,17 +239,40 @@ export default function ApplicationScreen() {
               <View style={styles.formRow}>
                 <View style={[styles.inputGroup, { flex: 1, marginRight: 8 }]}>
                   <Text style={styles.inputLabel}>First Name</Text>
-                  <TextInput style={styles.textInput} placeholder="Jane" placeholderTextColor="#9CA3AF" />
+                  <TextInput
+                    style={styles.textInput}
+                    placeholder="Jane"
+                    placeholderTextColor="#9CA3AF"
+                    value={firstName}
+                    onChangeText={setFirstName}
+                    editable={!submitting && !loadingProfile}
+                  />
                 </View>
                 <View style={[styles.inputGroup, { flex: 1, marginLeft: 8 }]}>
                   <Text style={styles.inputLabel}>Last Name</Text>
-                  <TextInput style={styles.textInput} placeholder="Doe" placeholderTextColor="#9CA3AF" />
+                  <TextInput
+                    style={styles.textInput}
+                    placeholder="Doe"
+                    placeholderTextColor="#9CA3AF"
+                    value={lastName}
+                    onChangeText={setLastName}
+                    editable={!submitting && !loadingProfile}
+                  />
                 </View>
               </View>
 
               <View style={styles.inputGroup}>
                 <Text style={styles.inputLabel}>Email</Text>
-                <TextInput style={styles.textInput} placeholder="jane@example.com" placeholderTextColor="#9CA3AF" keyboardType="email-address" autoCapitalize="none" />
+                <TextInput
+                  style={styles.textInput}
+                  placeholder="jane@example.com"
+                  placeholderTextColor="#9CA3AF"
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                  value={email}
+                  onChangeText={setEmail}
+                  editable={!submitting && !loadingProfile}
+                />
               </View>
 
               <View style={styles.inputGroup}>
@@ -177,7 +281,15 @@ export default function ApplicationScreen() {
                   <View style={styles.phonePrefix}>
                     <Text>🇩🇪</Text>
                   </View>
-                  <TextInput style={[styles.textInput, { flex: 1, borderLeftWidth: 0, borderTopLeftRadius: 0, borderBottomLeftRadius: 0 }]} placeholder="+49 123 4567890" placeholderTextColor="#9CA3AF" keyboardType="phone-pad" />
+                  <TextInput
+                    style={[styles.textInput, { flex: 1, borderLeftWidth: 0, borderTopLeftRadius: 0, borderBottomLeftRadius: 0 }]}
+                    placeholder="+49 123 4567890"
+                    placeholderTextColor="#9CA3AF"
+                    keyboardType="phone-pad"
+                    value={phoneNumber}
+                    onChangeText={setPhoneNumber}
+                    editable={!submitting}
+                  />
                 </View>
               </View>
 
@@ -236,6 +348,9 @@ export default function ApplicationScreen() {
                   placeholder="Optional... Let me know anything else that may help"
                   placeholderTextColor="#9CA3AF"
                   multiline
+                  value={additionalNotes}
+                  onChangeText={setAdditionalNotes}
+                  editable={!submitting}
                 />
               </View>
 
@@ -248,7 +363,7 @@ export default function ApplicationScreen() {
                 </Text>
               </TouchableOpacity>
 
-              <TouchableOpacity style={styles.submitBtn}>
+              <TouchableOpacity style={[styles.submitBtn, submitting && styles.submitBtnDisabled]} onPress={handleSubmit} disabled={submitting}>
                 <Text style={styles.submitBtnText}>Submit Application →</Text>
               </TouchableOpacity>
 
@@ -639,6 +754,9 @@ const styles = StyleSheet.create({
     paddingVertical: 18,
     borderRadius: 8,
     alignItems: 'center',
+  },
+  submitBtnDisabled: {
+    opacity: 0.7,
   },
   submitBtnText: {
     color: '#000',

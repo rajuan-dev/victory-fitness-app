@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -6,57 +6,57 @@ import {
   ScrollView,
   TouchableOpacity,
   Dimensions,
+  ActivityIndicator,
   } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Stack, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../constants/Colors';
 import VictoryHeader from '../../components/VictoryHeader';
-
-const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-
-const SAMPLE_EXERCISES = [
-  {
-    id: '1',
-    name: 'Barbell Back Squat',
-    sets: 4,
-    reps: '6-8',
-    rest: '180s',
-    weight: '80kg',
-    type: 'Compound',
-  },
-  {
-    id: '2',
-    name: 'Romanian Deadlift',
-    sets: 3,
-    reps: '10-12',
-    rest: '120s',
-    weight: '60kg',
-    type: 'Compound',
-  },
-  {
-    id: '3',
-    name: 'Leg Press',
-    sets: 3,
-    reps: '12-15',
-    rest: '90s',
-    weight: '120kg',
-    type: 'Accessory',
-  },
-  {
-    id: '4',
-    name: 'Leg Extensions',
-    sets: 3,
-    reps: '15',
-    rest: '60s',
-    weight: '40kg',
-    type: 'Isolation',
-  },
-];
+import { fetchLatestStrengthWorkoutPlan, getLatestStrengthWorkoutPlan, loadLatestStrengthWorkoutPlan, StrengthPlanResponse } from '../../lib/workout-plans';
 
 export default function StrengthPlanResult() {
   const router = useRouter();
-  const [selectedDay, setSelectedDay] = useState('Mon');
+  const [plan, setPlan] = useState<StrengthPlanResponse | null>(getLatestStrengthWorkoutPlan());
+  const [loading, setLoading] = useState(!plan);
+  const dayLabels = useMemo(() => (plan?.days?.length ? plan.days.map((day) => day.day) : ['Mon']), [plan]);
+  const [selectedDay, setSelectedDay] = useState(dayLabels[0] ?? 'Mon');
+  const selectedPlanDay = plan?.days?.find((day) => day.day === selectedDay) ?? plan?.days?.[0] ?? null;
+
+  useEffect(() => {
+    let cancelled = false;
+    const loadPlan = async () => {
+      try {
+        const serverPlan = await fetchLatestStrengthWorkoutPlan();
+        if (!cancelled) {
+          setPlan(serverPlan);
+          setLoading(false);
+        }
+      } catch {
+        const storedPlan = await loadLatestStrengthWorkoutPlan();
+        if (!cancelled) {
+          setPlan(storedPlan);
+          setLoading(false);
+        }
+      }
+    };
+
+    if (!plan) {
+      void loadPlan();
+    } else {
+      setLoading(false);
+    }
+
+    return () => {
+      cancelled = true;
+    };
+  }, [plan]);
+
+  useEffect(() => {
+    if (dayLabels.length > 0 && !dayLabels.includes(selectedDay)) {
+      setSelectedDay(dayLabels[0]);
+    }
+  }, [dayLabels, selectedDay]);
 
   return (
     <SafeAreaView style={styles.container}>
@@ -72,18 +72,33 @@ export default function StrengthPlanResult() {
           </TouchableOpacity>
         ),
       }} />
-
+      {loading ? (
+        <View style={styles.loadingState}>
+          <ActivityIndicator size="large" color={Colors.accentBlue} />
+          <Text style={styles.loadingStateText}>Loading your custom strength plan...</Text>
+        </View>
+      ) : !plan || !selectedPlanDay ? (
+        <View style={styles.emptyState}>
+          <Text style={styles.emptyStateTitle}>No custom strength plan yet</Text>
+          <Text style={styles.emptyStateText}>Create a plan first from the wizard to see it here.</Text>
+          <TouchableOpacity style={styles.emptyStateButton} onPress={() => router.replace('/workoutplan/strength-wizard')}>
+            <Text style={styles.emptyStateButtonText}>Create Plan</Text>
+          </TouchableOpacity>
+        </View>
+      ) : (
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         {/* Header Section */}
         <View style={styles.topSection}>
-          <Text style={styles.welcomeText}>Your Strength Roadmap</Text>
-          <Text style={styles.dateText}>Day {DAYS.indexOf(selectedDay) + 1}: Lower Body Power</Text>
+          <Text style={styles.welcomeText}>{plan?.summary ?? 'Your Strength Roadmap'}</Text>
+          <Text style={styles.dateText}>
+            {selectedPlanDay ? `Day ${dayLabels.indexOf(selectedPlanDay.day) + 1}: ${selectedPlanDay.title}` : 'No generated plan'}
+          </Text>
         </View>
 
         {/* Day Selector */}
         <View style={styles.daySelectorContainer}>
-          <View style={styles.daySelector}>
-            {DAYS.map((day) => {
+            <View style={styles.daySelector}>
+            {dayLabels.map((day) => {
               const isActive = selectedDay === day;
               return (
                 <TouchableOpacity
@@ -103,24 +118,24 @@ export default function StrengthPlanResult() {
         <View style={styles.statsRow}>
           <View style={styles.statBox}>
             <Text style={styles.statLabel}>EST. TIME</Text>
-            <Text style={styles.statValue}>65 min</Text>
+            <Text style={styles.statValue}>{selectedPlanDay?.est_time ?? '-'}</Text>
           </View>
           <View style={styles.statDivider} />
           <View style={styles.statBox}>
             <Text style={styles.statLabel}>VOLUME</Text>
-            <Text style={styles.statValue}>8,400 kg</Text>
+            <Text style={styles.statValue}>{selectedPlanDay?.volume ?? '-'}</Text>
           </View>
           <View style={styles.statDivider} />
           <View style={styles.statBox}>
             <Text style={styles.statLabel}>INTENSITY</Text>
-            <Text style={styles.statValue}>RPE 8.5</Text>
+            <Text style={styles.statValue}>{selectedPlanDay?.intensity ?? '-'}</Text>
           </View>
         </View>
 
         {/* Exercise List */}
         <Text style={styles.sectionHeader}>TODAY'S EXERCISES</Text>
         <View style={styles.exerciseList}>
-          {SAMPLE_EXERCISES.map((ex) => (
+          {(selectedPlanDay?.exercises ?? []).map((ex) => (
             <View key={ex.id} style={styles.exerciseCard}>
               <View style={styles.exerciseHeader}>
                 <View>
@@ -154,6 +169,7 @@ export default function StrengthPlanResult() {
           ))}
         </View>
       </ScrollView>
+      )}
     </SafeAreaView>
   );
 }
@@ -162,6 +178,51 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#0F0F0F',
+  },
+  loadingState: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 14,
+    paddingHorizontal: 24,
+  },
+  loadingStateText: {
+    color: 'rgba(255,255,255,0.6)',
+    fontSize: 15,
+    fontFamily: 'Inter_600SemiBold',
+    textAlign: 'center',
+  },
+  emptyState: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 24,
+  },
+  emptyStateTitle: {
+    color: '#fff',
+    fontSize: 22,
+    fontFamily: 'Inter_700Bold',
+    marginBottom: 10,
+    textAlign: 'center',
+  },
+  emptyStateText: {
+    color: 'rgba(255,255,255,0.45)',
+    fontSize: 14,
+    lineHeight: 22,
+    fontFamily: 'Inter_400Regular',
+    textAlign: 'center',
+    marginBottom: 24,
+  },
+  emptyStateButton: {
+    backgroundColor: Colors.accentBlue,
+    borderRadius: 16,
+    paddingHorizontal: 22,
+    paddingVertical: 14,
+  },
+  emptyStateButtonText: {
+    color: '#000',
+    fontSize: 15,
+    fontFamily: 'Inter_700Bold',
   },
   scrollContent: {
     paddingTop: 110,

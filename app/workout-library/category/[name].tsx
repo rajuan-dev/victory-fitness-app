@@ -15,6 +15,13 @@ import { Colors } from '../../../constants/Colors';
 import { formatAppError } from '../../../lib/error';
 import { fetchWorkoutLibrary, WorkoutLibraryItem } from '../../../lib/workouts';
 
+const FALLBACK_WORKOUT_IMAGE = 'https://images.unsplash.com/photo-1517836357463-d25dfeac3438?w=600&q=80';
+
+function safeImageUri(value: string | null | undefined) {
+  const normalized = String(value || '').trim();
+  return normalized || FALLBACK_WORKOUT_IMAGE;
+}
+
 export default function WorkoutCategoryScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<{ name?: string }>();
@@ -127,7 +134,7 @@ export default function WorkoutCategoryScreen() {
               activeOpacity={0.88}
               onPress={() => openWorkout(workout)}
             >
-              <Image source={{ uri: workout.thumbnail }} style={styles.workoutImage} />
+              <Image source={{ uri: safeImageUri(workout.thumbnail) }} style={styles.workoutImage} />
               <View style={styles.workoutOverlay} />
               <View style={styles.workoutContent}>
                 <View style={styles.playBadge}>
@@ -137,9 +144,7 @@ export default function WorkoutCategoryScreen() {
                 <Text style={styles.workoutTitle} numberOfLines={2}>
                   {workout.title}
                 </Text>
-                <Text style={styles.workoutMeta}>
-                  {workout.tag} | Vimeo {workout.vimeoId}
-                </Text>
+                <Text style={styles.workoutMeta}>{workout.tag} | Video ready</Text>
               </View>
             </TouchableOpacity>
           ))}

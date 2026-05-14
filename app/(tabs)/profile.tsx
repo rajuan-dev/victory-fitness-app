@@ -10,6 +10,7 @@ import {
   Modal,
   TextInput,
   Alert,
+  RefreshControl,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
@@ -18,16 +19,33 @@ import { Colors } from '../../constants/Colors';
 import VictoryHeader from '../../components/VictoryHeader';
 import { BodyMetrics, clearAuthTokens, fetchCurrentUser, fetchCurrentUserBodyMetrics, updateCurrentUserBodyMetrics } from '../../lib/api';
 
-const pts = 105;
-const nextRankPts = 500;
-const progressFraction = pts / nextRankPts;
-
-const STATS = [
-  { label: 'Workouts', value: '12', icon: '🏋️' },
-  { label: 'Streak', value: '0d', icon: '🔥' },
-  { label: 'Points', value: '105', icon: '⚡' },
-  { label: 'Rank', value: 'Recruit', icon: '🎖️' },
-];
+function getRankIcon(rank: string) {
+  const normalized = rank.trim().toLowerCase();
+  switch (normalized) {
+    case 'bronze':
+      return '🥉';
+    case 'silver':
+      return '🥈';
+    case 'gold':
+      return '🥇';
+    case 'platinum':
+      return '💠';
+    case 'diamond':
+      return '💎';
+    case 'master':
+      return '👑';
+    case 'champion':
+      return '🏆';
+    case 'titan':
+      return '🛡️';
+    case 'legend':
+      return '🌟';
+    case 'immortal':
+      return '🔥';
+    default:
+      return '🔰';
+  }
+}
 
 const MENU_SECTIONS = [
   {
@@ -50,6 +68,35 @@ const MENU_SECTIONS = [
   }
 ];
 
+function getDynamicRankIcon(rank: string) {
+  const normalized = rank.trim().toLowerCase();
+
+  switch (normalized) {
+    case 'bronze':
+      return '\u{1F949}';
+    case 'silver':
+      return '\u{1F948}';
+    case 'gold':
+      return '\u{1F947}';
+    case 'platinum':
+      return '\u{1F4A0}';
+    case 'diamond':
+      return '\u{1F48E}';
+    case 'master':
+      return '\u{1F451}';
+    case 'champion':
+      return '\u{1F3C6}';
+    case 'titan':
+      return '\u{1F6E1}\uFE0F';
+    case 'legend':
+      return '\u{1F31F}';
+    case 'immortal':
+      return '\u{1F525}';
+    default:
+      return '\u{1F530}';
+  }
+}
+
 export default function ProfileScreen() {
   const router = useRouter();
   const [me, setMe] = React.useState<{
@@ -61,6 +108,14 @@ export default function ProfileScreen() {
     is_admin?: boolean;
     country?: string;
     profileImage?: string;
+    points?: number;
+    workouts_completed?: number;
+    workouts_total?: number;
+    streak_days?: number;
+    rank?: string;
+    next_rank?: string;
+    points_to_next_rank?: number;
+    rank_progress_fraction?: number;
   } | null>(null);
   const [loadingMe, setLoadingMe] = React.useState(true);
   const [bodyMetrics, setBodyMetrics] = React.useState<BodyMetrics>({
@@ -78,48 +133,81 @@ export default function ProfileScreen() {
     gender: '',
   });
   const [showGenderModal, setShowGenderModal] = React.useState(false);
+  const [refreshing, setRefreshing] = React.useState(false);
 
   const genderOptions = ['Male', 'Female', 'Other'];
+
+  const loadProfileData = React.useCallback(async (showLoading = true) => {
+    if (showLoading) {
+      setLoadingMe(true);
+    }
+    try {
+      const [response, metricsResponse] = await Promise.all([
+        fetchCurrentUser(),
+        fetchCurrentUserBodyMetrics(),
+      ]);
+      setMe(response);
+      setBodyMetrics(metricsResponse);
+    } catch {
+      setMe(null);
+      setBodyMetrics({ age: '', height: '', weight: '', gender: '' });
+    } finally {
+      if (showLoading) {
+        setLoadingMe(false);
+      }
+    }
+  }, []);
 
   useFocusEffect(
     React.useCallback(() => {
       let cancelled = false;
 
-      const loadMe = async () => {
-        setLoadingMe(true);
-        try {
-          const [response, metricsResponse] = await Promise.all([
-            fetchCurrentUser(),
-            fetchCurrentUserBodyMetrics(),
-          ]);
-          if (!cancelled) {
-            setMe(response);
-            setBodyMetrics(metricsResponse);
-          }
-        } catch {
-          if (!cancelled) {
-            setMe(null);
-            setBodyMetrics({ age: '', height: '', weight: '', gender: '' });
-          }
-        } finally {
-          if (!cancelled) {
-            setLoadingMe(false);
-          }
+      void (async () => {
+        if (cancelled) {
+          return;
         }
-      };
-
-      loadMe();
+        await loadProfileData(true);
+      })();
 
       return () => {
         cancelled = true;
       };
-    }, []),
+    }, [loadProfileData]),
   );
+
+  const handleRefresh = React.useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await loadProfileData(false);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [loadProfileData]);
 
   const displayName = me?.name ?? 'Loading...';
   const displayEmail = me?.email ?? 'Fetching /me data';
-  const displayRole = me?.is_admin ? 'ADMIN' : (me?.role?.toUpperCase() ?? 'MEMBER');
   const displayVerified = me?.is_verified ? 'Verified' : 'Not verified';
+  const points = me?.points ?? 0;
+  const workoutsCompleted = me?.workouts_completed ?? 0;
+  const workoutsTotal = me?.workouts_total ?? 0;
+  const streakDays = me?.streak_days ?? 0;
+  const rank = me?.rank ?? 'Noob';
+  const nextRank = me?.next_rank ?? rank;
+  const progressFraction = Math.min(Math.max(me?.rank_progress_fraction ?? 0, 0), 1);
+  const pointsToNextRank = Math.max(me?.points_to_next_rank ?? 0, 0);
+  const rankIcon = getDynamicRankIcon(rank);
+  const profileStats = [
+    { label: 'Workouts', value: workoutsTotal > 0 ? `${workoutsCompleted}/${workoutsTotal}` : String(workoutsCompleted), icon: '\u{1F3CB}\uFE0F' },
+    { label: 'Streak', value: `${streakDays}d`, icon: '\u{1F525}' },
+    { label: 'Points', value: String(points), icon: '\u26A1' },
+    { label: 'Rank', value: rank.toUpperCase(), icon: rankIcon },
+  ];
+  const stats = [
+    { label: 'Workouts', value: workoutsTotal > 0 ? `${workoutsCompleted}/${workoutsTotal}` : String(workoutsCompleted), icon: '🏋️' },
+    { label: 'Streak', value: `${streakDays}d`, icon: '🔥' },
+    { label: 'Points', value: String(points), icon: '⚡' },
+    { label: 'Rank', value: rank.toUpperCase(), icon: '🎖️' },
+  ];
 
   const openMetricsModal = () => {
     setMetricsDraft(bodyMetrics);
@@ -151,7 +239,20 @@ export default function ProfileScreen() {
 
   return (
     <View style={styles.container}>
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.scroll}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => {
+              void handleRefresh();
+            }}
+            tintColor={Colors.primary}
+            colors={[Colors.primary]}
+          />
+        }
+      >
 
         <VictoryHeader />
 
@@ -174,10 +275,10 @@ export default function ProfileScreen() {
           <Text style={styles.heroEmail}>{loadingMe ? 'Fetching /me data' : displayEmail}</Text>
           <View style={styles.heroBadgeRow}>
             <View style={styles.rankBadge}>
-              <Text style={styles.rankBadgeText}>🎖️ {loadingMe ? 'MEMBER' : displayRole}</Text>
+              <Text style={styles.rankBadgeText}>{loadingMe ? 'MEMBER' : `${rankIcon} ${rank.toUpperCase()}`}</Text>
             </View>
             <View style={styles.ptsBadge}>
-              <Text style={styles.ptsBadgeText}>⚡ {loadingMe ? '...' : pts} PTS</Text>
+              <Text style={styles.ptsBadgeText}>⚡ {loadingMe ? '...' : points} PTS</Text>
             </View>
           </View>
           <View style={styles.heroMetaRow}>
@@ -188,8 +289,10 @@ export default function ProfileScreen() {
           {/* Rank Progress */}
           <View style={styles.rankProgressWrap}>
             <View style={styles.rankProgressLabels}>
-              <Text style={styles.rankProgressLabel}>RECRUIT</Text>
-              <Text style={styles.rankProgressLabel}>{nextRankPts - pts} pts to WARRIOR</Text>
+              <Text style={styles.rankProgressLabel}>{rank.toUpperCase()}</Text>
+              <Text style={styles.rankProgressLabel}>
+                {pointsToNextRank > 0 ? `${pointsToNextRank} pts to ${nextRank.toUpperCase()}` : 'MAX RANK'}
+              </Text>
             </View>
             <View style={styles.rankBarBg}>
               <View
@@ -201,7 +304,7 @@ export default function ProfileScreen() {
 
         {/* ── Stats Grid ── */}
         <View style={styles.statsGrid}>
-          {STATS.map((s) => (
+          {profileStats.map((s) => (
             <View key={s.label} style={styles.statCell}>
               <Text style={styles.statEmoji}>{s.icon}</Text>
               <Text style={styles.statValue}>{s.value}</Text>

@@ -1,33 +1,68 @@
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Dimensions } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Dimensions, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
+import { useFocusEffect } from '@react-navigation/native';
 import { Colors } from '../../constants/Colors';
+import { apiRequest } from '../../lib/api';
 
 const { width } = Dimensions.get('window');
 
-type ChallengeCardProps = {
+type ActiveChallenge = {
+  id: string;
+  challenge_id: string;
   title: string;
-  points: string;
-  description: string;
-  participants: number;
+  type: string;
+  plan_text: string;
+  days_left: number;
+  total_days: number;
+  progress: number;
+  points: number;
+  color: string;
 };
 
-function ChallengeCard({ title, points, description, participants }: ChallengeCardProps) {
+type ChallengeOverview = {
+  active_challenges: ActiveChallenge[];
+};
+
+type HomeChallengeCard = {
+  id: string;
+  title: string;
+  points: number;
+  description: string;
+  participants: number;
+  status: string;
+  footerLabel: string;
+  route: string;
+  params?: Record<string, string>;
+  accentColor: string;
+};
+
+function ChallengeCard({
+  title,
+  points,
+  description,
+  participants,
+  status,
+  footerLabel,
+  accentColor,
+  onPress,
+}: HomeChallengeCard & { onPress: () => void }) {
   return (
-    <View style={styles.challengeCard}>
+    <TouchableOpacity style={styles.challengeCard} activeOpacity={0.9} onPress={onPress}>
       <View style={styles.challengeCardHeader}>
         <Text style={styles.challengeCardTitle}>{title}</Text>
-        <View style={styles.pointsBadge}>
+        <View style={[styles.pointsBadge, { backgroundColor: accentColor || Colors.accentPurple }]}>
           <Text style={styles.pointsText}>+{points} Pts.</Text>
         </View>
       </View>
 
       <View style={styles.activeStatusRow}>
-        <View style={styles.activeDot} />
-        <Text style={styles.activeText}>ACTIVE</Text>
+        <View style={[styles.activeDot, { backgroundColor: accentColor || Colors.accentBlue }]} />
+        <Text style={[styles.activeText, { color: accentColor || Colors.accentBlue }]}>{status}</Text>
       </View>
 
-      <Text style={styles.challengeDescription}>{description}</Text>
+      <Text style={styles.challengeDescription} numberOfLines={3}>{description}</Text>
 
       <View style={styles.challengeDivider} />
 
@@ -37,56 +72,103 @@ function ChallengeCard({ title, points, description, participants }: ChallengeCa
             <Ionicons name="people-outline" size={16} color={Colors.textMuted} />
             <Text style={styles.footerText}>{participants}</Text>
           </View>
-          <TouchableOpacity style={styles.chatAction}>
-            <Ionicons name="chatbubble-outline" size={16} color={Colors.textMuted} />
-            <Text style={styles.footerText}>Chat</Text>
-          </TouchableOpacity>
+          <View style={styles.chatAction}>
+            <Ionicons name="flash-outline" size={16} color={Colors.textMuted} />
+            <Text style={styles.footerText}>{footerLabel}</Text>
+          </View>
         </View>
-        <TouchableOpacity style={styles.cardInviteBtn}>
-          <Text style={styles.cardInviteBtnText}>Invite</Text>
-        </TouchableOpacity>
+        <View style={styles.cardInviteBtn}>
+          <Text style={styles.cardInviteBtnText}>Open</Text>
+        </View>
       </View>
-    </View>
+    </TouchableOpacity>
   );
 }
 
-const challenges = [
-  {
-    title: '3-Day Screen-Free Dinner',
-    points: '75',
-    description: 'Enjoy eating as a family without any digital screens at the table to foster connection.',
-    participants: 4,
-  },
-  {
-    title: 'Morning Ritual',
-    points: '50',
-    description: 'Set a peaceful tone for your day by completing a 10-minute meditation before 8 AM.',
-    participants: 12,
-  },
-];
-
 export default function ChallengesSection() {
+  const router = useRouter();
+  const [cards, setCards] = React.useState<HomeChallengeCard[]>([]);
+  const [loading, setLoading] = React.useState(true);
+
+  const loadChallenges = React.useCallback(async (showLoader = true) => {
+    if (showLoader) {
+      setLoading(true);
+    }
+
+    try {
+      const response = await apiRequest<ChallengeOverview>('/challenges/overview');
+      const activeChallenges = Array.isArray(response.active_challenges) ? response.active_challenges : [];
+      const activeCards: HomeChallengeCard[] = activeChallenges.slice(0, 4).map((challenge) => ({
+        id: challenge.id,
+        title: challenge.title,
+        points: challenge.points,
+        description: challenge.plan_text || `${challenge.days_left} days left in this challenge.`,
+        participants: 1,
+        status: 'ACTIVE',
+        footerLabel: `${Math.max(Math.round(challenge.progress * 100), 0)}% done`,
+        route: '/challenges/chat/[challengeId]',
+        params: { challengeId: challenge.challenge_id },
+        accentColor: challenge.color || Colors.accentBlue,
+      }));
+      setCards(activeCards);
+    } catch {
+      setCards([]);
+    } finally {
+      if (showLoader) {
+        setLoading(false);
+      }
+    }
+  }, []);
+
+  useFocusEffect(
+    React.useCallback(() => {
+      void loadChallenges(true);
+    }, [loadChallenges]),
+  );
+
   return (
     <View style={styles.section}>
       <View style={styles.sectionHeader}>
         <Text style={styles.sectionTitle}>CHALLENGES</Text>
-        <TouchableOpacity style={styles.headerInviteBtn}>
-          <Text style={styles.headerInviteBtnText}>Invite Friends</Text>
+        <TouchableOpacity style={styles.headerInviteBtn} onPress={() => router.push('/challenge')}>
+          <Text style={styles.headerInviteBtnText}>View All</Text>
         </TouchableOpacity>
       </View>
 
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.challengesScroll}
-        snapToInterval={width - 48}
-        decelerationRate="fast"
-        snapToAlignment="start"
-      >
-        {challenges.map((c, i) => (
-          <ChallengeCard key={i} {...c} />
-        ))}
-      </ScrollView>
+      {loading ? (
+        <View style={styles.loadingCard}>
+          <ActivityIndicator size="large" color={Colors.primary} />
+          <Text style={styles.loadingText}>Loading challenges...</Text>
+        </View>
+      ) : cards.length === 0 ? (
+        <View style={styles.emptyCard}>
+          <Text style={styles.emptyTitle}>No active challenges</Text>
+          <Text style={styles.emptyText}>Active challenges will appear here when you join or start them.</Text>
+        </View>
+      ) : (
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.challengesScroll}
+          snapToInterval={width - 48}
+          decelerationRate="fast"
+          snapToAlignment="start"
+        >
+          {cards.map((card) => (
+            <ChallengeCard
+              key={card.id}
+              {...card}
+              onPress={() => {
+                if (card.route === '/challenges/chat/[challengeId]' && card.params?.challengeId) {
+                  router.push({ pathname: card.route as '/challenges/chat/[challengeId]', params: card.params });
+                  return;
+                }
+                router.push('/challenge');
+              }}
+            />
+          ))}
+        </ScrollView>
+      )}
     </View>
   );
 }
@@ -133,7 +215,6 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   pointsBadge: {
-    backgroundColor: Colors.accentPurple,
     borderRadius: 20,
     paddingHorizontal: 12,
     paddingVertical: 4,
@@ -145,17 +226,12 @@ const styles = StyleSheet.create({
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: Colors.accentBlue,
     marginRight: 8,
   },
   activeText: {
-    color: Colors.accentBlue,
     fontSize: 12,
     fontWeight: '800',
     letterSpacing: 1.2,
-    textShadowColor: 'rgba(6, 182, 212, 0.4)',
-    textShadowOffset: { width: 0, height: 0 },
-    textShadowRadius: 8,
   },
   challengeDescription: {
     color: Colors.textSecondary,
@@ -188,4 +264,42 @@ const styles = StyleSheet.create({
     paddingVertical: 5,
   },
   headerInviteBtnText: { color: '#fff', fontWeight: '700', fontSize: 14 },
+  loadingCard: {
+    backgroundColor: '#1E1E2E',
+    borderRadius: 24,
+    minHeight: 180,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.05)',
+  },
+  loadingText: {
+    color: Colors.textMuted,
+    fontSize: 14,
+    fontFamily: 'Inter_500Medium',
+  },
+  emptyCard: {
+    backgroundColor: '#1E1E2E',
+    borderRadius: 24,
+    minHeight: 180,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 24,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.05)',
+  },
+  emptyTitle: {
+    color: '#fff',
+    fontSize: 18,
+    fontFamily: 'Inter_700Bold',
+    marginBottom: 8,
+  },
+  emptyText: {
+    color: Colors.textMuted,
+    fontSize: 14,
+    lineHeight: 20,
+    textAlign: 'center',
+    fontFamily: 'Inter_400Regular',
+  },
 });
