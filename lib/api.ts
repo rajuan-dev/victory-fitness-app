@@ -5,7 +5,7 @@ declare const process: {
   env?: Record<string, string | undefined>;
 };
 
-const RAW_API_URL = process.env?.EXPO_PUBLIC_API_URL ?? 'https://victory-fitness-backend.vercel.app';
+const RAW_API_URL = process.env?.EXPO_PUBLIC_API_URL ?? 'http://10.0.2.2:8000';
 
 function resolveApiUrl(url: string): string {
   if (Platform.OS !== 'android') {
@@ -68,6 +68,7 @@ let authTokensLoadPromise: Promise<void> | null = null;
 let authUser: AuthUser | null = null;
 let authUserLoaded = false;
 let authUserLoadPromise: Promise<void> | null = null;
+let authFailureHandler: (() => void) | null = null;
 
 function decodeJwtPayload(token: string): { exp?: number } | null {
   const parts = token.split('.');
@@ -227,6 +228,10 @@ export async function clearAuthTokens() {
   await persistAuthUser(null);
 }
 
+export function setAuthFailureHandler(handler: (() => void) | null) {
+  authFailureHandler = handler;
+}
+
 export async function getAuthTokens() {
   await ensureAuthTokensLoaded();
   return authTokens;
@@ -331,6 +336,22 @@ async function refreshWithSessionToken(sessionToken: string): Promise<AuthTokens
   };
 }
 
+function isInvalidSessionError(detail: string, status: number): boolean {
+  const normalized = detail.toLowerCase();
+  return (
+    normalized.includes('invalid session token') ||
+    normalized.includes('session token is invalid') ||
+    normalized.includes('session expired') ||
+    normalized.includes('invalid authentication') ||
+    (status === 401 && normalized.includes('token'))
+  );
+}
+
+async function handleInvalidSession() {
+  await clearAuthTokens();
+  authFailureHandler?.();
+}
+
 export async function getValidAuthTokens() {
   await ensureAuthTokensLoaded();
 
@@ -344,12 +365,14 @@ export async function getValidAuthTokens() {
 
   if (!authTokens.session_token || isJwtExpired(authTokens.session_token)) {
     await clearAuthTokens();
+    authFailureHandler?.();
     return null;
   }
 
   const refreshed = await refreshWithSessionToken(authTokens.session_token);
   if (!refreshed) {
     await clearAuthTokens();
+    authFailureHandler?.();
     return null;
   }
 
@@ -383,20 +406,31 @@ export async function apiRequest<T>(
   const data = await response.json().catch(() => ({}));
 
   if (response.status === 401 && retryOnUnauthorized && authTokens?.session_token) {
-    const refreshed = await apiRequest<AuthResponse>(
-      '/auth/refresh',
-      {
-        method: 'POST',
-        body: { session_token: authTokens.session_token },
-      },
-      false
-    );
-    await setAuthTokens(refreshed);
-    return apiRequest<T>(path, options, false);
+    try {
+      const refreshed = await apiRequest<AuthResponse>(
+        '/auth/refresh',
+        {
+          method: 'POST',
+          body: { session_token: authTokens.session_token },
+        },
+        false
+      );
+      await setAuthTokens(refreshed);
+      return apiRequest<T>(path, options, false);
+    } catch (refreshError) {
+      if (refreshError instanceof ApiError && isInvalidSessionError(refreshError.detail, refreshError.status)) {
+        await handleInvalidSession();
+      }
+      throw refreshError;
+    }
   }
 
   if (!response.ok) {
-    throw new ApiError(response.status, extractErrorDetail(data) || 'Request failed');
+    const detail = extractErrorDetail(data) || 'Request failed';
+    if (isInvalidSessionError(detail, response.status)) {
+      await handleInvalidSession();
+    }
+    throw new ApiError(response.status, detail);
   }
 
   return data as T;

@@ -49,6 +49,7 @@ export type NutritionPlanJobResponse = {
 };
 
 export type MealImageAnalysisResponse = {
+  analysis_id?: string | null;
   meal_name_guess: string;
   summary: string;
   estimated_calories: number;
@@ -57,10 +58,19 @@ export type MealImageAnalysisResponse = {
   estimated_fat: number;
   confidence: string;
   notes: string[];
+  file_name?: string | null;
+  created_at?: string | null;
 };
 
 export async function startNutritionPlanJob(payload: Record<string, unknown>) {
   return apiRequest<NutritionPlanJobResponse>('/ai/nutrition/plan/jobs', {
+    method: 'POST',
+    body: payload,
+  });
+}
+
+export async function createNutritionPlan(payload: Record<string, unknown>) {
+  return apiRequest<{ plan: NutritionPlanApiResponse }>('/ai/nutrition/plan', {
     method: 'POST',
     body: payload,
   });
@@ -116,4 +126,8 @@ export async function analyzeMealImage(payload: {
     method: 'POST',
     body: payload,
   });
+}
+
+export async function getMealAnalysisHistory() {
+  return apiRequest<{ analyses: MealImageAnalysisResponse[] }>('/ai/meal-analysis');
 }
