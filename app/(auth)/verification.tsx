@@ -16,6 +16,7 @@ import { AuthButton } from '../../components/AuthButton';
 import { ErrorPopupModal } from '../../components/ErrorPopupModal';
 import { Colors } from '../../constants/Colors';
 import { apiRequest, AuthResponse, setAuthTokens } from '../../lib/api';
+import { getPostAuthRoute } from '../../lib/access';
 import { formatAppError } from '../../lib/error';
 
 const { height } = Dimensions.get('window');
@@ -58,7 +59,7 @@ export default function VerificationScreen() {
         body: { email, code },
       });
       await setAuthTokens(auth);
-      router.replace('/(tabs)');
+      router.replace(getPostAuthRoute(auth.user));
     } catch (error) {
       setErrorDialog(formatAppError(error));
     } finally {

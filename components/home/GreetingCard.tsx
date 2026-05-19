@@ -30,14 +30,20 @@ export default function GreetingCard() {
         setUserName(cachedUser.name.trim());
       }
 
-      const user = await fetchCurrentUser();
-      if (!isMounted) {
-        return;
-      }
+      try {
+        const user = await fetchCurrentUser();
+        if (!isMounted) {
+          return;
+        }
 
-      const nextName = user?.name?.trim();
-      if (nextName) {
-        setUserName(nextName);
+        const nextName = user?.name?.trim();
+        if (nextName) {
+          setUserName(nextName);
+        }
+      } catch {
+        if (cachedUser?.name?.trim() && isMounted) {
+          setUserName(cachedUser.name.trim());
+        }
       }
     };
 

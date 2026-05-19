@@ -2,13 +2,16 @@ import React, { useEffect, useState } from 'react';
 import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../constants/Colors';
-import { StyleSheet, View } from 'react-native';
+import { Image, StyleSheet, View } from 'react-native';
 import { useRouter } from 'expo-router';
-import { getValidAuthTokens } from '../../lib/api';
+import { fetchCurrentUser, getValidAuthTokens } from '../../lib/api';
+import { getAllowedTabNames, isSubscriptionActive } from '../../lib/access';
 
 export default function TabsLayout() {
   const router = useRouter();
   const [checkingAuth, setCheckingAuth] = useState(true);
+  const [profileImage, setProfileImage] = useState('');
+  const [allowedTabs, setAllowedTabs] = useState<string[] | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -34,9 +37,47 @@ export default function TabsLayout() {
     };
   }, [router]);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadAccess = async () => {
+      try {
+        const authUser = await fetchCurrentUser();
+        if (cancelled) {
+          return;
+        }
+
+        setProfileImage(String(authUser?.profileImage || '').trim());
+
+        if (!isSubscriptionActive(authUser)) {
+          router.replace('/plan');
+          return;
+        }
+
+        setAllowedTabs(getAllowedTabNames(authUser));
+      } catch {
+        if (!cancelled) {
+          router.replace('/login');
+        }
+      } finally {
+        if (!cancelled) {
+          setCheckingAuth(false);
+        }
+      }
+    };
+
+    void loadAccess();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [router]);
+
   if (checkingAuth) {
     return null;
   }
+
+  const visibleTabs = new Set(allowedTabs ?? []);
 
   return (
     <Tabs
@@ -48,58 +89,72 @@ export default function TabsLayout() {
         tabBarShowLabel: false,
       }}
     >
-      <Tabs.Screen
-        name="index"
-        options={{
-          tabBarIcon: ({ color, focused }) => (
-            <View style={focused ? styles.activeTab : undefined}>
-              <Ionicons name={focused ? 'home' : 'home-outline'} size={24} color={color} />
-            </View>
-          ),
-        }}
-      />
-      <Tabs.Screen
-        name="workout"
-        options={{
-          tabBarIcon: ({ color, focused }) => (
-            <View style={focused ? styles.activeTab : undefined}>
-              <Ionicons name={focused ? 'barbell' : 'barbell-outline'} size={24} color={color} />
-            </View>
-          ),
-        }}
-      />
-      <Tabs.Screen
-        name="challenge"
-        options={{
-          tabBarIcon: ({ color, focused }) => (
-            <View style={focused ? styles.activeTab : undefined}>
-              <Ionicons name={focused ? 'trophy' : 'trophy-outline'} size={24} color={color} />
-            </View>
-          ),
-        }}
-      />
-      <Tabs.Screen
-        name="mealPlan"
-        options={{
-          tabBarIcon: ({ color, focused }) => (
-            <View style={focused ? styles.activeTab : undefined}>
-              <Ionicons name={focused ? 'restaurant' : 'restaurant-outline'} size={24} color={color} />
-            </View>
-          ),
-        }}
-      />
-      <Tabs.Screen
-        name="profile"
-        options={{
-          tabBarIcon: ({ color, focused }) => (
-            <View style={focused ? styles.activeTab : undefined}>
-              <View style={styles.profileBadge}>
-                <Ionicons name={focused ? 'person' : 'person-outline'} size={24} color={color} />
+      {visibleTabs.has('index') && (
+        <Tabs.Screen
+          name="index"
+          options={{
+            tabBarIcon: ({ color, focused }) => (
+              <View style={focused ? styles.activeTab : undefined}>
+                <Ionicons name={focused ? 'home' : 'home-outline'} size={24} color={color} />
               </View>
-            </View>
-          ),
-        }}
-      />
+            ),
+          }}
+        />
+      )}
+      {visibleTabs.has('workout') && (
+        <Tabs.Screen
+          name="workout"
+          options={{
+            tabBarIcon: ({ color, focused }) => (
+              <View style={focused ? styles.activeTab : undefined}>
+                <Ionicons name={focused ? 'barbell' : 'barbell-outline'} size={24} color={color} />
+              </View>
+            ),
+          }}
+        />
+      )}
+      {visibleTabs.has('challenge') && (
+        <Tabs.Screen
+          name="challenge"
+          options={{
+            tabBarIcon: ({ color, focused }) => (
+              <View style={focused ? styles.activeTab : undefined}>
+                <Ionicons name={focused ? 'trophy' : 'trophy-outline'} size={24} color={color} />
+              </View>
+            ),
+          }}
+        />
+      )}
+      {visibleTabs.has('mealPlan') && (
+        <Tabs.Screen
+          name="mealPlan"
+          options={{
+            tabBarIcon: ({ color, focused }) => (
+              <View style={focused ? styles.activeTab : undefined}>
+                <Ionicons name={focused ? 'restaurant' : 'restaurant-outline'} size={24} color={color} />
+              </View>
+            ),
+          }}
+        />
+      )}
+      {visibleTabs.has('profile') && (
+        <Tabs.Screen
+          name="profile"
+          options={{
+            tabBarIcon: ({ color, focused }) => (
+              <View style={focused ? styles.activeTab : undefined}>
+                <View style={styles.profileBadge}>
+                  {profileImage ? (
+                    <Image source={{ uri: profileImage }} style={styles.profileAvatar} />
+                  ) : (
+                    <Ionicons name={focused ? 'person' : 'person-outline'} size={24} color={color} />
+                  )}
+                </View>
+              </View>
+            ),
+          }}
+        />
+      )}
     </Tabs>
   );
 }
@@ -126,5 +181,10 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255,255,255,0.2)',
     justifyContent: 'center',
     alignItems: 'center',
+    overflow: 'hidden',
+  },
+  profileAvatar: {
+    width: '100%',
+    height: '100%',
   },
 });

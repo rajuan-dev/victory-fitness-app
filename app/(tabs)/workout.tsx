@@ -18,6 +18,7 @@ import { Colors } from '../../constants/Colors';
 import VictoryHeader from '../../components/VictoryHeader';
 import { fetchWorkoutLibrary, WorkoutLibraryCategory, WorkoutLibraryItem } from '../../lib/workouts';
 import { formatAppError } from '../../lib/error';
+import { useDebouncedValue } from '../../hooks/useDebouncedValue';
 import {
   clearLatestVideoWorkoutPlan,
   deleteLatestStrengthWorkoutPlan,
@@ -45,7 +46,9 @@ function pairCategories(categories: WorkoutLibraryCategory[]) {
 
 export default function WorkoutScreen() {
   const router = useRouter();
+  const hasLoadedLibraryRef = React.useRef(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const debouncedSearchQuery = useDebouncedValue(searchQuery, 350);
   const [library, setLibrary] = useState<{
     featuredWorkout: WorkoutLibraryItem | null;
     workouts: WorkoutLibraryItem[];
@@ -57,6 +60,7 @@ export default function WorkoutScreen() {
   });
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [searching, setSearching] = useState(false);
   const [error, setError] = useState('');
   const [strengthPlan, setStrengthPlan] = useState<StrengthPlanResponse | null>(null);
   const [videoPlan, setVideoPlan] = useState<VideoPlanResponse | null>(null);
@@ -65,14 +69,21 @@ export default function WorkoutScreen() {
     let isMounted = true;
 
     const loadLibrary = async () => {
-      setLoading(true);
+      const shouldShowFullScreenLoader = !hasLoadedLibraryRef.current;
+
+      if (shouldShowFullScreenLoader) {
+        setLoading(true);
+      } else {
+        setSearching(true);
+      }
       setError('');
       try {
-        const response = await fetchWorkoutLibrary(searchQuery);
+        const response = await fetchWorkoutLibrary(debouncedSearchQuery);
         if (!isMounted) {
           return;
         }
         setLibrary(response);
+        hasLoadedLibraryRef.current = true;
       } catch (loadError) {
         if (!isMounted) {
           return;
@@ -86,6 +97,7 @@ export default function WorkoutScreen() {
       } finally {
         if (isMounted) {
           setLoading(false);
+          setSearching(false);
         }
       }
     };
@@ -95,7 +107,7 @@ export default function WorkoutScreen() {
     return () => {
       isMounted = false;
     };
-  }, [searchQuery]);
+  }, [debouncedSearchQuery]);
 
   useFocusEffect(
     React.useCallback(() => {
@@ -125,7 +137,7 @@ export default function WorkoutScreen() {
     setRefreshing(true);
     setError('');
     try {
-      const response = await fetchWorkoutLibrary(searchQuery);
+      const response = await fetchWorkoutLibrary(debouncedSearchQuery);
       setLibrary(response);
     } catch (refreshError) {
       setError(formatAppError(refreshError).message);
@@ -220,8 +232,8 @@ export default function WorkoutScreen() {
             onChangeText={setSearchQuery}
           />
           <View style={styles.searchActions}>
-            <TouchableOpacity style={styles.searchActionBtn} onPress={handleRefresh} disabled={refreshing}>
-              {refreshing ? (
+            <TouchableOpacity style={styles.searchActionBtn} onPress={handleRefresh} disabled={refreshing || searching}>
+              {refreshing || searching ? (
                 <ActivityIndicator size="small" color={Colors.textMuted} />
               ) : (
                 <Ionicons name="refresh-outline" size={20} color={Colors.textMuted} />
@@ -230,6 +242,7 @@ export default function WorkoutScreen() {
             {searchQuery.length > 0 && (
               <TouchableOpacity
                 style={styles.searchActionBtn}
+                disabled={searching}
                 onPress={() => setSearchQuery('')}
               >
                 <Ionicons name="close" size={20} color={Colors.textMuted} />
@@ -293,46 +306,17 @@ export default function WorkoutScreen() {
               ))}
             </ScrollView>
 
+            {!searching && newAndPopular.length === 0 && !featuredWorkout ? (
+              <View style={styles.inlineEmptyState}>
+                <Text style={styles.inlineEmptyStateText}>No workouts match your current search.</Text>
+              </View>
+            ) : null}
+
             <Pressable onPress={openAllCategories} style={styles.sectionHeader}>
               <Text style={[styles.sectionTitle, { marginTop: 28 }]}>CATEGORIES</Text>
               <Ionicons name="chevron-forward" size={18} color={Colors.textMuted} />
             </Pressable>
             <View style={styles.categoryGrid}>
-              {strengthPlan ? (
-                <TouchableOpacity
-                  style={styles.savedPlanCard}
-                  activeOpacity={0.88}
-                  onPress={() => router.push('/workoutplan/strength-plan')}
-                >
-                  <View style={styles.savedPlanTopRow}>
-                    <Text style={styles.savedPlanEyebrow}>CUSTOM STRENGTH PLAN</Text>
-                    <TouchableOpacity style={styles.savedPlanRemoveBtn} onPress={handleRemoveStrengthPlan}>
-                      <Ionicons name="trash-outline" size={16} color="#FCA5A5" />
-                    </TouchableOpacity>
-                  </View>
-                  <Text style={styles.savedPlanTitle} numberOfLines={2}>{strengthPlan.summary}</Text>
-                  <Text style={styles.savedPlanMeta}>{strengthPlan.days.length} training day{strengthPlan.days.length === 1 ? '' : 's'}</Text>
-                </TouchableOpacity>
-              ) : null}
-              {videoPlan ? (
-                <TouchableOpacity
-                  style={styles.savedPlanCard}
-                  activeOpacity={0.88}
-                  onPress={() => router.push('/workoutplan/video-plan')}
-                >
-                  <View style={styles.savedPlanTopRow}>
-                    <Text style={styles.savedPlanEyebrow}>7-DAY VIDEO PLAN</Text>
-                    <TouchableOpacity style={styles.savedPlanRemoveBtn} onPress={handleRemoveVideoPlan}>
-                      <Ionicons name="trash-outline" size={16} color="#FCA5A5" />
-                    </TouchableOpacity>
-                  </View>
-                  <Text style={styles.savedPlanTitle} numberOfLines={2}>{videoPlan.summary}</Text>
-                  <Text style={styles.savedPlanMeta}>
-                    {videoPlan.days.filter((day) => day.workouts_count > 0).length} active day
-                    {videoPlan.days.filter((day) => day.workouts_count > 0).length === 1 ? '' : 's'}
-                  </Text>
-                </TouchableOpacity>
-              ) : null}
               {categoryRows.map((row, rowIndex) => (
                 <View key={rowIndex} style={styles.categoryRow}>
                   {row.map((category) => (
@@ -354,6 +338,49 @@ export default function WorkoutScreen() {
                 </View>
               ))}
             </View>
+
+            {strengthPlan || videoPlan ? (
+              <View style={styles.savedPlansSection}>
+                <Text style={styles.sectionTitle}>YOUR SAVED PLAN</Text>
+                {strengthPlan ? (
+                  <TouchableOpacity
+                    style={styles.savedPlanCard}
+                    activeOpacity={0.88}
+                    onPress={() => router.push('/workoutplan/strength-plan')}
+                  >
+                    <View style={styles.savedPlanTopRow}>
+                      <Text style={styles.savedPlanEyebrow}>CUSTOM STRENGTH PLAN</Text>
+                      <TouchableOpacity style={styles.savedPlanRemoveBtn} onPress={handleRemoveStrengthPlan}>
+                        <Ionicons name="trash-outline" size={16} color="#FCA5A5" />
+                      </TouchableOpacity>
+                    </View>
+                    <Text style={styles.savedPlanTitle} numberOfLines={2}>{strengthPlan.summary}</Text>
+                    <Text style={styles.savedPlanMeta}>
+                      {strengthPlan.days.length} training day{strengthPlan.days.length === 1 ? '' : 's'}
+                    </Text>
+                  </TouchableOpacity>
+                ) : null}
+                {videoPlan ? (
+                  <TouchableOpacity
+                    style={styles.savedPlanCard}
+                    activeOpacity={0.88}
+                    onPress={() => router.push('/workoutplan/video-plan')}
+                  >
+                    <View style={styles.savedPlanTopRow}>
+                      <Text style={styles.savedPlanEyebrow}>7-DAY VIDEO PLAN</Text>
+                      <TouchableOpacity style={styles.savedPlanRemoveBtn} onPress={handleRemoveVideoPlan}>
+                        <Ionicons name="trash-outline" size={16} color="#FCA5A5" />
+                      </TouchableOpacity>
+                    </View>
+                    <Text style={styles.savedPlanTitle} numberOfLines={2}>{videoPlan.summary}</Text>
+                    <Text style={styles.savedPlanMeta}>
+                      {videoPlan.days.filter((day) => day.workouts_count > 0).length} active day
+                      {videoPlan.days.filter((day) => day.workouts_count > 0).length === 1 ? '' : 's'}
+                    </Text>
+                  </TouchableOpacity>
+                ) : null}
+              </View>
+            ) : null}
           </>
         )}
       </ScrollView>
@@ -378,6 +405,11 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter_700Bold',
     paddingHorizontal: 16,
     marginBottom: 16,
+  },
+  savedPlansSection: {
+    paddingHorizontal: 16,
+    marginTop: 28,
+    gap: 12,
   },
   savedPlanCard: {
     backgroundColor: '#161616',
@@ -643,5 +675,21 @@ const styles = StyleSheet.create({
     color: 'rgba(255,255,255,0.78)',
     fontSize: 12,
     fontFamily: 'Inter_500Medium',
+  },
+  inlineEmptyState: {
+    marginHorizontal: 16,
+    marginTop: 18,
+    borderRadius: 16,
+    paddingHorizontal: 18,
+    paddingVertical: 16,
+    backgroundColor: '#10182B',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+  },
+  inlineEmptyStateText: {
+    color: Colors.textMuted,
+    fontSize: 14,
+    lineHeight: 20,
+    fontFamily: 'Inter_400Regular',
   },
 });

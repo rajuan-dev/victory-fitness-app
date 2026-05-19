@@ -2,7 +2,8 @@ import React, { useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, Animated } from 'react-native';
 import { useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { clearAuthTokens, getValidAuthTokens } from '../lib/api';
+import { clearAuthTokens, fetchCurrentUser, getValidAuthTokens } from '../lib/api';
+import { getPostAuthRoute } from '../lib/access';
 
 export default function SplashScreen() {
   const router = useRouter();
@@ -34,7 +35,12 @@ export default function SplashScreen() {
       }
 
       if (tokens) {
-        router.replace('/(tabs)');
+        try {
+          const user = await fetchCurrentUser();
+          router.replace(getPostAuthRoute(user));
+        } catch {
+          router.replace('/login');
+        }
         return;
       }
 

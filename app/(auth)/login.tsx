@@ -17,7 +17,8 @@ import { AuthInput } from '../../components/AuthInput';
 import { AuthButton } from '../../components/AuthButton';
 import { ErrorPopupModal } from '../../components/ErrorPopupModal';
 import { GoogleSignInButton } from '../../components/GoogleSignInButton';
-import { apiRequest, AuthResponse, getValidAuthTokens, setAuthTokens } from '../../lib/api';
+import { apiRequest, AuthResponse, fetchCurrentUser, getValidAuthTokens, setAuthTokens } from '../../lib/api';
+import { getPostAuthRoute } from '../../lib/access';
 import { formatAppError } from '../../lib/error';
 
 const { height } = Dimensions.get('window');
@@ -40,7 +41,12 @@ export default function LoginScreen() {
       }
 
       if (tokens) {
-        router.replace('/(tabs)');
+        try {
+          const user = await fetchCurrentUser();
+          router.replace(getPostAuthRoute(user));
+        } catch {
+          setCheckingAuth(false);
+        }
         return;
       }
 
@@ -71,7 +77,7 @@ export default function LoginScreen() {
         body: { email: normalizedEmail, password },
       });
       await setAuthTokens(auth);
-      router.replace('/(tabs)');
+      router.replace(getPostAuthRoute(auth.user));
     } catch (error) {
       setErrorDialog(formatAppError(error));
     } finally {
@@ -82,7 +88,6 @@ export default function LoginScreen() {
   const handleGoogleSignIn = () => {
     // TODO: Implement Google sign-in auth
     console.log('Google Sign In');
-    router.replace('/(tabs)');
   };
 
   const handleForgotPassword = () => {

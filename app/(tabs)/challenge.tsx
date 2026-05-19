@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -15,7 +15,8 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import * as FileSystem from 'expo-file-system/legacy';
 import * as ImagePicker from 'expo-image-picker';
 import { Colors } from '../../constants/Colors';
 import { apiRequest, getAuthUser, resolveRemoteAssetUrl } from '../../lib/api';
@@ -212,6 +213,15 @@ function formatDurationLabel(days: number) {
 
 export default function ChallengesScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams<{
+    tab?: string | string[];
+    prefillSource?: string | string[];
+    prefillChallengeId?: string | string[];
+    prefillImageUri?: string | string[];
+    prefillImageMimeType?: string | string[];
+    prefillImageFileName?: string | string[];
+    prefillStatus?: string | string[];
+  }>();
   const [activeTab, setActiveTab] = useState('CHALLENGES');
   const [challengeOverview, setChallengeOverview] = useState<ChallengeOverview>({
     active_chats: [],
@@ -239,6 +249,7 @@ export default function ChallengesScreen() {
     name: 'You',
     profileImage: '',
   });
+  const consumedCommunityPrefillKeyRef = useRef('');
   const readyToStartChallenges = challengeOverview.ready_to_start.filter((challenge) => challenge.can_start);
   const upcomingChallenges = challengeOverview.ready_to_start.filter((challenge) => !challenge.can_start);
   const hasActiveChats = challengeOverview.active_chats.length > 0;
@@ -334,6 +345,78 @@ export default function ChallengesScreen() {
     }
     void loadCommunityPosts(true);
   }, [activeTab, loadCommunityPosts]);
+
+  useEffect(() => {
+    const requestedTab = Array.isArray(params.tab) ? params.tab[0] : params.tab;
+    if (requestedTab === 'COMMUNITY' && activeTab !== 'COMMUNITY') {
+      setActiveTab('COMMUNITY');
+    }
+  }, [activeTab, params.tab]);
+
+  useEffect(() => {
+    const source = Array.isArray(params.prefillSource) ? params.prefillSource[0] : params.prefillSource;
+    const challengeId = Array.isArray(params.prefillChallengeId) ? params.prefillChallengeId[0] : params.prefillChallengeId;
+    const imageUri = Array.isArray(params.prefillImageUri) ? params.prefillImageUri[0] : params.prefillImageUri;
+    const mimeType = Array.isArray(params.prefillImageMimeType) ? params.prefillImageMimeType[0] : params.prefillImageMimeType;
+    const fileName = Array.isArray(params.prefillImageFileName) ? params.prefillImageFileName[0] : params.prefillImageFileName;
+    const prefillStatus = Array.isArray(params.prefillStatus) ? params.prefillStatus[0] : params.prefillStatus;
+
+    if (!source || !imageUri) {
+      return;
+    }
+
+    const prefillKey = `${source}:${challengeId || ''}:${imageUri}`;
+    if (consumedCommunityPrefillKeyRef.current === prefillKey) {
+      return;
+    }
+
+    let cancelled = false;
+    consumedCommunityPrefillKeyRef.current = prefillKey;
+    setActiveTab('COMMUNITY');
+
+    const applyCommunityPrefill = async () => {
+      try {
+        const imageBase64 = await FileSystem.readAsStringAsync(imageUri, {
+          encoding: FileSystem.EncodingType.Base64,
+        });
+        if (cancelled) {
+          return;
+        }
+
+        setCommunityImage({
+          uri: imageUri,
+          base64: imageBase64,
+          mimeType: mimeType || 'image/svg+xml',
+          fileName: fileName || 'victory-fitness-progress-report.svg',
+          width: 1080,
+          height: 1920,
+          type: 'image',
+          assetId: null,
+        } as unknown as ImagePicker.ImagePickerAsset);
+        setCommunityDraft(prefillStatus || '');
+        setCommunityError('');
+      } catch (error) {
+        if (cancelled) {
+          return;
+        }
+        consumedCommunityPrefillKeyRef.current = '';
+        setCommunityError(error instanceof Error ? error.message : 'Failed to attach the shared report image.');
+      }
+    };
+
+    void applyCommunityPrefill();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    params.prefillChallengeId,
+    params.prefillImageFileName,
+    params.prefillImageMimeType,
+    params.prefillImageUri,
+    params.prefillSource,
+    params.prefillStatus,
+  ]);
 
   const handleRefresh = useCallback(async () => {
     setScreenRefreshing(true);
@@ -440,8 +523,8 @@ export default function ChallengesScreen() {
 
   const handleCommunityPost = async () => {
     const content = communityDraft.trim();
-    if (!content) {
-      setCommunityError('Write something before posting.');
+    if (!content && !communityImage?.base64) {
+      setCommunityError('Add a status or choose an image before posting.');
       return;
     }
 
@@ -451,7 +534,7 @@ export default function ChallengesScreen() {
       const response = await apiRequest<CommunityPost>('/community/posts', {
         method: 'POST',
         body: {
-          content,
+          content: content || '',
           image_base64: communityImage?.base64 ?? undefined,
           mime_type: communityImage?.mimeType ?? 'image/jpeg',
           file_name: communityImage?.fileName ?? null,
@@ -742,7 +825,7 @@ export default function ChallengesScreen() {
               <>
                 <View style={styles.subSectionHeader}>
                   <Ionicons name="chatbubbles" size={16} color={Colors.primary} />
-                  <Text style={styles.subSectionTitle}>Active Challenge Chats</Text>
+                  <Text style={styles.subSectionTitle}>Challenge Chats</Text>
                 </View>
                 {challengeOverview.active_chats.map((chat) => (
                   <TouchableOpacity
@@ -792,7 +875,7 @@ export default function ChallengesScreen() {
                     key={ch.id}
                     style={styles.activeCard}
                     activeOpacity={0.88}
-                    onPress={() => router.push(`/challenges/chat/${ch.challenge_id}` as any)}
+                    onPress={() => router.push(`/challenges/progress/${ch.challenge_id}` as any)}
                   >
                     <View style={styles.activeCardTop}>
                       <View style={[styles.activeColorDot, { backgroundColor: ch.color }]} />
@@ -807,7 +890,7 @@ export default function ChallengesScreen() {
                         <View style={[styles.progressBarFill, { width: `${ch.progress * 100}%` as any, backgroundColor: ch.color }]} />
                       </View>
                       <Text style={styles.progressLabel}>
-                        {Math.round(ch.progress * ch.total_days)}/{ch.total_days} days
+                        {Math.round(ch.progress * 100)}%
                       </Text>
                     </View>
                     <View style={styles.activeCardMeta}>
@@ -1066,7 +1149,7 @@ export default function ChallengesScreen() {
                     </View>
                   </View>
 
-                  <Text style={styles.postBody}>{post.content}</Text>
+                  {post.content ? <Text style={styles.postBody}>{post.content}</Text> : null}
                   {getImageSource(post.image_url) ? (
                     <Image source={getImageSource(post.image_url)!} style={styles.postImagePreview} />
                   ) : null}
@@ -1198,7 +1281,7 @@ export default function ChallengesScreen() {
                   </View>
                 </View>
 
-                <Text style={styles.postModalBody}>{selectedCommunityPost.content}</Text>
+                {selectedCommunityPost.content ? <Text style={styles.postModalBody}>{selectedCommunityPost.content}</Text> : null}
 
                 {getImageSource(selectedCommunityPost.image_url) ? (
                   <Image source={getImageSource(selectedCommunityPost.image_url)!} style={styles.postModalImage} />

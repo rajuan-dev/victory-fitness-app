@@ -13,7 +13,8 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../constants/Colors';
 import { StatusBar } from 'expo-status-bar';
-import { clearAuthTokens, getValidAuthTokens } from '../lib/api';
+import { clearAuthTokens, fetchCurrentUser, getValidAuthTokens } from '../lib/api';
+import { getPostAuthRoute } from '../lib/access';
 
 const { width } = Dimensions.get('window');
 
@@ -53,7 +54,12 @@ export default function OnboardingScreen() {
       }
 
       if (tokens) {
-        router.replace('/(tabs)');
+        try {
+          const user = await fetchCurrentUser();
+          router.replace(getPostAuthRoute(user));
+        } catch {
+          router.replace('/login');
+        }
       } else {
         await clearAuthTokens();
         router.replace('/login');

@@ -134,7 +134,7 @@ function OptionList({
 
 /* ── Meal Plan Data ── */
 const PLAN_DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-const PLAN_TABS = ['My Plan', 'Tracker', 'Meal Analysis', 'Plan JSON'];
+const PLAN_TABS = ['My Plan', 'Tracker', 'Meal Analysis'];
 
 function getCurrentPlanDay() {
   const dayIndex = new Date().getDay();
@@ -926,18 +926,6 @@ function MealPlanResult({
                 </Text>
               </View>
             ) : null}
-          </View>
-        )}
-
-        {planTab === 'Plan JSON' && (
-          <View style={styles.planContent}>
-            <Text style={styles.planTitle}>Generated Plan JSON</Text>
-            <Text style={styles.planDesc}>
-              Complete nutrition plan data received by the app, including every day, meal, macro, ingredient, instruction, and shopping list item.
-            </Text>
-            <View style={styles.jsonCard}>
-              <Text selectable style={styles.jsonText}>{planJson}</Text>
-            </View>
           </View>
         )}
 

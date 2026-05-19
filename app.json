@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "victory-fitness",
-    "slug": "victory-fitness-app",
+    "slug": "victora",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -23,7 +23,11 @@
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
-      "package": "com.victory.fitness"
+      "package": "com.victory.fitness",
+      "permissions": [
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png",
@@ -38,8 +42,9 @@
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "e1666444-f0cb-4ca6-acb0-21a4c0ec72eb"
+        "projectId": "b745c8ed-3483-4e3c-8c77-923cce1c5376"
       }
-    }
+    },
+    "owner": "miskat"
   }
 }

@@ -65,6 +65,7 @@ export type AuthUser = {
   name: string;
   email: string;
   is_verified: boolean;
+  is_admin?: boolean;
   country?: string;
   profileImage?: string;
   points?: number;
@@ -75,6 +76,11 @@ export type AuthUser = {
   next_rank?: string;
   points_to_next_rank?: number;
   rank_progress_fraction?: number;
+  subscription_tier?: string;
+  subscription_status?: string;
+  subscription_started_at?: string | null;
+  subscription_confirmed_at?: string | null;
+  subscription_access?: string[];
 };
 
 export type BodyMetrics = {
@@ -127,11 +133,20 @@ export type LongevityWearableDevice = {
   image: string;
 };
 
+export type WearableProvider = 'apple-health' | 'health-connect' | 'fitbit' | 'garmin';
+
 export type LongevityWearables = {
   devices: LongevityWearableDevice[];
   last_synced_at?: string | null;
   has_data: boolean;
   sync_message: string;
+};
+
+export type WearableOAuthConnectResponse = {
+  provider: WearableProvider;
+  authorization_url: string;
+  state: string;
+  expires_at: string;
 };
 
 export type LongevityHabit = {
@@ -188,6 +203,56 @@ let authUser: AuthUser | null = null;
 let authUserLoaded = false;
 let authUserLoadPromise: Promise<void> | null = null;
 let authFailureHandler: (() => void) | null = null;
+let currentUserRequestPromise: Promise<AuthUser> | null = null;
+let bodyMetricsRequestPromise: Promise<BodyMetrics> | null = null;
+let currentUserFetchedAt = 0;
+let bodyMetricsFetchedAt = 0;
+let bodyMetricsCache: BodyMetrics | null = null;
+
+const CURRENT_USER_CACHE_TTL_MS = 30_000;
+const BODY_METRICS_CACHE_TTL_MS = 30_000;
+
+function normalizeAuthUser(user: Partial<AuthUser> & { id?: string; name?: string; email?: string; is_verified?: boolean }): AuthUser {
+  return {
+    id: String(user.id ?? ''),
+    name: String(user.name ?? ''),
+    email: String(user.email ?? ''),
+    is_verified: Boolean(user.is_verified),
+    is_admin: Boolean(user.is_admin),
+    country: String(user.country ?? ''),
+    profileImage: String(user.profileImage ?? ''),
+    points: Math.max(Number(user.points ?? 0) || 0, 0),
+    workouts_completed: Math.max(Number(user.workouts_completed ?? 0) || 0, 0),
+    workouts_total: Math.max(Number(user.workouts_total ?? 0) || 0, 0),
+    streak_days: Math.max(Number(user.streak_days ?? 0) || 0, 0),
+    rank: String(user.rank ?? 'Noob'),
+    next_rank: String(user.next_rank ?? 'Bronze'),
+    points_to_next_rank: Math.max(Number(user.points_to_next_rank ?? 0) || 0, 0),
+    rank_progress_fraction: Math.min(Math.max(Number(user.rank_progress_fraction ?? 0) || 0, 0), 1),
+    subscription_tier: String(user.subscription_tier ?? 'NONE'),
+    subscription_status: String(user.subscription_status ?? 'NONE'),
+    subscription_started_at: user.subscription_started_at ? String(user.subscription_started_at) : null,
+    subscription_confirmed_at: user.subscription_confirmed_at ? String(user.subscription_confirmed_at) : null,
+    subscription_access: Array.isArray(user.subscription_access) ? user.subscription_access.map((item) => String(item)) : [],
+  };
+}
+
+function normalizeBodyMetrics(metrics: Partial<BodyMetrics> | null | undefined): BodyMetrics {
+  return {
+    age: String(metrics?.age ?? ''),
+    height: String(metrics?.height ?? ''),
+    weight: String(metrics?.weight ?? ''),
+    gender: String(metrics?.gender ?? ''),
+  };
+}
+
+function clearDerivedUserCaches() {
+  currentUserRequestPromise = null;
+  bodyMetricsRequestPromise = null;
+  currentUserFetchedAt = 0;
+  bodyMetricsFetchedAt = 0;
+  bodyMetricsCache = null;
+}
 
 function decodeJwtPayload(token: string): { exp?: number } | null {
   const parts = token.split('.');
@@ -332,8 +397,11 @@ export async function setAuthTokens(tokens: AuthTokens & { user?: AuthUser }) {
   await persistAuthTokens(tokens);
 
   if (tokens.user) {
-    authUser = tokens.user;
+    authUser = normalizeAuthUser(tokens.user);
     authUserLoaded = true;
+    currentUserFetchedAt = Date.now();
+    bodyMetricsCache = null;
+    bodyMetricsFetchedAt = 0;
     await persistAuthUser(tokens.user);
   }
 }
@@ -345,6 +413,7 @@ export async function clearAuthTokens() {
   authUser = null;
   authUserLoaded = true;
   await persistAuthUser(null);
+  clearDerivedUserCaches();
 }
 
 export function setAuthFailureHandler(handler: (() => void) | null) {
@@ -362,26 +431,26 @@ export async function getAuthUser() {
 }
 
 export async function fetchCurrentUser() {
-  const user = await apiRequest<AuthUser & { role?: string; is_admin?: boolean; country?: string; profileImage?: string }>('/me');
-  authUser = {
-    id: user.id,
-    name: user.name,
-    email: user.email,
-    is_verified: user.is_verified,
-    country: user.country,
-    profileImage: user.profileImage,
-    points: user.points,
-    workouts_completed: user.workouts_completed,
-    workouts_total: user.workouts_total,
-    streak_days: user.streak_days,
-    rank: user.rank,
-    next_rank: user.next_rank,
-    points_to_next_rank: user.points_to_next_rank,
-    rank_progress_fraction: user.rank_progress_fraction,
-  };
-  authUserLoaded = true;
-  await persistAuthUser(authUser);
-  return user;
+  const now = Date.now();
+  if (authUser && currentUserFetchedAt && now - currentUserFetchedAt < CURRENT_USER_CACHE_TTL_MS) {
+    return authUser;
+  }
+
+  if (!currentUserRequestPromise) {
+    currentUserRequestPromise = apiRequest<AuthUser & { role?: string; is_admin?: boolean; country?: string; profileImage?: string }>('/me')
+      .then(async (user) => {
+        authUser = normalizeAuthUser(user);
+        authUserLoaded = true;
+        currentUserFetchedAt = Date.now();
+        await persistAuthUser(authUser);
+        return authUser;
+      })
+      .finally(() => {
+        currentUserRequestPromise = null;
+      });
+  }
+
+  return currentUserRequestPromise;
 }
 
 export async function updateCurrentUserProfile(payload: {
@@ -397,23 +466,27 @@ export async function updateCurrentUserProfile(payload: {
       body: payload,
     }
   );
-  authUser = {
-    id: user.id,
-    name: user.name,
-    email: user.email,
-    is_verified: user.is_verified,
-    country: user.country,
-    profileImage: user.profileImage,
-    points: user.points,
-    workouts_completed: user.workouts_completed,
-    workouts_total: user.workouts_total,
-    streak_days: user.streak_days,
-    rank: user.rank,
-    next_rank: user.next_rank,
-    points_to_next_rank: user.points_to_next_rank,
-    rank_progress_fraction: user.rank_progress_fraction,
-  };
+  authUser = normalizeAuthUser(user);
   authUserLoaded = true;
+  currentUserFetchedAt = Date.now();
+  await persistAuthUser(authUser);
+  return user;
+}
+
+export async function updateCurrentUserSubscription(payload: {
+  subscription_tier: string;
+  confirm_payment?: boolean;
+}) {
+  const user = await apiRequest<AuthUser & { role?: string; is_admin?: boolean; country?: string; profileImage?: string }>(
+    '/me/subscription',
+    {
+      method: 'PATCH',
+      body: payload,
+    }
+  );
+  authUser = normalizeAuthUser(user);
+  authUserLoaded = true;
+  currentUserFetchedAt = Date.now();
   await persistAuthUser(authUser);
   return user;
 }
@@ -433,20 +506,41 @@ export async function uploadCurrentUserProfileImage(payload: {
       profileImage: response.image_url,
     };
     authUserLoaded = true;
+    currentUserFetchedAt = Date.now();
     await persistAuthUser(authUser);
   }
   return response;
 }
 
 export async function fetchCurrentUserBodyMetrics() {
-  return apiRequest<BodyMetrics>('/me/body-metrics');
+  const now = Date.now();
+  if (bodyMetricsCache && bodyMetricsFetchedAt && now - bodyMetricsFetchedAt < BODY_METRICS_CACHE_TTL_MS) {
+    return bodyMetricsCache;
+  }
+
+  if (!bodyMetricsRequestPromise) {
+    bodyMetricsRequestPromise = apiRequest<BodyMetrics>('/me/body-metrics')
+      .then((metrics) => {
+        bodyMetricsCache = normalizeBodyMetrics(metrics);
+        bodyMetricsFetchedAt = Date.now();
+        return bodyMetricsCache;
+      })
+      .finally(() => {
+        bodyMetricsRequestPromise = null;
+      });
+  }
+
+  return bodyMetricsRequestPromise;
 }
 
 export async function updateCurrentUserBodyMetrics(payload: Partial<BodyMetrics>) {
-  return apiRequest<BodyMetrics>('/me/body-metrics', {
+  const metrics = await apiRequest<BodyMetrics>('/me/body-metrics', {
     method: 'PATCH',
     body: payload,
   });
+  bodyMetricsCache = normalizeBodyMetrics(metrics);
+  bodyMetricsFetchedAt = Date.now();
+  return bodyMetricsCache;
 }
 
 export async function submitCoachingApplication(payload: CoachingApplicationPayload) {
@@ -464,13 +558,44 @@ export async function submitSupportMessage(payload: SupportMessagePayload) {
 }
 
 export async function fetchLongevityDashboard() {
-  return apiRequest<LongevityDashboard>('/longevity-os/dashboard');
+  const response = await apiRequest<LongevityDashboard>('/longevity-os/dashboard');
+  const overview = response?.overview && typeof response.overview === 'object' ? response.overview : {} as LongevityOverview;
+  const wearables = response?.wearables && typeof response.wearables === 'object' ? response.wearables : {} as LongevityWearables;
+  const habits = response?.habits && typeof response.habits === 'object' ? response.habits : {} as LongevityHabits;
+  return {
+    overview: {
+      biological_age: String(overview.biological_age ?? 'N/A'),
+      chronological_age: String(overview.chronological_age ?? 'N/A'),
+      trending_years_younger: Number(overview.trending_years_younger ?? 0) || 0,
+      recovery_score: Number(overview.recovery_score ?? 0) || 0,
+      hrv_ms: Number(overview.hrv_ms ?? 0) || 0,
+      sleep_score: Number(overview.sleep_score ?? 0) || 0,
+    },
+    quick_actions: Array.isArray(response?.quick_actions) ? response.quick_actions : [],
+    wearables: {
+      devices: Array.isArray(wearables.devices) ? wearables.devices : [],
+      last_synced_at: wearables.last_synced_at ?? null,
+      has_data: Boolean(wearables.has_data),
+      sync_message: String(wearables.sync_message ?? ''),
+    },
+    habits: {
+      streak_days: Number(habits.streak_days ?? 0) || 0,
+      habits: Array.isArray(habits.habits) ? habits.habits : [],
+    },
+    heal_categories: Array.isArray(response?.heal_categories) ? response.heal_categories : [],
+    masterclasses: Array.isArray(response?.masterclasses) ? response.masterclasses : [],
+    circles: Array.isArray(response?.circles) ? response.circles : [],
+  };
 }
 
 export async function syncLongevityWearables() {
   return apiRequest<LongevityWearables>('/longevity-os/wearables/sync', {
     method: 'POST',
   });
+}
+
+export async function connectWearableProvider(provider: Extract<WearableProvider, 'fitbit' | 'garmin'>) {
+  return apiRequest<WearableOAuthConnectResponse>(`/wearables/${encodeURIComponent(provider)}/connect`);
 }
 
 export async function updateLongevityHabit(habitId: string, done: boolean) {
@@ -651,5 +776,10 @@ export type AuthResponse = {
     next_rank?: string;
     points_to_next_rank?: number;
     rank_progress_fraction?: number;
+    subscription_tier?: string;
+    subscription_status?: string;
+    subscription_started_at?: string | null;
+    subscription_confirmed_at?: string | null;
+    subscription_access?: string[];
   };
 };
