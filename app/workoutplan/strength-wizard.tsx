@@ -19,6 +19,7 @@ import { Colors } from '../../constants/Colors';
 import VictoryHeader from '../../components/VictoryHeader';
 import { fetchCurrentUser, fetchCurrentUserBodyMetrics } from '../../lib/api';
 import { createStrengthWorkoutPlan } from '../../lib/workout-plans';
+import { useModuleAccessGuard } from '../../lib/useModuleAccessGuard';
 
 const { width } = Dimensions.get('window');
 
@@ -57,6 +58,7 @@ const EQUIPMENT = [
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
 export default function StrengthWizard() {
+  useModuleAccessGuard('/workoutplan');
   const router = useRouter();
   const [step, setStep] = useState(1);
   const [formData, setFormData] = useState<any>({
@@ -68,6 +70,7 @@ export default function StrengthWizard() {
     frequency: '4',
   });
   const [loading, setLoading] = useState(false);
+
 
   useEffect(() => {
     let cancelled = false;

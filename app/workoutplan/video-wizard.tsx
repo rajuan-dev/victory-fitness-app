@@ -17,6 +17,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../constants/Colors';
 import VictoryHeader from '../../components/VictoryHeader';
 import { createVideoWorkoutPlan } from '../../lib/workout-plans';
+import { useModuleAccessGuard } from '../../lib/useModuleAccessGuard';
 
 const { width, height } = Dimensions.get('window');
 
@@ -61,6 +62,7 @@ const EQUIPMENT = [
 ];
 
 export default function WorkoutVideoWizard() {
+  const checkingAccess = useModuleAccessGuard('/workoutplan');
   const router = useRouter();
   const [step, setStep] = useState(1);
   const [formData, setFormData] = useState<any>({
@@ -68,6 +70,10 @@ export default function WorkoutVideoWizard() {
     phone: '',
   });
   const [loading, setLoading] = useState(false);
+
+  if (checkingAccess) {
+    return null;
+  }
 
   const nextStep = () => {
     if (step < TOTAL_STEPS) {

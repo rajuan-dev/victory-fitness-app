@@ -23,6 +23,20 @@ type ActiveChallenge = {
 
 type ChallengeOverview = {
   active_challenges: ActiveChallenge[];
+  ready_to_start: {
+    id: string;
+    title: string;
+    description: string;
+    duration_days: number;
+    type: string;
+    points: number;
+    participants: number;
+    difficulty: string;
+    difficulty_color: string;
+    status: string;
+    can_start: boolean;
+    thumbnail: string;
+  }[];
 };
 
 type HomeChallengeCard = {
@@ -139,6 +153,7 @@ export default function ChallengesSection({ refreshToken = 0 }: { refreshToken?:
     try {
       const response = await apiRequest<ChallengeOverview>('/challenges/overview');
       const activeChallenges = Array.isArray(response.active_challenges) ? response.active_challenges : [];
+      const readyChallenges = Array.isArray(response.ready_to_start) ? response.ready_to_start : [];
       const activeCards: HomeChallengeCard[] = activeChallenges.slice(0, 4).map((challenge) => ({
         id: challenge.id,
         title: challenge.title,
@@ -152,7 +167,19 @@ export default function ChallengesSection({ refreshToken = 0 }: { refreshToken?:
         params: { challengeId: challenge.challenge_id },
         accentColor: challenge.color || Colors.accentBlue,
       }));
-      setCards(activeCards);
+      const readyCards: HomeChallengeCard[] = readyChallenges.slice(0, 4).map((challenge) => ({
+        id: challenge.id,
+        title: challenge.title,
+        points: challenge.points,
+        description: challenge.description || `${challenge.duration_days} day challenge ready to start.`,
+        participants: challenge.participants,
+        status: challenge.status === 'UPCOMING' ? 'COMING SOON' : challenge.can_start ? 'READY TO START' : 'LIMIT REACHED',
+        footerLabel: challenge.status === 'UPCOMING' ? 'Coming soon' : `${challenge.duration_days} days`,
+        progress: 0,
+        route: '/challenge',
+        accentColor: challenge.difficulty_color || Colors.accentBlue,
+      }));
+      setCards(activeCards.length > 0 ? activeCards : readyCards);
     } catch {
       setCards([]);
     } finally {
@@ -196,8 +223,8 @@ export default function ChallengesSection({ refreshToken = 0 }: { refreshToken?:
         </ScrollView>
       ) : cards.length === 0 ? (
         <View style={styles.emptyCard}>
-          <Text style={styles.emptyTitle}>No active challenges</Text>
-          <Text style={styles.emptyText}>Active challenges will appear here when you join or start them.</Text>
+          <Text style={styles.emptyTitle}>No challenges available</Text>
+          <Text style={styles.emptyText}>Active or ready challenges will appear here based on your current plan.</Text>
         </View>
       ) : (
         <ScrollView

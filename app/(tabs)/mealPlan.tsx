@@ -22,8 +22,10 @@ import * as ImagePicker from 'expo-image-picker';
 import { Colors } from '../../constants/Colors';
 import { ErrorPopupModal } from '../../components/ErrorPopupModal';
 import VictoryHeader from '../../components/VictoryHeader';
-import { apiRequest } from '../../lib/api';
+import { apiRequest, fetchCurrentUser } from '../../lib/api';
+import { canAccessFeature } from '../../lib/access';
 import { formatAppError } from '../../lib/error';
+import { useModuleAccessGuard } from '../../lib/useModuleAccessGuard';
 import {
   createNutritionPlan,
   NutritionPlanApiResponse,
@@ -134,7 +136,7 @@ function OptionList({
 
 /* ── Meal Plan Data ── */
 const PLAN_DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-const PLAN_TABS = ['My Plan', 'Tracker', 'Meal Analysis'];
+const PLAN_TABS = ['My Plan', 'Tracker', 'Meal Analysis'] as const;
 
 function getCurrentPlanDay() {
   const dayIndex = new Date().getDay();
@@ -230,7 +232,6 @@ function MealPlanResult({
   initialPlan?: NutritionPlanApiResponse | null;
   onCreateNewPlan: () => void;
 }) {
-  const [planTab, setPlanTab] = useState('My Plan');
   const [activeDay, setActiveDay] = useState(() => getCurrentPlanDay());
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [showShopping, setShowShopping] = useState(false);
@@ -249,6 +250,54 @@ function MealPlanResult({
   const [analysisError, setAnalysisError] = useState('');
   const [analysisHistory, setAnalysisHistory] = useState<MealImageAnalysisResponse[]>([]);
   const [selectedAnalysis, setSelectedAnalysis] = useState<MealImageAnalysisResponse | null>(null);
+  const [planTab, setPlanTab] = useState<(typeof PLAN_TABS)[number]>('My Plan');
+  const [canAccessTracker, setCanAccessTracker] = useState(false);
+  const [canAccessMealAnalysis, setCanAccessMealAnalysis] = useState(false);
+  const availablePlanTabs = PLAN_TABS.filter((tab) => {
+    if (tab === 'Tracker') {
+      return canAccessTracker;
+    }
+    if (tab === 'Meal Analysis') {
+      return canAccessMealAnalysis;
+    }
+    return true;
+  });
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadNutritionAccess = async () => {
+      try {
+        const user = await fetchCurrentUser();
+        if (cancelled) {
+          return;
+        }
+        setCanAccessTracker(canAccessFeature('nutrition_tracker', user));
+        setCanAccessMealAnalysis(canAccessFeature('meal_analysis', user));
+      } catch {
+        if (!cancelled) {
+          setCanAccessTracker(false);
+          setCanAccessMealAnalysis(false);
+        }
+      }
+    };
+
+    void loadNutritionAccess();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (planTab === 'Tracker' && !canAccessTracker) {
+      setPlanTab('My Plan');
+      return;
+    }
+    if (planTab === 'Meal Analysis' && !canAccessMealAnalysis) {
+      setPlanTab('My Plan');
+    }
+  }, [canAccessMealAnalysis, canAccessTracker, planTab]);
 
   useFocusEffect(
     useCallback(() => {
@@ -675,7 +724,7 @@ function MealPlanResult({
 
         {/* Tab Bar */}
         <View style={styles.planTabRow}>
-          {PLAN_TABS.map((t) => (
+          {availablePlanTabs.map((t) => (
             <TouchableOpacity
               key={t}
               style={[styles.planTabBtn, planTab === t && styles.planTabBtnActive]}
@@ -1117,6 +1166,7 @@ function MealPlanResult({
 
 /* ── Main Wizard Screen ── */
 export default function JournalScreen() {
+  useModuleAccessGuard('/mealPlan');
   const [step, setStep] = useState(1);
   const [generating, setGenerating] = useState(false);
   const [generationSuccess, setGenerationSuccess] = useState(false);
@@ -1143,6 +1193,7 @@ export default function JournalScreen() {
   const [height, setHeight] = useState('');
   const [weight, setWeight] = useState('');
   const [healthConditions, setHealthConditions] = useState<Set<string>>(new Set());
+
 
   useEffect(() => {
     let cancelled = false;
@@ -1340,6 +1391,12 @@ export default function JournalScreen() {
       return {
         title: 'Nutrition Service Error',
         message: 'The nutrition service is unavailable right now. Try again in a moment.',
+      };
+    }
+    if (formatted.message.toLowerCase().includes('nutrition plan generations every 30 days')) {
+      return {
+        title: 'Plan Limit Reached',
+        message: formatted.message,
       };
     }
     return formatted;

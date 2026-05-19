@@ -78,6 +78,7 @@ export default function TabsLayout() {
   }
 
   const visibleTabs = new Set(allowedTabs ?? []);
+  const isVisible = (name: string) => visibleTabs.has(name);
 
   return (
     <Tabs
@@ -89,72 +90,67 @@ export default function TabsLayout() {
         tabBarShowLabel: false,
       }}
     >
-      {visibleTabs.has('index') && (
-        <Tabs.Screen
-          name="index"
-          options={{
-            tabBarIcon: ({ color, focused }) => (
-              <View style={focused ? styles.activeTab : undefined}>
-                <Ionicons name={focused ? 'home' : 'home-outline'} size={24} color={color} />
+      <Tabs.Screen
+        name="index"
+        options={{
+          href: isVisible('index') ? undefined : null,
+          tabBarIcon: ({ color, focused }) => (
+            <View style={focused ? styles.activeTab : undefined}>
+              <Ionicons name={focused ? 'home' : 'home-outline'} size={24} color={color} />
+            </View>
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="workout"
+        options={{
+          href: isVisible('workout') ? undefined : null,
+          tabBarIcon: ({ color, focused }) => (
+            <View style={focused ? styles.activeTab : undefined}>
+              <Ionicons name={focused ? 'barbell' : 'barbell-outline'} size={24} color={color} />
+            </View>
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="challenge"
+        options={{
+          href: isVisible('challenge') ? undefined : null,
+          tabBarIcon: ({ color, focused }) => (
+            <View style={focused ? styles.activeTab : undefined}>
+              <Ionicons name={focused ? 'trophy' : 'trophy-outline'} size={24} color={color} />
+            </View>
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="mealPlan"
+        options={{
+          href: isVisible('mealPlan') ? undefined : null,
+          tabBarIcon: ({ color, focused }) => (
+            <View style={focused ? styles.activeTab : undefined}>
+              <Ionicons name={focused ? 'restaurant' : 'restaurant-outline'} size={24} color={color} />
+            </View>
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="profile"
+        options={{
+          href: isVisible('profile') ? undefined : null,
+          tabBarIcon: ({ color, focused }) => (
+            <View style={focused ? styles.activeTab : undefined}>
+              <View style={styles.profileBadge}>
+                {profileImage ? (
+                  <Image source={{ uri: profileImage }} style={styles.profileAvatar} />
+                ) : (
+                  <Ionicons name={focused ? 'person' : 'person-outline'} size={24} color={color} />
+                )}
               </View>
-            ),
-          }}
-        />
-      )}
-      {visibleTabs.has('workout') && (
-        <Tabs.Screen
-          name="workout"
-          options={{
-            tabBarIcon: ({ color, focused }) => (
-              <View style={focused ? styles.activeTab : undefined}>
-                <Ionicons name={focused ? 'barbell' : 'barbell-outline'} size={24} color={color} />
-              </View>
-            ),
-          }}
-        />
-      )}
-      {visibleTabs.has('challenge') && (
-        <Tabs.Screen
-          name="challenge"
-          options={{
-            tabBarIcon: ({ color, focused }) => (
-              <View style={focused ? styles.activeTab : undefined}>
-                <Ionicons name={focused ? 'trophy' : 'trophy-outline'} size={24} color={color} />
-              </View>
-            ),
-          }}
-        />
-      )}
-      {visibleTabs.has('mealPlan') && (
-        <Tabs.Screen
-          name="mealPlan"
-          options={{
-            tabBarIcon: ({ color, focused }) => (
-              <View style={focused ? styles.activeTab : undefined}>
-                <Ionicons name={focused ? 'restaurant' : 'restaurant-outline'} size={24} color={color} />
-              </View>
-            ),
-          }}
-        />
-      )}
-      {visibleTabs.has('profile') && (
-        <Tabs.Screen
-          name="profile"
-          options={{
-            tabBarIcon: ({ color, focused }) => (
-              <View style={focused ? styles.activeTab : undefined}>
-                <View style={styles.profileBadge}>
-                  {profileImage ? (
-                    <Image source={{ uri: profileImage }} style={styles.profileAvatar} />
-                  ) : (
-                    <Ionicons name={focused ? 'person' : 'person-outline'} size={24} color={color} />
-                  )}
-                </View>
-              </View>
-            ),
-          }}
-        />
-      )}
+            </View>
+          ),
+        }}
+      />
     </Tabs>
   );
 }

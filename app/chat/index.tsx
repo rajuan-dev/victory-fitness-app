@@ -17,6 +17,7 @@ import { Colors } from '../../constants/Colors';
 import { ErrorPopupModal } from '../../components/ErrorPopupModal';
 import { apiRequest } from '../../lib/api';
 import { formatAppError } from '../../lib/error';
+import { useModuleAccessGuard } from '../../lib/useModuleAccessGuard';
 
 interface Message {
   id: string;
@@ -71,6 +72,7 @@ const MessageBubble = memo(function MessageBubble({ item }: { item: Message }) {
 });
 
 export default function ChatScreen() {
+  const checkingAccess = useModuleAccessGuard('/chat');
   const router = useRouter();
   const [messages, setMessages] = useState<Message[]>(INITIAL_MESSAGES);
   const [inputText, setInputText] = useState('');
@@ -156,6 +158,17 @@ export default function ChatScreen() {
   );
 
   const keyExtractor = useCallback((item: Message) => item.id, []);
+
+  if (checkingAccess) {
+    return (
+      <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
+        <Stack.Screen options={{ headerShown: false }} />
+        <View style={styles.historyLoading}>
+          <ActivityIndicator color={Colors.accentBlue} />
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>

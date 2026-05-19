@@ -15,8 +15,10 @@ import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../constants/Colors';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { fetchCurrentUser, submitCoachingApplication } from '../../lib/api';
+import { useModuleAccessGuard } from '../../lib/useModuleAccessGuard';
 
 export default function ApplicationScreen() {
+  useModuleAccessGuard('/profile/application');
   const router = useRouter();
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
@@ -33,6 +35,7 @@ export default function ApplicationScreen() {
   const [additionalNotes, setAdditionalNotes] = useState('');
   const [loadingProfile, setLoadingProfile] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+
 
   React.useEffect(() => {
     let cancelled = false;

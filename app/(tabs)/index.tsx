@@ -9,10 +9,41 @@ import WorkoutSection from '../../components/home/WorkoutSection';
 import ChallengesSection from '../../components/home/ChallengesSection';
 import AccountabilitySection from '../../components/home/AccountabilitySection';
 import InviteFriendsCard from '../../components/home/InviteFriendsCard';
+import { fetchCurrentUser } from '../../lib/api';
+import { canAccessFeature, canAccessPlanRoute } from '../../lib/access';
+import { useModuleAccessGuard } from '../../lib/useModuleAccessGuard';
 
 export default function HomeScreen() {
+  useModuleAccessGuard('/');
   const [refreshing, setRefreshing] = React.useState(false);
   const [refreshToken, setRefreshToken] = React.useState(0);
+  const [canAccessNutrition, setCanAccessNutrition] = React.useState(true);
+  const [canAccessChallenges, setCanAccessChallenges] = React.useState(true);
+
+  React.useEffect(() => {
+    let cancelled = false;
+
+    const loadAccess = async () => {
+      try {
+        const user = await fetchCurrentUser();
+        if (!cancelled) {
+          setCanAccessNutrition(canAccessPlanRoute('/mealPlan', user));
+          setCanAccessChallenges(canAccessFeature('challenge', user));
+        }
+      } catch {
+        if (!cancelled) {
+          setCanAccessNutrition(false);
+          setCanAccessChallenges(false);
+        }
+      }
+    };
+
+    void loadAccess();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const handleRefresh = React.useCallback(async () => {
     setRefreshing(true);
@@ -38,10 +69,10 @@ export default function HomeScreen() {
       >
         <VictoryHeader />
         <GreetingCard />
-        <FeatureCards />
+        <FeatureCards canAccessNutrition={canAccessNutrition} />
         <MoodSection />
         <WorkoutSection />
-        <ChallengesSection refreshToken={refreshToken} />
+        {canAccessChallenges ? <ChallengesSection refreshToken={refreshToken} /> : null}
         {/* <AccountabilitySection /> */}
         <InviteFriendsCard />
         <View style={{ height: 20 }} />

@@ -77,10 +77,25 @@ export type AuthUser = {
   points_to_next_rank?: number;
   rank_progress_fraction?: number;
   subscription_tier?: string;
+  subscription_role?: string;
   subscription_status?: string;
   subscription_started_at?: string | null;
   subscription_confirmed_at?: string | null;
+  subscription_billing_cycle?: string;
+  subscription_is_purchased?: boolean;
+  subscription_purchase_source?: string;
   subscription_access?: string[];
+  subscription?: {
+    tier?: string;
+    role?: string;
+    status?: string;
+    started_at?: string | null;
+    confirmed_at?: string | null;
+    billing_cycle?: string;
+    is_purchased?: boolean;
+    purchase_source?: string;
+    access?: string[];
+  };
 };
 
 export type BodyMetrics = {
@@ -149,6 +164,20 @@ export type WearableOAuthConnectResponse = {
   expires_at: string;
 };
 
+export type WearableConnectionResponse = {
+  id: string;
+  user_id: string;
+  provider: WearableProvider;
+  status: string;
+  connected_at?: string | null;
+  last_synced_at?: string | null;
+  last_sync_status?: string;
+  last_sync_message?: string;
+  metadata?: Record<string, unknown>;
+  created_at?: string;
+  updated_at?: string;
+};
+
 export type LongevityHabit = {
   id: string;
   title: string;
@@ -213,6 +242,7 @@ const CURRENT_USER_CACHE_TTL_MS = 30_000;
 const BODY_METRICS_CACHE_TTL_MS = 30_000;
 
 function normalizeAuthUser(user: Partial<AuthUser> & { id?: string; name?: string; email?: string; is_verified?: boolean }): AuthUser {
+  const normalizedSubscription = user.subscription && typeof user.subscription === 'object' ? user.subscription : undefined;
   return {
     id: String(user.id ?? ''),
     name: String(user.name ?? ''),
@@ -229,11 +259,40 @@ function normalizeAuthUser(user: Partial<AuthUser> & { id?: string; name?: strin
     next_rank: String(user.next_rank ?? 'Bronze'),
     points_to_next_rank: Math.max(Number(user.points_to_next_rank ?? 0) || 0, 0),
     rank_progress_fraction: Math.min(Math.max(Number(user.rank_progress_fraction ?? 0) || 0, 0), 1),
-    subscription_tier: String(user.subscription_tier ?? 'NONE'),
-    subscription_status: String(user.subscription_status ?? 'NONE'),
-    subscription_started_at: user.subscription_started_at ? String(user.subscription_started_at) : null,
-    subscription_confirmed_at: user.subscription_confirmed_at ? String(user.subscription_confirmed_at) : null,
-    subscription_access: Array.isArray(user.subscription_access) ? user.subscription_access.map((item) => String(item)) : [],
+    subscription_tier: String(user.subscription_tier ?? normalizedSubscription?.tier ?? 'NONE'),
+    subscription_role: String(user.subscription_role ?? normalizedSubscription?.role ?? user.subscription_tier ?? normalizedSubscription?.tier ?? 'NONE'),
+    subscription_status: String(user.subscription_status ?? normalizedSubscription?.status ?? 'NONE'),
+    subscription_started_at: user.subscription_started_at
+      ? String(user.subscription_started_at)
+      : normalizedSubscription?.started_at
+        ? String(normalizedSubscription.started_at)
+        : null,
+    subscription_confirmed_at: user.subscription_confirmed_at
+      ? String(user.subscription_confirmed_at)
+      : normalizedSubscription?.confirmed_at
+        ? String(normalizedSubscription.confirmed_at)
+        : null,
+    subscription_billing_cycle: String(user.subscription_billing_cycle ?? normalizedSubscription?.billing_cycle ?? 'yearly'),
+    subscription_is_purchased: Boolean(user.subscription_is_purchased ?? normalizedSubscription?.is_purchased),
+    subscription_purchase_source: String(user.subscription_purchase_source ?? normalizedSubscription?.purchase_source ?? ''),
+    subscription_access: Array.isArray(user.subscription_access)
+      ? user.subscription_access.map((item) => String(item))
+      : Array.isArray(normalizedSubscription?.access)
+        ? normalizedSubscription.access.map((item) => String(item))
+        : [],
+    subscription: normalizedSubscription
+      ? {
+          tier: String(normalizedSubscription.tier ?? 'NONE'),
+          role: String(normalizedSubscription.role ?? normalizedSubscription.tier ?? 'NONE'),
+          status: String(normalizedSubscription.status ?? 'NONE'),
+          started_at: normalizedSubscription.started_at ? String(normalizedSubscription.started_at) : null,
+          confirmed_at: normalizedSubscription.confirmed_at ? String(normalizedSubscription.confirmed_at) : null,
+          billing_cycle: String(normalizedSubscription.billing_cycle ?? 'yearly'),
+          is_purchased: Boolean(normalizedSubscription.is_purchased),
+          purchase_source: String(normalizedSubscription.purchase_source ?? ''),
+          access: Array.isArray(normalizedSubscription.access) ? normalizedSubscription.access.map((item) => String(item)) : [],
+        }
+      : undefined,
   };
 }
 
@@ -475,6 +534,7 @@ export async function updateCurrentUserProfile(payload: {
 
 export async function updateCurrentUserSubscription(payload: {
   subscription_tier: string;
+  billing_cycle?: string;
   confirm_payment?: boolean;
 }) {
   const user = await apiRequest<AuthUser & { role?: string; is_admin?: boolean; country?: string; profileImage?: string }>(
@@ -596,6 +656,12 @@ export async function syncLongevityWearables() {
 
 export async function connectWearableProvider(provider: Extract<WearableProvider, 'fitbit' | 'garmin'>) {
   return apiRequest<WearableOAuthConnectResponse>(`/wearables/${encodeURIComponent(provider)}/connect`);
+}
+
+export async function connectLongevityDemoProvider(provider: WearableProvider) {
+  return apiRequest<WearableConnectionResponse>(`/wearables/${encodeURIComponent(provider)}/demo-connect`, {
+    method: 'POST',
+  });
 }
 
 export async function updateLongevityHabit(habitId: string, done: boolean) {
@@ -777,9 +843,24 @@ export type AuthResponse = {
     points_to_next_rank?: number;
     rank_progress_fraction?: number;
     subscription_tier?: string;
+    subscription_role?: string;
     subscription_status?: string;
     subscription_started_at?: string | null;
     subscription_confirmed_at?: string | null;
+    subscription_billing_cycle?: string;
+    subscription_is_purchased?: boolean;
+    subscription_purchase_source?: string;
     subscription_access?: string[];
+    subscription?: {
+      tier?: string;
+      role?: string;
+      status?: string;
+      started_at?: string | null;
+      confirmed_at?: string | null;
+      billing_cycle?: string;
+      is_purchased?: boolean;
+      purchase_source?: string;
+      access?: string[];
+    };
   };
 };

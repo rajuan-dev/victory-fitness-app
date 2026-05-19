@@ -19,7 +19,9 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as ImagePicker from 'expo-image-picker';
 import { Colors } from '../../constants/Colors';
-import { apiRequest, getAuthUser, resolveRemoteAssetUrl } from '../../lib/api';
+import { apiRequest, fetchCurrentUser, getAuthUser, resolveRemoteAssetUrl } from '../../lib/api';
+import { canAccessFeature, normalizeSubscriptionTier } from '../../lib/access';
+import { useModuleAccessGuard } from '../../lib/useModuleAccessGuard';
 
 const { width } = Dimensions.get('window');
 
@@ -212,6 +214,7 @@ function formatDurationLabel(days: number) {
 }
 
 export default function ChallengesScreen() {
+  useModuleAccessGuard('/challenge');
   const router = useRouter();
   const params = useLocalSearchParams<{
     tab?: string | string[];
@@ -223,6 +226,8 @@ export default function ChallengesScreen() {
     prefillStatus?: string | string[];
   }>();
   const [activeTab, setActiveTab] = useState('CHALLENGES');
+  const [canAccessChallenges, setCanAccessChallenges] = useState(true);
+  const [canAccessCommunity, setCanAccessCommunity] = useState(true);
   const [challengeOverview, setChallengeOverview] = useState<ChallengeOverview>({
     active_chats: [],
     active_challenges: [],
@@ -249,6 +254,7 @@ export default function ChallengesScreen() {
     name: 'You',
     profileImage: '',
   });
+  const [subscriptionTier, setSubscriptionTier] = useState('NONE');
   const consumedCommunityPrefillKeyRef = useRef('');
   const readyToStartChallenges = challengeOverview.ready_to_start.filter((challenge) => challenge.can_start);
   const upcomingChallenges = challengeOverview.ready_to_start.filter((challenge) => !challenge.can_start);
@@ -259,20 +265,40 @@ export default function ChallengesScreen() {
   const hasUpcomingChallenges = upcomingChallenges.length > 0;
   const hasVisibleChallengeSections =
     hasReadyToStartChallenges || hasUpcomingChallenges || hasActiveChats || hasActiveChallenges || hasCompletedChallenges;
+  const availableTabs = canAccessChallenges && canAccessCommunity
+    ? TABS
+    : canAccessChallenges
+      ? ['CHALLENGES']
+      : ['COMMUNITY'];
+  const isSilverUser = subscriptionTier === 'SILVER';
+  const silverChallengeLimit = 5;
+  const silverChallengesUsed = Math.min(challengeOverview.active_challenges.length, silverChallengeLimit);
 
   useEffect(() => {
     let isMounted = true;
 
     const loadCurrentCommunityUser = async () => {
-      const authUser = await getAuthUser();
-      if (!isMounted || !authUser) {
-        return;
-      }
+      try {
+        const [authUser, currentUser] = await Promise.all([getAuthUser(), fetchCurrentUser()]);
+        if (!isMounted) {
+          return;
+        }
 
-      setCurrentCommunityUser({
-        name: authUser.name || 'You',
-        profileImage: authUser.profileImage || '',
-      });
+        setCanAccessChallenges(canAccessFeature('challenge', currentUser));
+        setCanAccessCommunity(canAccessFeature('community', currentUser));
+        setSubscriptionTier(normalizeSubscriptionTier(currentUser?.subscription_tier));
+        setCurrentCommunityUser({
+          name: authUser?.name || currentUser?.name || 'You',
+          profileImage: authUser?.profileImage || currentUser?.profileImage || '',
+        });
+      } catch {
+        if (!isMounted) {
+          return;
+        }
+
+        setCanAccessChallenges(false);
+        setCanAccessCommunity(false);
+      }
     };
 
     loadCurrentCommunityUser();
@@ -282,7 +308,27 @@ export default function ChallengesScreen() {
     };
   }, []);
 
+  useEffect(() => {
+    if (!canAccessChallenges && activeTab === 'CHALLENGES') {
+      setActiveTab('COMMUNITY');
+    }
+    if (!canAccessCommunity && activeTab === 'COMMUNITY') {
+      setActiveTab('CHALLENGES');
+    }
+  }, [activeTab, canAccessChallenges, canAccessCommunity]);
+
   const loadChallengeOverview = useCallback(async (showLoading = true) => {
+    if (!canAccessChallenges) {
+      setChallengeLoading(false);
+      setChallengeError('');
+      setChallengeOverview({
+        active_chats: [],
+        active_challenges: [],
+        completed_challenges: [],
+        ready_to_start: [],
+      });
+      return;
+    }
     if (showLoading) {
       setChallengeLoading(true);
     }
@@ -302,9 +348,15 @@ export default function ChallengesScreen() {
         setChallengeLoading(false);
       }
     }
-  }, []);
+  }, [canAccessChallenges]);
 
   const loadCommunityPosts = useCallback(async (showLoading = true) => {
+    if (!canAccessCommunity) {
+      setCommunityLoading(false);
+      setCommunityError('');
+      setCommunityPosts([]);
+      return;
+    }
     if (showLoading) {
       setCommunityLoading(true);
     }
@@ -319,7 +371,7 @@ export default function ChallengesScreen() {
         setCommunityLoading(false);
       }
     }
-  }, []);
+  }, [canAccessCommunity]);
 
   useEffect(() => {
     if (activeTab !== 'CHALLENGES') {
@@ -348,10 +400,10 @@ export default function ChallengesScreen() {
 
   useEffect(() => {
     const requestedTab = Array.isArray(params.tab) ? params.tab[0] : params.tab;
-    if (requestedTab === 'COMMUNITY' && activeTab !== 'COMMUNITY') {
+    if (requestedTab === 'COMMUNITY' && canAccessCommunity && activeTab !== 'COMMUNITY') {
       setActiveTab('COMMUNITY');
     }
-  }, [activeTab, params.tab]);
+  }, [activeTab, canAccessCommunity, params.tab]);
 
   useEffect(() => {
     const source = Array.isArray(params.prefillSource) ? params.prefillSource[0] : params.prefillSource;
@@ -797,7 +849,7 @@ export default function ChallengesScreen() {
 
         {/* Tabs */}
         <View style={styles.tabRow}>
-          {TABS.map((tab) => (
+          {availableTabs.map((tab) => (
             <TouchableOpacity
               key={tab}
               style={[styles.tabBtn, activeTab === tab && styles.tabBtnActive]}
@@ -813,6 +865,25 @@ export default function ChallengesScreen() {
         {/* ── CHALLENGES TAB ── */}
         {activeTab === 'CHALLENGES' && (
           <View style={styles.section}>
+            {isSilverUser ? (
+              <View style={styles.challengeLimitCard}>
+                <View style={styles.challengeLimitHeader}>
+                  <Text style={styles.challengeLimitTitle}>Silver Challenge Access</Text>
+                  <Text style={styles.challengeLimitCount}>{silverChallengesUsed} / {silverChallengeLimit}</Text>
+                </View>
+                <Text style={styles.challengeLimitText}>
+                  Your current plan allows up to 5 active challenges at the same time.
+                </Text>
+                <View style={styles.challengeLimitBarTrack}>
+                  <View
+                    style={[
+                      styles.challengeLimitBarFill,
+                      { width: `${(silverChallengesUsed / silverChallengeLimit) * 100}%` as any },
+                    ]}
+                  />
+                </View>
+              </View>
+            ) : null}
             {challengeError ? (
               <View style={styles.challengeStatusCard}>
                 <Text style={styles.challengeStatusText}>{challengeError}</Text>
@@ -1418,6 +1489,48 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     padding: 14,
     marginBottom: 16,
+  },
+  challengeLimitCard: {
+    backgroundColor: '#10182B',
+    borderWidth: 1,
+    borderColor: 'rgba(34,211,238,0.18)',
+    borderRadius: 16,
+    padding: 14,
+    marginBottom: 16,
+  },
+  challengeLimitHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  challengeLimitTitle: {
+    color: '#fff',
+    fontSize: 14,
+    fontFamily: 'Inter_700Bold',
+  },
+  challengeLimitCount: {
+    color: Colors.primary,
+    fontSize: 13,
+    fontFamily: 'Inter_700Bold',
+  },
+  challengeLimitText: {
+    color: 'rgba(255,255,255,0.68)',
+    fontSize: 12,
+    lineHeight: 18,
+    fontFamily: 'Inter_400Regular',
+    marginBottom: 10,
+  },
+  challengeLimitBarTrack: {
+    height: 8,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    overflow: 'hidden',
+  },
+  challengeLimitBarFill: {
+    height: '100%',
+    borderRadius: 999,
+    backgroundColor: Colors.primary,
   },
   challengeStatusText: {
     color: '#FCA5A5',

@@ -3,9 +3,6 @@ import {
   ActivityIndicator,
   Alert,
   Image,
-  Linking,
-  Modal,
-  Platform,
   Pressable,
   SafeAreaView,
   ScrollView,
@@ -21,18 +18,18 @@ import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../constants/Colors';
 import VictoryHeader from '../../components/VictoryHeader';
 import {
-  connectWearableProvider,
+  fetchCurrentUser,
   fetchLongevityDashboard,
   generateLongevityWeeklyPlan,
   LongevityCircle,
   LongevityDashboard,
   LongevityHabit,
   LongevityMasterclass,
-  LongevityWearableDevice,
-  WearableProvider,
   syncLongevityWearables,
   updateLongevityHabit,
 } from '../../lib/api';
+import { canAccessFeature } from '../../lib/access';
+import { useModuleAccessGuard } from '../../lib/useModuleAccessGuard';
 
 const FALLBACK_CARD_IMAGE = 'https://images.unsplash.com/photo-1517836357463-d25dfeac3438?w=600&q=80';
 
@@ -74,23 +71,28 @@ function EmptyState({ icon, title, subtitle }: { icon: any; title: string; subti
 }
 
 export default function LongevityOS() {
+  useModuleAccessGuard('/profile/longevity-os');
   const router = useRouter();
   const { width } = useWindowDimensions();
   const [activeTab, setActiveTab] = useState('overview');
   const [dashboard, setDashboard] = useState<LongevityDashboard | null>(null);
+
   const [loading, setLoading] = useState(true);
   const [syncingWearables, setSyncingWearables] = useState(false);
   const [generatingPlan, setGeneratingPlan] = useState(false);
-  const [connectingDeviceId, setConnectingDeviceId] = useState<string | null>(null);
-  const [selectedDevice, setSelectedDevice] = useState<LongevityWearableDevice | null>(null);
+  const [canGenerateLongevityPlan, setCanGenerateLongevityPlan] = useState(false);
 
   const loadDashboard = React.useCallback(async (showLoader = true) => {
     if (showLoader) {
       setLoading(true);
     }
     try {
-      const response = await fetchLongevityDashboard();
+      const [response, user] = await Promise.all([
+        fetchLongevityDashboard(),
+        fetchCurrentUser(),
+      ]);
       setDashboard(response);
+      setCanGenerateLongevityPlan(canAccessFeature('longevity_plan', user));
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unable to load Longevity OS.';
       Alert.alert('Load failed', message);
@@ -121,8 +123,11 @@ export default function LongevityOS() {
     }
     setSyncingWearables(true);
     try {
-      const response = await syncLongevityWearables();
-      setDashboard((current) => (current ? { ...current, wearables: response } : current));
+      await Promise.all([
+        syncLongevityWearables(),
+        new Promise((resolve) => setTimeout(resolve, 5000)),
+      ]);
+      await loadDashboard(false);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unable to sync wearables.';
       Alert.alert('Sync failed', message);
@@ -155,126 +160,6 @@ export default function LongevityOS() {
       const message = error instanceof Error ? error.message : 'Unable to update habit.';
       Alert.alert('Update failed', message);
     }
-  };
-
-  const closeConnectModal = () => {
-    if (connectingDeviceId) {
-      return;
-    }
-    setSelectedDevice(null);
-  };
-
-  const handleSelectDevice = (device: LongevityWearableDevice) => {
-    setSelectedDevice(device);
-  };
-
-  const handleConnectDevice = async (device: LongevityWearableDevice) => {
-    if (connectingDeviceId) {
-      return;
-    }
-
-    if (device.id === 'apple-health') {
-      if (Platform.OS !== 'ios') {
-        Alert.alert('iPhone required', 'Apple Health can only be connected from the iOS app.');
-        return;
-      }
-      Alert.alert(
-        'Connect Apple Health',
-        'Open the iOS Health permission flow in your app, allow Health access, then sync your data here. Apple Health does not connect through Bluetooth scanning from this screen.',
-      );
-      return;
-    }
-
-    if (device.id === 'health-connect') {
-      if (Platform.OS !== 'android') {
-        Alert.alert('Android required', 'Google Fit can only be connected from the Android app in this flow.');
-        return;
-      }
-      Alert.alert(
-        'Connect Google Fit',
-        'Grant Google Fit or Health Connect permissions on Android, then return here and sync your data. This provider does not pair through Bluetooth scanning from this screen.',
-      );
-      return;
-    }
-
-    setConnectingDeviceId(device.id);
-    try {
-      const provider = device.id as Extract<WearableProvider, 'fitbit' | 'garmin'>;
-      const response = await connectWearableProvider(provider);
-      const supported = await Linking.canOpenURL(response.authorization_url);
-      if (!supported) {
-        throw new Error('Unable to open the provider connection page.');
-      }
-      await Linking.openURL(response.authorization_url);
-      setSelectedDevice(null);
-      Alert.alert('Continue in browser', `Finish the ${device.name} connection flow, then come back to sync.`);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : `Unable to connect ${device.name}.`;
-      Alert.alert('Connection failed', message);
-    } finally {
-      setConnectingDeviceId(null);
-    }
-  };
-
-  const renderConnectionBody = (device: LongevityWearableDevice) => {
-    if (device.id === 'apple-health') {
-      return (
-        <>
-          <Text style={styles.connectionDescription}>
-            Apple Health connects through iPhone Health permissions. It does not pair by scanning a nearby watch from this screen.
-          </Text>
-          <View style={styles.connectionInfoCard}>
-            <Text style={styles.connectionInfoTitle}>Supported method</Text>
-            <Text style={styles.connectionInfoText}>HealthKit permission sync from the iOS app</Text>
-          </View>
-          <TouchableOpacity style={styles.connectionPrimaryButton} activeOpacity={0.88} onPress={() => void handleConnectDevice(device)}>
-            <Ionicons name="phone-portrait-outline" size={18} color="#000" />
-            <Text style={styles.connectionPrimaryText}>OPEN IOS HEALTH SETUP</Text>
-          </TouchableOpacity>
-        </>
-      );
-    }
-
-    if (device.id === 'health-connect') {
-      return (
-        <>
-          <Text style={styles.connectionDescription}>
-            Google Fit connects through Android permissions and linked health sources. It does not pair through direct Bluetooth scanning from this screen.
-          </Text>
-          <View style={styles.connectionInfoCard}>
-            <Text style={styles.connectionInfoTitle}>Supported method</Text>
-            <Text style={styles.connectionInfoText}>Google Fit or Health Connect permission sync from the Android app</Text>
-          </View>
-          <TouchableOpacity style={styles.connectionPrimaryButton} activeOpacity={0.88} onPress={() => void handleConnectDevice(device)}>
-            <Ionicons name="logo-android" size={18} color="#000" />
-            <Text style={styles.connectionPrimaryText}>OPEN GOOGLE FIT SETUP</Text>
-          </TouchableOpacity>
-        </>
-      );
-    }
-
-    return (
-      <>
-        <Text style={styles.connectionDescription}>
-          {device.name} connects through account authorization. Open the secure connection flow, finish sign-in, then return here to sync data.
-        </Text>
-        <View style={styles.connectionInfoCard}>
-          <Text style={styles.connectionInfoTitle}>Supported method</Text>
-          <Text style={styles.connectionInfoText}>Secure account connection via OAuth with your {device.name} account</Text>
-        </View>
-        <TouchableOpacity
-          style={styles.connectionPrimaryButton}
-          activeOpacity={0.88}
-          onPress={() => void handleConnectDevice(device)}
-          disabled={connectingDeviceId === device.id}
-        >
-          <Ionicons name={connectingDeviceId === device.id ? 'hourglass-outline' : 'open-outline'} size={18} color="#000" />
-          <Text style={styles.connectionPrimaryText}>
-            {connectingDeviceId === device.id ? 'CONNECTING...' : `CONNECT ${device.name.toUpperCase()}`}
-          </Text>
-        </TouchableOpacity>
-      </>
-    );
   };
 
   const renderOverview = () => (
@@ -326,76 +211,36 @@ export default function LongevityOS() {
     <ScrollView style={styles.tabContent} contentContainerStyle={styles.contentContainer} showsVerticalScrollIndicator={false}>
       {(() => {
         const devices = dashboard?.wearables.devices || [];
-        const connectedDevices = devices.filter((device) => device.active);
-        const availableDevices = devices.filter((device) => !device.active);
-        const primaryConnectDevice = availableDevices[0] || devices[0] || null;
-
-        if (connectedDevices.length === 0) {
-          return (
-            <>
-              <SectionTitle>Wearables</SectionTitle>
-              <View style={styles.emptyConnectCard}>
-                <Ionicons name="watch-outline" size={42} color={Colors.primary} />
-                <Text style={styles.emptyConnectTitle}>No Wearable Connected</Text>
-                <Text style={styles.emptyConnectSubtitle}>
-                  Connect Fitbit, Apple Health, Google Fit, or Garmin to start syncing your health data.
-                </Text>
-                {primaryConnectDevice ? (
-                  <TouchableOpacity style={styles.primaryButton} activeOpacity={0.88} onPress={() => handleSelectDevice(primaryConnectDevice)}>
-                    <Ionicons name="link-outline" size={18} color="#000" />
-                    <Text style={styles.primaryButtonText}>CONNECT WITH WEARABLE</Text>
-                  </TouchableOpacity>
-                ) : null}
-              </View>
-            </>
-          );
-        }
 
         return (
           <>
-            <SectionTitle>Connected Devices</SectionTitle>
+            <SectionTitle>Wearable Sources</SectionTitle>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.horizontalList}>
-              {connectedDevices.map((device) => (
+              {devices.map((device) => (
                 <View key={device.id} style={[styles.deviceCard, { width: (width - 32) * 0.52 }]}>
                   <Image source={{ uri: safeImageUri(device.image) }} style={styles.deviceImage} />
                   <View style={styles.deviceOverlay} />
                   <View style={styles.deviceContent}>
                     <Text style={[styles.deviceTitle, device.active && { color: Colors.primary }]}>{device.name}</Text>
                     <Text style={styles.deviceMeta}>{device.status}</Text>
-                    <TouchableOpacity style={styles.deviceConnectedBadge} activeOpacity={0.88} onPress={() => handleSelectDevice(device)}>
-                      <Ionicons name="checkmark-circle" size={15} color="#10B981" />
-                      <Text style={styles.deviceConnectedText}>READY</Text>
-                    </TouchableOpacity>
+                    <View style={styles.deviceConnectedBadge}>
+                      <Ionicons name={device.active ? 'checkmark-circle' : 'hardware-chip-outline'} size={15} color={device.active ? '#10B981' : Colors.primary} />
+                      <Text style={styles.deviceConnectedText}>{device.active ? 'SYNCED' : 'READY'}</Text>
+                    </View>
                   </View>
                 </View>
               ))}
             </ScrollView>
 
-            {availableDevices.length > 0 ? (
-              <>
-                <SectionTitle>Connect Another Device</SectionTitle>
-                <View style={styles.availableDeviceList}>
-                  {availableDevices.map((device) => (
-                    <TouchableOpacity
-                      key={device.id}
-                      style={styles.availableDeviceRow}
-                      activeOpacity={0.88}
-                      onPress={() => handleSelectDevice(device)}
-                    >
-                      <View style={styles.availableDeviceContent}>
-                        <Text style={styles.availableDeviceTitle}>{device.name}</Text>
-                        <Text style={styles.availableDeviceSubtitle}>Tap to connect this provider</Text>
-                      </View>
-                      <Ionicons name="chevron-forward" size={18} color={Colors.primary} />
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              </>
-            ) : null}
+            <View style={styles.infoCard}>
+              <Text style={styles.infoText}>
+                Sync imports realistic wearable health data from the backend and stores it for Longevity OS insights, recovery tracking, and weekly planning.
+              </Text>
+            </View>
 
             <TouchableOpacity style={styles.primaryButton} activeOpacity={0.88} onPress={() => void handleSyncWearables()} disabled={syncingWearables}>
               <Ionicons name={syncingWearables ? 'hourglass-outline' : 'refresh'} size={18} color="#000" />
-              <Text style={styles.primaryButtonText}>{syncingWearables ? 'SYNCING...' : 'SYNC DATA NOW'}</Text>
+              <Text style={styles.primaryButtonText}>{syncingWearables ? 'SYNCING HEALTH DATA...' : 'SYNC DATA NOW'}</Text>
             </TouchableOpacity>
           </>
         );
@@ -403,32 +248,6 @@ export default function LongevityOS() {
       <View style={styles.infoCard}>
         <Text style={styles.infoText}>{dashboard?.wearables.sync_message || 'No data synced yet.'}</Text>
       </View>
-
-      <Modal
-        visible={Boolean(selectedDevice)}
-        transparent
-        animationType="fade"
-        onRequestClose={closeConnectModal}
-      >
-        <Pressable style={styles.modalBackdrop} onPress={closeConnectModal}>
-          <Pressable style={styles.modalCard} onPress={() => undefined}>
-            {selectedDevice ? (
-              <>
-                <View style={styles.modalHeader}>
-                  <View>
-                    <Text style={styles.modalEyebrow}>DEVICE CONNECTION</Text>
-                    <Text style={styles.modalTitle}>{selectedDevice.name}</Text>
-                  </View>
-                  <TouchableOpacity style={styles.modalCloseButton} activeOpacity={0.88} onPress={closeConnectModal}>
-                    <Ionicons name="close" size={20} color="#fff" />
-                  </TouchableOpacity>
-                </View>
-                {renderConnectionBody(selectedDevice)}
-              </>
-            ) : null}
-          </Pressable>
-        </Pressable>
-      </Modal>
     </ScrollView>
   );
 
@@ -441,10 +260,16 @@ export default function LongevityOS() {
           <Text style={styles.heroBadge}>AI-POWERED LIBRARY</Text>
           <Text style={styles.heroTitle}>Heal with Food</Text>
           <Text style={styles.heroMeta}>Research-backed nutrition guidance tailored to your health profile.</Text>
-          <TouchableOpacity style={styles.secondaryButton} activeOpacity={0.88} onPress={() => void handleGenerateWeeklyPlan()} disabled={generatingPlan}>
-            <Ionicons name={generatingPlan ? 'hourglass-outline' : 'sparkles'} size={16} color="#000" />
-            <Text style={styles.secondaryButtonText}>{generatingPlan ? 'Generating...' : 'Generate My Weekly Plan'}</Text>
-          </TouchableOpacity>
+          {canGenerateLongevityPlan ? (
+            <TouchableOpacity style={styles.secondaryButton} activeOpacity={0.88} onPress={() => void handleGenerateWeeklyPlan()} disabled={generatingPlan}>
+              <Ionicons name={generatingPlan ? 'hourglass-outline' : 'sparkles'} size={16} color="#000" />
+              <Text style={styles.secondaryButtonText}>{generatingPlan ? 'Generating...' : 'Generate My Weekly Plan'}</Text>
+            </TouchableOpacity>
+          ) : (
+            <View style={styles.infoCard}>
+              <Text style={styles.infoText}>Weekly Longevity plan generation is available on Inner Circle only.</Text>
+            </View>
+          )}
         </View>
       </View>
 

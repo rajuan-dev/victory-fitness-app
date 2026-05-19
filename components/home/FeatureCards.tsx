@@ -5,7 +5,11 @@ import { Colors } from '../../constants/Colors';
 
 const { width } = Dimensions.get('window');
 
-export default function FeatureCards() {
+type FeatureCardsProps = {
+  canAccessNutrition?: boolean;
+};
+
+export default function FeatureCards({ canAccessNutrition = true }: FeatureCardsProps) {
   const router = useRouter();
 
   return (
@@ -29,24 +33,25 @@ export default function FeatureCards() {
         </View>
       </View>
 
-      {/* Nutrition */}
-      <View style={[styles.featureCardFull, { backgroundColor: Colors.accentPurple, marginTop: 16 }]}>
-        <View style={styles.featureIconCircle}>
-          <MaterialCommunityIcons name="silverware-fork-knife" size={20} color="#fff" />
+      {canAccessNutrition ? (
+        <View style={[styles.featureCardFull, { backgroundColor: Colors.accentPurple, marginTop: 16 }]}>
+          <View style={styles.featureIconCircle}>
+            <MaterialCommunityIcons name="silverware-fork-knife" size={20} color="#fff" />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.featureTitle}>NUTRITION</Text>
+            <Text style={styles.featureDesc}>
+              Personalized nutrition plans and recipes for your goals.
+            </Text>
+            <TouchableOpacity
+              style={styles.featureAction}
+              onPress={() => router.push('/mealPlan')}
+            >
+              <Text style={styles.featureLink}>View Plan +</Text>
+            </TouchableOpacity>
+          </View>
         </View>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.featureTitle}>NUTRITION</Text>
-          <Text style={styles.featureDesc}>
-            Personalized nutrition plans and recipes for your goals.
-          </Text>
-          <TouchableOpacity 
-            style={styles.featureAction}
-            onPress={() => router.push('/mealPlan')}
-          >
-            <Text style={styles.featureLink}>View Plan +</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
+      ) : null}
     </View>
   );
 }

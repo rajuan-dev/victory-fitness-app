@@ -18,6 +18,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../constants/Colors';
 import VictoryHeader from '../../components/VictoryHeader';
 import { BodyMetrics, clearAuthTokens, fetchCurrentUser, fetchCurrentUserBodyMetrics, updateCurrentUserBodyMetrics } from '../../lib/api';
+import { canAccessFeature, canAccessPlanRoute } from '../../lib/access';
+import { useModuleAccessGuard } from '../../lib/useModuleAccessGuard';
 
 function getRankIcon(rank: string) {
   const normalized = rank.trim().toLowerCase();
@@ -61,6 +63,7 @@ const MENU_SECTIONS = [
   {
     title: 'Fitness',
     items: [
+      { icon: 'analytics-outline', label: 'Body Metrics', tint: '#06B6D4', action: 'body_metrics' },
       { icon: 'barbell-outline', label: 'Workout', tint: '#06B6D4', route: '/workoutplan' },
       { icon: 'restaurant-outline', label: 'Nutrition', tint: '#F97316', route: '/mealPlan' },
       { icon: 'body-outline', label: 'Journal', tint: '#EC4899', route: '/journal' },
@@ -98,6 +101,7 @@ function getDynamicRankIcon(rank: string) {
 }
 
 export default function ProfileScreen() {
+  useModuleAccessGuard('/profile');
   const router = useRouter();
   const [me, setMe] = React.useState<{
     id: string;
@@ -134,6 +138,49 @@ export default function ProfileScreen() {
   });
   const [showGenderModal, setShowGenderModal] = React.useState(false);
   const [refreshing, setRefreshing] = React.useState(false);
+  const bodyMetricsSummary = React.useMemo(() => {
+    const parts = [
+      bodyMetrics.age ? `${bodyMetrics.age}y` : '',
+      bodyMetrics.height ? `${bodyMetrics.height}cm` : '',
+      bodyMetrics.weight ? `${bodyMetrics.weight}kg` : '',
+      bodyMetrics.gender || '',
+    ].filter(Boolean);
+    return parts.length > 0 ? parts.join(' • ') : 'Not set';
+  }, [bodyMetrics.age, bodyMetrics.gender, bodyMetrics.height, bodyMetrics.weight]);
+
+  const visibleMenuSections = React.useMemo(() => {
+    return MENU_SECTIONS.map((section) => ({
+      ...section,
+      items: section.items
+        .filter((item) => {
+          if (!('route' in item) || !item.route) {
+            return true;
+          }
+          if (item.route === '/workoutplan') {
+            return canAccessFeature('workoutplan', me);
+          }
+          if (item.route === '/mealPlan') {
+            return canAccessPlanRoute('/mealPlan', me);
+          }
+          if (item.route === '/profile/application') {
+            return canAccessFeature('application', me);
+          }
+          if (item.route === '/profile/longevity-os') {
+            return canAccessFeature('longevity', me);
+          }
+          return true;
+        })
+        .map((item) => {
+          if ((item as any).action === 'body_metrics') {
+            return {
+              ...item,
+              value: bodyMetricsSummary,
+            };
+          }
+          return item;
+        }),
+    })).filter((section) => section.items.length > 0);
+  }, [bodyMetricsSummary, me]);
 
   const genderOptions = ['Male', 'Female', 'Other'];
 
@@ -190,6 +237,8 @@ export default function ProfileScreen() {
   const points = me?.points ?? 0;
   const workoutsCompleted = me?.workouts_completed ?? 0;
   const workoutsTotal = me?.workouts_total ?? 0;
+  const canAccessLongevity = canAccessFeature('longevity', me);
+  const canAccessCoachVictor = canAccessFeature('coach_victor', me);
   const streakDays = me?.streak_days ?? 0;
   const rank = me?.rank ?? 'Noob';
   const nextRank = me?.next_rank ?? rank;
@@ -308,43 +357,12 @@ export default function ProfileScreen() {
         </View>
 
         {/* ── Body Metrics ── */}
-        <View style={styles.metricsCard}>
-          <View style={styles.metricsTitleRow}>
-            <Text style={styles.metricsTitle}>BODY METRICS</Text>
-            <TouchableOpacity
-              style={styles.metricsEditBtn}
-              activeOpacity={0.8}
-              onPress={openMetricsModal}
-            >
-              <Ionicons name="pencil-outline" size={14} color="#06B6D4" />
-              <Text style={styles.metricsEditText}>Edit</Text>
-            </TouchableOpacity>
-          </View>
-          <View style={styles.metricsGrid}>
-            {[
-              { label: 'Age', value: bodyMetrics.age || '--', unit: bodyMetrics.age ? 'yrs' : '', icon: 'calendar-outline', tint: '#4F8EF7' },
-              { label: 'Height', value: bodyMetrics.height || '--', unit: bodyMetrics.height ? 'cm' : '', icon: 'resize-outline', tint: '#06B6D4' },
-              { label: 'Weight', value: bodyMetrics.weight || '--', unit: bodyMetrics.weight ? 'kg' : '', icon: 'barbell-outline', tint: '#A855F7' },
-              { label: 'Gender', value: bodyMetrics.gender || '--', unit: '', icon: 'person-outline', tint: '#F97316' },
-            ].map((m) => (
-              <View key={m.label} style={styles.metricCard}>
-                <View style={[styles.metricIconBox, { backgroundColor: `${m.tint}18` }]}>
-                  <Ionicons name={m.icon as any} size={18} color={m.tint} />
-                </View>
-                <Text style={styles.metricBigVal}>
-                  {m.value}
-                  {m.unit ? <Text style={styles.metricUnit}> {m.unit}</Text> : null}
-                </Text>
-                <Text style={styles.metricLabel}>{m.label}</Text>
-              </View>
-            ))}
-          </View>
-        </View>
+
 
         {/* ── Coach Cards ── */}
         <View style={styles.coachSection}>
           <Text style={styles.sectionTitle}>MY COACHES</Text>
-          <View style={[styles.coachCard, { backgroundColor: Colors.surface }]}>
+          {canAccessCoachVictor ? <View style={[styles.coachCard, { backgroundColor: Colors.surface }]}>
             <View style={[styles.coachIconWrap, { backgroundColor: Colors.accentBlue }]}>
               <Ionicons name="add" size={26} color="#fff" />
             </View>
@@ -358,26 +376,28 @@ export default function ProfileScreen() {
             >
               <Ionicons name="chevron-forward" size={18} color="rgba(255,255,255,0.4)" />
             </TouchableOpacity>
-          </View>
-          <View style={styles.coachCard}>
-            <View style={[styles.coachIconWrap, { backgroundColor: Colors.accentPurple }]}>
+          </View> : null}
+          {canAccessLongevity ? (
+            <View style={styles.coachCard}>
+              <View style={[styles.coachIconWrap, { backgroundColor: Colors.accentPurple }]}>
               <Ionicons name="pulse" size={22} color="#fff" />
             </View>
-            <View style={{ flex: 1 }}>
+              <View style={{ flex: 1 }}>
               <Text style={styles.coachName}>LONGEVITY OS</Text>
               <Text style={[styles.coachStatus, { color: '#A855F7' }]}>⚡ Optimizing for you</Text>
             </View>
-            <TouchableOpacity
-              style={styles.coachArrow}
-              onPress={() => router.push('/profile/longevity-os')}
-            >
-              <Ionicons name="chevron-forward" size={18} color="rgba(255,255,255,0.4)" />
-            </TouchableOpacity>
-          </View>
+              <TouchableOpacity
+                style={styles.coachArrow}
+                onPress={() => router.push('/profile/longevity-os')}
+              >
+                <Ionicons name="chevron-forward" size={18} color="rgba(255,255,255,0.4)" />
+              </TouchableOpacity>
+            </View>
+          ) : null}
         </View>
 
         {/* ── Menu Sections ── */}
-        {MENU_SECTIONS.map((section) => (
+        {visibleMenuSections.map((section) => (
           <View key={section.title} style={styles.menuSection}>
             <Text style={styles.sectionTitle}>{section.title.toUpperCase()}</Text>
             <View style={styles.menuCard}>
@@ -386,7 +406,15 @@ export default function ProfileScreen() {
                   <TouchableOpacity
                     style={styles.menuRow}
                     activeOpacity={0.7}
-                    onPress={() => (item as any).route && router.push((item as any).route)}
+                    onPress={() => {
+                      if ((item as any).action === 'body_metrics') {
+                        openMetricsModal();
+                        return;
+                      }
+                      if ((item as any).route) {
+                        router.push((item as any).route);
+                      }
+                    }}
                   >
                     <View style={[styles.menuIconWrap, { backgroundColor: `${item.tint}20` }]}>
                       <Ionicons name={item.icon as any} size={18} color={item.tint} />
@@ -433,7 +461,7 @@ export default function ProfileScreen() {
               </View>
             ) : null}
             <View style={styles.metricsModalHeader}>
-              <Text style={styles.metricsModalTitle}>EDIT BODY METRICS</Text>
+              <Text style={styles.metricsModalTitle}>UPDATE BODY METRICS</Text>
               <TouchableOpacity onPress={() => setShowMetricsModal(false)} disabled={savingMetrics}>
                 <Ionicons name="close" size={22} color="rgba(255,255,255,0.7)" />
               </TouchableOpacity>
@@ -496,9 +524,19 @@ export default function ProfileScreen() {
               </View>
             </View>
 
-            <TouchableOpacity style={styles.metricsSaveBtn} activeOpacity={0.85} onPress={handleSaveMetrics} disabled={savingMetrics}>
-              <Text style={styles.metricsSaveBtnText}>SAVE</Text>
-            </TouchableOpacity>
+            <View style={styles.metricsActionRow}>
+              <TouchableOpacity
+                style={styles.metricsCancelBtn}
+                activeOpacity={0.85}
+                onPress={() => setShowMetricsModal(false)}
+                disabled={savingMetrics}
+              >
+                <Text style={styles.metricsCancelBtnText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.metricsSaveBtn} activeOpacity={0.85} onPress={handleSaveMetrics} disabled={savingMetrics}>
+                {savingMetrics ? <ActivityIndicator size="small" color="#04111F" /> : <Text style={styles.metricsSaveBtnText}>Save Changes</Text>}
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
       </Modal>
@@ -668,7 +706,19 @@ const styles = StyleSheet.create({
   },
   metricsTitleRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
   metricsTitle: { fontSize: 11, color: Colors.textMuted, fontFamily: 'Inter_700Bold', letterSpacing: 1, textTransform: 'uppercase' },
-  metricsEditBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: 'rgba(6,182,212,0.1)', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20, borderWidth: 1, borderColor: 'rgba(6,182,212,0.25)' },
+  metricsEditBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+    backgroundColor: 'rgba(6,182,212,0.1)',
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(6,182,212,0.25)',
+    marginTop: 16,
+  },
   metricsEditText: { color: '#06B6D4', fontSize: 12, fontWeight: '600', fontFamily: 'Inter_700Bold' },
   metricsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
   metricCard: {
@@ -749,10 +799,32 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontFamily: 'Inter_400Regular',
   },
+  metricsActionRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  metricsCancelBtn: {
+    flex: 1,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 16,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+  },
+  metricsCancelBtnText: {
+    color: '#fff',
+    fontSize: 14,
+    fontFamily: 'Inter_700Bold',
+    letterSpacing: 0.8,
+  },
   metricsSaveBtn: {
+    flex: 1,
     backgroundColor: Colors.accentBlue,
     borderRadius: 16,
     alignItems: 'center',
+    justifyContent: 'center',
     paddingVertical: 16,
   },
   metricsSaveBtnText: {

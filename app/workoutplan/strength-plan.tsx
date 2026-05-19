@@ -14,14 +14,17 @@ import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../constants/Colors';
 import VictoryHeader from '../../components/VictoryHeader';
 import { fetchLatestStrengthWorkoutPlan, getLatestStrengthWorkoutPlan, loadLatestStrengthWorkoutPlan, StrengthPlanResponse } from '../../lib/workout-plans';
+import { useModuleAccessGuard } from '../../lib/useModuleAccessGuard';
 
 export default function StrengthPlanResult() {
+  useModuleAccessGuard('/workoutplan');
   const router = useRouter();
   const [plan, setPlan] = useState<StrengthPlanResponse | null>(getLatestStrengthWorkoutPlan());
   const [loading, setLoading] = useState(!plan);
   const dayLabels = useMemo(() => (plan?.days?.length ? plan.days.map((day) => day.day) : ['Mon']), [plan]);
   const [selectedDay, setSelectedDay] = useState(dayLabels[0] ?? 'Mon');
   const selectedPlanDay = plan?.days?.find((day) => day.day === selectedDay) ?? plan?.days?.[0] ?? null;
+
 
   useEffect(() => {
     let cancelled = false;

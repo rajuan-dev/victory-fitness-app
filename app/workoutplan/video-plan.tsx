@@ -14,15 +14,21 @@ import { Stack, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../constants/Colors';
 import { getLatestVideoWorkoutPlan } from '../../lib/workout-plans';
+import { useModuleAccessGuard } from '../../lib/useModuleAccessGuard';
 
 const { width } = Dimensions.get('window');
 
 export default function VideoPlanResult() {
+  const checkingAccess = useModuleAccessGuard('/workoutplan');
   const router = useRouter();
   const plan = getLatestVideoWorkoutPlan();
   const dayLabels = useMemo(() => (plan?.days?.length ? plan.days.map((day) => day.day) : ['Mon']), [plan]);
   const [selectedDay, setSelectedDay] = useState(dayLabels[0] ?? 'Mon');
   const selectedPlanDay = plan?.days?.find((day) => day.day === selectedDay) ?? plan?.days?.[0] ?? null;
+
+  if (checkingAccess) {
+    return null;
+  }
 
   return (
     <SafeAreaView style={styles.container}>

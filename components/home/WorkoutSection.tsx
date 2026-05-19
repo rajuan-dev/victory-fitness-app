@@ -2,30 +2,67 @@ import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Colors } from '../../constants/Colors';
+import { fetchCurrentUser } from '../../lib/api';
+import { canAccessFeature } from '../../lib/access';
 
 export default function WorkoutSection() {
   const router = useRouter();
+  const [canAccessWorkoutPlans, setCanAccessWorkoutPlans] = React.useState(true);
+
+  React.useEffect(() => {
+    let cancelled = false;
+
+    const loadAccess = async () => {
+      try {
+        const user = await fetchCurrentUser();
+        if (!cancelled) {
+          setCanAccessWorkoutPlans(canAccessFeature('workoutplan', user));
+        }
+      } catch {
+        if (!cancelled) {
+          setCanAccessWorkoutPlans(false);
+        }
+      }
+    };
+
+    void loadAccess();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   return (
     <View style={styles.section}>
       <View style={styles.workoutCard}>
         <Text style={styles.sectionTitle}>NEXT UP: YOUR WORKOUT</Text>
-        <Text style={styles.workoutHeading}>NO PLAN? NO PROBLEM.</Text>
-        <Text style={styles.workoutDesc}>
-          Choose your path to victory. Which plan will you start?
-        </Text>
-        <TouchableOpacity 
-          style={styles.workoutBtnPrimary}
-          onPress={() => router.push('/workoutplan/video-wizard')}
-        >
-          <Text style={styles.workoutBtnPrimaryText}>7-DAY VIDEO PLAN</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.workoutBtnOutline}
-          onPress={() => router.push('/workoutplan/strength-wizard')}
-        >
-          <Text style={styles.workoutBtnOutlineText}>CUSTOM STRENGTH PLAN</Text>
-        </TouchableOpacity>
+        {canAccessWorkoutPlans ? (
+          <>
+            <Text style={styles.workoutHeading}>NO PLAN? NO PROBLEM.</Text>
+            <Text style={styles.workoutDesc}>
+              Choose your path to victory. Which plan will you start?
+            </Text>
+            <TouchableOpacity 
+              style={styles.workoutBtnPrimary}
+              onPress={() => router.push('/workoutplan/video-wizard')}
+            >
+              <Text style={styles.workoutBtnPrimaryText}>7-DAY VIDEO PLAN</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.workoutBtnOutline}
+              onPress={() => router.push('/workoutplan/strength-wizard')}
+            >
+              <Text style={styles.workoutBtnOutlineText}>CUSTOM STRENGTH PLAN</Text>
+            </TouchableOpacity>
+          </>
+        ) : (
+          <>
+            <Text style={styles.workoutHeading}>WORKOUT LIBRARY READY.</Text>
+            <Text style={styles.workoutDesc}>
+              Your current plan includes the workout library. Upgrade to unlock custom workout plans.
+            </Text>
+          </>
+        )}
       </View>
     </View>
   );

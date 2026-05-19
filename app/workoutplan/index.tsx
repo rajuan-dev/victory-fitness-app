@@ -19,10 +19,12 @@ import {
   StrengthPlanResponse,
   VideoPlanResponse,
 } from '../../lib/workout-plans';
+import { useModuleAccessGuard } from '../../lib/useModuleAccessGuard';
 
 const { width } = Dimensions.get('window');
 
 export default function WorkoutPlanScreen() {
+  const checkingAccess = useModuleAccessGuard('/workoutplan');
   const router = useRouter();
   const [isModalVisible, setIsModalVisible] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -57,6 +59,10 @@ export default function WorkoutPlanScreen() {
   }, []);
 
   const hasSavedPlan = Boolean(strengthPlan || videoPlan);
+
+  if (checkingAccess) {
+    return null;
+  }
 
   return (
     <SafeAreaView style={styles.container}>
