@@ -123,7 +123,7 @@ async function collectAppleHealthMetrics(): Promise<MobileHealthSyncPayload> {
     callbackToPromise<any[]>((callback) => AppleHealthKit.getOxygenSaturationSamples({ ...baseOptions, limit: 100 }, callback)),
   ]);
 
-  const sourceDevice = 'Apple Health';
+  const sourceDevice = 'Apple Watch / Apple Health';
   const metrics: NormalizedHealthMetricPayload[] = [];
 
   stepSamples.forEach((item) => {
@@ -227,7 +227,7 @@ async function collectAppleHealthMetrics(): Promise<MobileHealthSyncPayload> {
   });
 
   if (metrics.length === 0) {
-    throw new Error('No Apple Health records were found for the last 7 days.');
+    throw new Error('No Apple Watch / Apple Health records were found for the last 7 days.');
   }
 
   return {
@@ -351,7 +351,7 @@ async function collectHealthConnectMetrics(): Promise<MobileHealthSyncPayload> {
 
 export function getNativeSyncLabel(target: NativeSyncTarget) {
   const effectiveTarget = normalizeNativeSyncTarget(target);
-  return effectiveTarget === 'apple-health' ? 'Apple Health' : 'Health Connect';
+  return effectiveTarget === 'apple-health' ? 'Apple Watch / Apple Health' : 'Health Connect';
 }
 
 async function authorizeAppleHealth(AppleHealthKit: any) {
@@ -374,7 +374,7 @@ async function authorizeAppleHealth(AppleHealthKit: any) {
     AppleHealthKit.isAvailable((error: string | null, result: boolean) => callback(error, result));
   });
   if (!available) {
-    throw new Error('Apple Health is not available on this device.');
+    throw new Error('Apple Watch / Apple Health is not available on this device.');
   }
 
   await callbackToPromise((callback) => {

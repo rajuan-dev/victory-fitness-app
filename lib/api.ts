@@ -149,7 +149,7 @@ export type LongevityWearableDevice = {
   image: string;
 };
 
-export type WearableProvider = 'apple-health' | 'health-connect' | 'fitbit' | 'garmin' | 'this-phone' | 'qr-import';
+export type WearableProvider = 'apple-health' | 'health-connect' | 'fitbit' | 'google-fit' | 'garmin' | 'this-phone' | 'qr-import';
 
 export type NormalizedHealthMetricPayload = {
   metric_type: 'steps' | 'heart_rate' | 'sleep' | 'calories' | 'workouts' | 'hrv' | 'spo2' | 'stress' | 'body_battery' | 'distance';
@@ -211,6 +211,23 @@ export type WearableConnectionResponse = {
   metadata?: Record<string, unknown>;
   created_at?: string;
   updated_at?: string;
+};
+
+export type IntegrationConnection = {
+  provider: WearableProvider;
+  display_name: string;
+  connection_type: 'oauth' | 'native' | 'import' | string;
+  status: 'connected' | 'needs_permission' | 'syncing' | 'error' | 'not_connected' | 'provider_not_configured' | string;
+  connected: boolean;
+  needs_permission: boolean;
+  connected_at?: string | null;
+  last_synced_at?: string | null;
+  last_error: string;
+  last_sync_message: string;
+};
+
+export type IntegrationListResponse = {
+  items: IntegrationConnection[];
 };
 
 export type WearableSyncResponse = {
@@ -783,8 +800,12 @@ export async function syncLongevityWearables(provider?: WearableProvider | Weara
   });
 }
 
-export async function connectWearableProvider(provider: Extract<WearableProvider, 'fitbit' | 'garmin'>) {
+export async function connectWearableProvider(provider: Extract<WearableProvider, 'fitbit' | 'google-fit' | 'garmin'>) {
   return apiRequest<WearableOAuthConnectResponse>(`/integrations/${encodeURIComponent(provider)}/connect`);
+}
+
+export async function fetchIntegrationConnections() {
+  return apiRequest<IntegrationListResponse>('/integrations');
 }
 
 export async function connectLongevityDemoProvider(provider: WearableProvider) {
@@ -819,7 +840,7 @@ export async function markNativeIntegrationConnected(payload: {
 }
 
 export async function syncLongevityQrImport(qrPayload: string, sourceDevice?: string) {
-  return apiRequest<WearableSyncResponse>('/wearables/qr-import/sync', {
+  return apiRequest<WearableSyncResponse>('/integrations/import/qr', {
     method: 'POST',
     body: {
       qr_payload: qrPayload,

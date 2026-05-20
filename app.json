@@ -63,6 +63,13 @@
     ],
     "extra": {
       "router": {},
+      "googleHealthConnect": {
+        "clientId": "664344615268-kjsk6iq3ae0stfuu025o6hsdp988cvrl.apps.googleusercontent.com",
+        "projectId": "victory-fitness-1779318789941",
+        "authUri": "https://accounts.google.com/o/oauth2/auth",
+        "tokenUri": "https://oauth2.googleapis.com/token",
+        "authProviderCertUrl": "https://www.googleapis.com/oauth2/v1/certs"
+      },
       "eas": {
         "projectId": "b745c8ed-3483-4e3c-8c77-923cce1c5376"
       }
