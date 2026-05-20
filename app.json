@@ -14,7 +14,11 @@
       "backgroundColor": "#ffffff"
     },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSHealthShareUsageDescription": "Victory Fitness reads your health data to power Longevity OS insights and recovery tracking.",
+        "NSHealthUpdateUsageDescription": "Victory Fitness writes health updates only when you choose to sync your wellness data."
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -37,7 +41,25 @@
     "plugins": [
       "expo-router",
       "expo-font",
-      "expo-audio"
+      "expo-audio",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "compileSdkVersion": 35,
+            "targetSdkVersion": 35,
+            "minSdkVersion": 26
+          }
+        }
+      ],
+      "expo-health-connect",
+      [
+        "react-native-health",
+        {
+          "healthSharePermission": "Victory Fitness reads your Apple Health data to power Longevity OS insights and recovery tracking.",
+          "healthUpdatePermission": "Victory Fitness writes health updates only when you choose to sync your wellness data."
+        }
+      ]
     ],
     "extra": {
       "router": {},

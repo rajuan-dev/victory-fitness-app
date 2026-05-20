@@ -10,8 +10,10 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
+  Platform,
   useWindowDimensions,
 } from 'react-native';
 import { Stack, useRouter } from 'expo-router';
@@ -24,8 +26,10 @@ import {
   connectLongevityDemoProvider,
   connectWearableProvider,
   fetchCurrentUser,
+  fetchLongevityHealthSummary,
   fetchLongevityDashboard,
   generateLongevityWeeklyPlan,
+  HealthMetricSummaryItem,
   LongevityCircle,
   LongevityDashboard,
   LongevityHabit,
@@ -33,10 +37,12 @@ import {
   LongevityWeeklyPlan,
   LongevityWearableDevice,
   WearableProvider,
+  syncLongevityQrImport,
   syncLongevityWearables,
   updateLongevityHabit,
 } from '../../lib/api';
 import { canAccessFeature } from '../../lib/access';
+import { type NativeSyncTarget, syncNativeHealthSource } from '../../lib/nativeHealthSync';
 import { useModuleAccessGuard } from '../../lib/useModuleAccessGuard';
 
 const FALLBACK_CARD_IMAGE = 'https://images.unsplash.com/photo-1517836357463-d25dfeac3438?w=600&q=80';
@@ -55,6 +61,38 @@ function formatWeeklyPlanMessage(plan: LongevityWeeklyPlan) {
 function safeImageUri(value: string | null | undefined) {
   const normalized = String(value || '').trim();
   return normalized || FALLBACK_CARD_IMAGE;
+}
+
+function getWearableSourceDescription(deviceId: string) {
+  switch (deviceId) {
+    case 'fitbit':
+    case 'garmin':
+      return 'Real provider connection';
+    case 'this-phone':
+      return Platform.OS === 'ios' ? 'Read this iPhone via Apple Health' : Platform.OS === 'android' ? 'Read this Android phone via Health Connect' : 'Read this phone in a native mobile build';
+    case 'qr-import':
+      return 'Scan or paste real QR health payloads';
+    case 'apple-health':
+      return 'Read real Apple Health records';
+    case 'health-connect':
+      return 'Read real Health Connect records';
+    default:
+      return 'Health data source';
+  }
+}
+
+function formatHealthMetricValue(item: HealthMetricSummaryItem) {
+  const roundedAverage = Number.isFinite(item.average_value) ? Math.round(item.average_value * 100) / 100 : 0;
+  const unitLabel = item.metric_type === 'steps'
+    ? 'steps'
+    : item.metric_type === 'sleep'
+      ? 'hrs'
+      : item.metric_type === 'heart_rate'
+        ? 'bpm'
+        : item.metric_type === 'distance'
+          ? 'distance'
+          : 'avg';
+  return `${roundedAverage} ${unitLabel}`;
 }
 
 const TABS = [
@@ -102,18 +140,24 @@ export default function LongevityOS() {
   const [canGenerateLongevityPlan, setCanGenerateLongevityPlan] = useState(false);
   const [showWearablePicker, setShowWearablePicker] = useState(false);
   const [connectingDeviceId, setConnectingDeviceId] = useState<string | null>(null);
-  const [selectedWearableId, setSelectedWearableId] = useState<string | null>(null);
+  const [selectedWearableIds, setSelectedWearableIds] = useState<string[]>([]);
+  const [showQrImportModal, setShowQrImportModal] = useState(false);
+  const [qrPayload, setQrPayload] = useState('');
+  const [importingPayload, setImportingPayload] = useState(false);
+  const [healthSummary, setHealthSummary] = useState<HealthMetricSummaryItem[]>([]);
 
   const loadDashboard = React.useCallback(async (showLoader = true) => {
     if (showLoader) {
       setLoading(true);
     }
     try {
-      const [response, user] = await Promise.all([
+      const [response, user, summary] = await Promise.all([
         fetchLongevityDashboard(),
         fetchCurrentUser(),
+        fetchLongevityHealthSummary().catch(() => null),
       ]);
       setDashboard(response);
+      setHealthSummary(Array.isArray(summary?.items) ? summary.items : []);
       setCanGenerateLongevityPlan(canAccessFeature('longevity_plan', user));
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unable to load Longevity OS.';
@@ -165,16 +209,59 @@ export default function LongevityOS() {
     if (syncingWearables) {
       return;
     }
-    if (!selectedWearableId) {
-      Alert.alert('Select wearable', 'Tap a wearable source first, then press Sync Data Now.');
+    if (selectedWearableIds.length === 0) {
+      Alert.alert('Select wearable', 'Tap one or more wearable sources first, then press Sync Data Now.');
       return;
     }
+    if (selectedWearableIds.length === 1 && selectedWearableIds[0] === 'qr-import') {
+      setShowQrImportModal(true);
+      return;
+    }
+    if (selectedWearableIds.includes('qr-import')) {
+      Alert.alert(
+        'Sync separately',
+        'QR Import needs a payload input, so sync it separately from Fitbit, Garmin, Apple Health, or Health Connect.',
+      );
+      return;
+    }
+
+    const wantsPhoneBridge = selectedWearableIds.includes('this-phone');
+    const wantsAppleHealth = selectedWearableIds.includes('apple-health');
+    const wantsHealthConnect = selectedWearableIds.includes('health-connect');
+    const backendProviderIds = selectedWearableIds.filter((providerId) => !['this-phone', 'apple-health', 'health-connect'].includes(providerId));
+
     setSyncingWearables(true);
     try {
-      await Promise.all([
-        syncLongevityWearables(selectedWearableId as WearableProvider),
-        new Promise((resolve) => setTimeout(resolve, 5000)),
-      ]);
+      const tasks: Promise<unknown>[] = [];
+      const nativeTargets = new Set<WearableProvider>();
+
+      if (Platform.OS === 'ios' && (wantsPhoneBridge || wantsAppleHealth)) {
+        nativeTargets.add('apple-health');
+      }
+      if (Platform.OS === 'android' && (wantsPhoneBridge || wantsHealthConnect)) {
+        nativeTargets.add('health-connect');
+      }
+
+      if (Platform.OS === 'ios' && wantsHealthConnect) {
+        throw new Error('Health Connect is available on Android only.');
+      }
+      if (Platform.OS === 'android' && wantsAppleHealth) {
+        throw new Error('Apple Health is available on iPhone only.');
+      }
+
+      nativeTargets.forEach((provider) => {
+        tasks.push(syncNativeHealthSource(provider as NativeSyncTarget));
+      });
+
+      if (backendProviderIds.length > 0) {
+        tasks.push(syncLongevityWearables(backendProviderIds as WearableProvider[]));
+      }
+
+      if (tasks.length === 0) {
+        throw new Error('Select at least one supported data source to sync.');
+      }
+
+      await Promise.all(tasks);
       await loadDashboard(false);
       Alert.alert('Data sync successfully', 'All Longevity OS calculations are now using the synced data.');
     } catch (error) {
@@ -187,6 +274,19 @@ export default function LongevityOS() {
 
   const handleAddWearable = () => {
     setShowWearablePicker(true);
+  };
+
+  const handleToggleWearableSelection = (deviceId: string) => {
+    setSelectedWearableIds((current) => (
+      current.includes(deviceId)
+        ? current.filter((item) => item !== deviceId)
+        : [...current, deviceId]
+    ));
+  };
+
+  const closeQrImportModal = () => {
+    setShowQrImportModal(false);
+    setQrPayload('');
   };
 
   const handleSelectWearable = async (device: LongevityWearableDevice) => {
@@ -205,9 +305,19 @@ export default function LongevityOS() {
         Alert.alert('Continue in browser', `Finish the ${device.name} connection flow, then return here and press Sync Data Now.`);
       } else {
         await connectLongevityDemoProvider(device.id as WearableProvider);
-        Alert.alert(`${device.name} added`, `${device.name} is ready. Press Sync Data Now to import its health data from the database.`);
+        if (device.id === 'qr-import') {
+          Alert.alert(`${device.name} added`, 'QR import is ready. Press Sync Data Now, scan or paste the QR payload, and save the real synced data.');
+        } else if (device.id === 'this-phone') {
+          Alert.alert(`${device.name} added`, `This phone is ready. Press Sync Data Now to read live health data from ${Platform.OS === 'ios' ? 'Apple Health' : Platform.OS === 'android' ? 'Health Connect' : 'your supported mobile health source'}.`);
+        } else if (device.id === 'apple-health' || device.id === 'health-connect') {
+          Alert.alert(`${device.name} added`, `Press Sync Data Now to read real health records from ${device.name} and store them in Longevity OS.`);
+        } else {
+          Alert.alert(`${device.name} added`, `${device.name} is ready. Press Sync Data Now to import synced health data.`);
+        }
       }
-      setSelectedWearableId(device.id);
+      setSelectedWearableIds((current) => (
+        current.includes(device.id) ? current : [...current, device.id]
+      ));
       setShowWearablePicker(false);
       await loadDashboard(false);
     } catch (error) {
@@ -215,6 +325,24 @@ export default function LongevityOS() {
       Alert.alert('Add wearable failed', message);
     } finally {
       setConnectingDeviceId(null);
+    }
+  };
+
+  const handleImportQrPayload = async () => {
+    if (importingPayload) {
+      return;
+    }
+    setImportingPayload(true);
+    try {
+      const response = await syncLongevityQrImport(qrPayload, 'QR Import');
+      await loadDashboard(false);
+      closeQrImportModal();
+      Alert.alert('QR data imported', response.message || 'The QR health data was stored successfully.');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unable to import QR health data.';
+      Alert.alert('Import failed', message);
+    } finally {
+      setImportingPayload(false);
     }
   };
 
@@ -294,6 +422,9 @@ export default function LongevityOS() {
     (() => {
       const devices = dashboard?.wearables.devices || [];
       const availableDevices = devices.filter((device) => !device.active);
+      const selectedSourceLabels = selectedWearableIds
+        .map((providerId) => devices.find((device) => device.id === providerId)?.name || providerId)
+        .join(', ');
       return (
         <ScrollView style={styles.tabContent} contentContainerStyle={styles.contentContainer} showsVerticalScrollIndicator={false} refreshControl={refreshControl}>
             <View style={styles.sectionHeaderRow}>
@@ -308,11 +439,11 @@ export default function LongevityOS() {
                 <TouchableOpacity
                   key={device.id}
                   activeOpacity={0.88}
-                  onPress={() => setSelectedWearableId(device.id)}
+                  onPress={() => handleToggleWearableSelection(device.id)}
                   style={[
                     styles.deviceCard,
                     { width: (width - 32) * 0.52 },
-                    selectedWearableId === device.id && styles.deviceCardSelected,
+                    selectedWearableIds.includes(device.id) && styles.deviceCardSelected,
                   ]}
                 >
                   <Image source={{ uri: safeImageUri(device.image) }} style={styles.deviceImage} />
@@ -322,7 +453,7 @@ export default function LongevityOS() {
                     <Text style={styles.deviceMeta}>{device.status}</Text>
                     <View style={styles.deviceConnectedBadge}>
                       <Ionicons name={device.active ? 'checkmark-circle' : 'hardware-chip-outline'} size={15} color={device.active ? '#10B981' : Colors.primary} />
-                      <Text style={styles.deviceConnectedText}>{selectedWearableId === device.id ? 'SELECTED' : device.active ? 'SYNCED' : 'READY'}</Text>
+                      <Text style={styles.deviceConnectedText}>{selectedWearableIds.includes(device.id) ? 'SELECTED' : device.active ? 'SYNCED' : 'READY'}</Text>
                     </View>
                   </View>
                 </TouchableOpacity>
@@ -331,7 +462,7 @@ export default function LongevityOS() {
 
             <View style={styles.infoCard}>
               <Text style={styles.infoText}>
-                Sync imports realistic wearable health data from the backend and stores it for Longevity OS insights, recovery tracking, and weekly planning.
+                Real synced health data is stored in the backend database and used for Longevity OS insights, recovery tracking, and weekly planning. iPhone reads from Apple Health, Android reads from Health Connect, and Fitbit or Garmin stay on direct provider sync.
               </Text>
             </View>
 
@@ -339,9 +470,38 @@ export default function LongevityOS() {
               <Ionicons name={syncingWearables ? 'hourglass-outline' : 'refresh'} size={18} color="#000" />
               <Text style={styles.primaryButtonText}>{syncingWearables ? 'SYNCING HEALTH DATA...' : 'SYNC DATA NOW'}</Text>
             </TouchableOpacity>
+            <Text style={styles.selectionHintText}>
+              Selected sources: {selectedSourceLabels || 'none'}
+            </Text>
             <View style={styles.infoCard}>
               <Text style={styles.infoText}>{dashboard?.wearables.sync_message || 'No data synced yet.'}</Text>
+              {dashboard?.wearables.last_synced_at ? (
+                <Text style={styles.infoMetaText}>
+                  Last synced {new Date(dashboard.wearables.last_synced_at).toLocaleString()}
+                </Text>
+              ) : null}
             </View>
+
+            <SectionTitle>Synced Data</SectionTitle>
+            {healthSummary.length > 0 ? (
+              <View style={styles.summaryGrid}>
+                {healthSummary.slice(0, 6).map((item) => (
+                  <View key={`${item.provider}-${item.metric_type}`} style={styles.summaryCard}>
+                    <Text style={styles.summaryMetric}>{item.metric_type.replace(/_/g, ' ').toUpperCase()}</Text>
+                    <Text style={styles.summaryValue}>{formatHealthMetricValue(item)}</Text>
+                    <Text style={styles.summaryMeta}>
+                      {item.records} records · {item.provider}
+                    </Text>
+                  </View>
+                ))}
+              </View>
+            ) : (
+              <View style={styles.infoCard}>
+                <Text style={styles.infoText}>
+                  No synced health records yet. Add a wearable source, then import a real payload from QR, this phone, Fitbit, or Garmin.
+                </Text>
+              </View>
+            )}
 
             <Modal visible={showWearablePicker} transparent animationType="fade" onRequestClose={() => setShowWearablePicker(false)}>
               <Pressable style={styles.modalBackdrop} onPress={() => setShowWearablePicker(false)}>
@@ -356,7 +516,7 @@ export default function LongevityOS() {
                     </TouchableOpacity>
                   </View>
                   <Text style={styles.connectionDescription}>
-                    Select a wearable source first. After it is added, use Sync Data Now to import its health data into Longevity OS.
+                    Select one or more wearable sources first. After they are added, use Sync Data Now to import their health data into Longevity OS.
                   </Text>
                   <View style={styles.availableDeviceList}>
                     {availableDevices.length > 0 ? (
@@ -370,9 +530,7 @@ export default function LongevityOS() {
                         >
                           <View style={styles.availableDeviceContent}>
                             <Text style={styles.availableDeviceTitle}>{device.name}</Text>
-                            <Text style={styles.availableDeviceSubtitle}>
-                              {device.id === 'fitbit' || device.id === 'garmin' ? 'Real connection flow' : 'Database-backed demo data'}
-                            </Text>
+                            <Text style={styles.availableDeviceSubtitle}>{getWearableSourceDescription(device.id)}</Text>
                           </View>
                           <Ionicons
                             name={connectingDeviceId === device.id ? 'hourglass-outline' : 'chevron-forward'}
@@ -385,6 +543,44 @@ export default function LongevityOS() {
                       <Text style={styles.infoText}>All wearable sources are already added.</Text>
                     )}
                   </View>
+                </Pressable>
+              </Pressable>
+            </Modal>
+
+            <Modal visible={showQrImportModal} transparent animationType="fade" onRequestClose={closeQrImportModal}>
+              <Pressable style={styles.modalBackdrop} onPress={closeQrImportModal}>
+                <Pressable style={styles.modalCard} onPress={() => undefined}>
+                  <View style={styles.modalHeader}>
+                    <View>
+                      <Text style={styles.modalEyebrow}>QR IMPORT</Text>
+                      <Text style={styles.modalTitle}>Import QR Health Data</Text>
+                    </View>
+                    <TouchableOpacity style={styles.modalCloseButton} activeOpacity={0.88} onPress={closeQrImportModal}>
+                      <Ionicons name="close" size={20} color="#fff" />
+                    </TouchableOpacity>
+                  </View>
+                  <Text style={styles.connectionDescription}>
+                    Paste the real QR payload from the wearable export or bridge app. The backend validates it and stores the synced metrics in the database.
+                  </Text>
+                  <View style={styles.connectionInfoCard}>
+                    <Text style={styles.connectionInfoTitle}>Payload format</Text>
+                    <Text style={styles.connectionInfoText}>
+                      JSON or base64 JSON containing `metrics`, optional `source_device`, and optional `batch_id`.
+                    </Text>
+                  </View>
+                  <TextInput
+                    value={qrPayload}
+                    onChangeText={setQrPayload}
+                    placeholder="Paste QR payload here"
+                    placeholderTextColor="rgba(255,255,255,0.35)"
+                    multiline
+                    textAlignVertical="top"
+                    style={styles.payloadInput}
+                  />
+                  <TouchableOpacity style={styles.connectionPrimaryButton} activeOpacity={0.88} onPress={() => void handleImportQrPayload()} disabled={importingPayload}>
+                    <Ionicons name={importingPayload ? 'hourglass-outline' : 'qr-code-outline'} size={18} color="#000" />
+                    <Text style={styles.connectionPrimaryText}>{importingPayload ? 'IMPORTING...' : 'SAVE QR DATA'}</Text>
+                  </TouchableOpacity>
                 </Pressable>
               </Pressable>
             </Modal>
@@ -1003,6 +1199,13 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontFamily: 'Inter_700Bold',
   },
+  selectionHintText: {
+    marginTop: -4,
+    marginBottom: 16,
+    color: Colors.textMuted,
+    fontSize: 12,
+    fontFamily: 'Inter_400Regular',
+  },
   secondaryButton: {
     marginTop: 16,
     alignSelf: 'flex-start',
@@ -1030,6 +1233,45 @@ const styles = StyleSheet.create({
     color: Colors.textMuted,
     fontSize: 14,
     lineHeight: 20,
+    fontFamily: 'Inter_400Regular',
+  },
+  infoMetaText: {
+    marginTop: 8,
+    color: 'rgba(255,255,255,0.5)',
+    fontSize: 12,
+    fontFamily: 'Inter_400Regular',
+  },
+  summaryGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+    marginBottom: 16,
+  },
+  summaryCard: {
+    width: '48%',
+    backgroundColor: '#12182B',
+    borderRadius: 18,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.05)',
+  },
+  summaryMetric: {
+    color: Colors.primary,
+    fontSize: 11,
+    letterSpacing: 1,
+    fontFamily: 'Inter_700Bold',
+    marginBottom: 8,
+  },
+  summaryValue: {
+    color: '#fff',
+    fontSize: 20,
+    fontFamily: 'Inter_700Bold',
+    marginBottom: 6,
+  },
+  summaryMeta: {
+    color: Colors.textMuted,
+    fontSize: 12,
+    lineHeight: 18,
     fontFamily: 'Inter_400Regular',
   },
   centerState: {
@@ -1119,6 +1361,20 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontFamily: 'Inter_700Bold',
     letterSpacing: 0.8,
+  },
+  payloadInput: {
+    minHeight: 160,
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.07)',
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+    color: '#fff',
+    fontSize: 13,
+    lineHeight: 20,
+    fontFamily: 'Inter_400Regular',
+    marginBottom: 16,
   },
   loadingText: {
     color: Colors.textMuted,

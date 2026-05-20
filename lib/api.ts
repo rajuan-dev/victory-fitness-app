@@ -149,13 +149,47 @@ export type LongevityWearableDevice = {
   image: string;
 };
 
-export type WearableProvider = 'apple-health' | 'health-connect' | 'fitbit' | 'garmin';
+export type WearableProvider = 'apple-health' | 'health-connect' | 'fitbit' | 'garmin' | 'this-phone' | 'qr-import';
+
+export type NormalizedHealthMetricPayload = {
+  metric_type: 'steps' | 'heart_rate' | 'sleep' | 'calories' | 'workouts' | 'hrv' | 'spo2' | 'stress' | 'body_battery' | 'distance';
+  value: number | string;
+  unit: string;
+  start_time: string;
+  end_time: string;
+  source_device?: string;
+  metadata?: Record<string, unknown>;
+};
+
+export type MobileHealthSyncPayload = {
+  metrics: NormalizedHealthMetricPayload[];
+  source_device?: string;
+  batch_id?: string | null;
+};
 
 export type LongevityWearables = {
   devices: LongevityWearableDevice[];
   last_synced_at?: string | null;
   has_data: boolean;
   sync_message: string;
+};
+
+export type HealthMetricSummaryItem = {
+  metric_type: string;
+  provider: string;
+  records: number;
+  total_value: number;
+  average_value: number;
+  min_value?: number | null;
+  max_value?: number | null;
+  latest_end_time?: string | null;
+};
+
+export type HealthMetricSummaryResponse = {
+  user_id: string;
+  from_date?: string | null;
+  to_date?: string | null;
+  items: HealthMetricSummaryItem[];
 };
 
 export type WearableOAuthConnectResponse = {
@@ -177,6 +211,16 @@ export type WearableConnectionResponse = {
   metadata?: Record<string, unknown>;
   created_at?: string;
   updated_at?: string;
+};
+
+export type WearableSyncResponse = {
+  provider: WearableProvider;
+  user_id: string;
+  synced_records: number;
+  skipped_duplicates: number;
+  connection_status: string;
+  last_synced_at?: string | null;
+  message: string;
 };
 
 export type LongevityHabit = {
@@ -727,10 +771,15 @@ export async function fetchLongevityDashboard() {
   };
 }
 
-export async function syncLongevityWearables(provider?: WearableProvider | null) {
+export async function syncLongevityWearables(provider?: WearableProvider | WearableProvider[] | null) {
+  const body = Array.isArray(provider)
+    ? { providers: provider }
+    : provider
+      ? { provider }
+      : {};
   return apiRequest<LongevityWearables>('/longevity-os/wearables/sync', {
     method: 'POST',
-    body: provider ? { provider } : {},
+    body,
   });
 }
 
@@ -742,6 +791,41 @@ export async function connectLongevityDemoProvider(provider: WearableProvider) {
   return apiRequest<WearableConnectionResponse>(`/wearables/${encodeURIComponent(provider)}/demo-connect`, {
     method: 'POST',
   });
+}
+
+export async function syncLongevityQrImport(qrPayload: string, sourceDevice?: string) {
+  return apiRequest<WearableSyncResponse>('/wearables/qr-import/sync', {
+    method: 'POST',
+    body: {
+      qr_payload: qrPayload,
+      source_device: sourceDevice || '',
+    },
+  });
+}
+
+export async function syncLongevityThisPhone(payload: MobileHealthSyncPayload) {
+  return apiRequest<WearableSyncResponse>('/wearables/this-phone/sync', {
+    method: 'POST',
+    body: payload,
+  });
+}
+
+export async function syncLongevityAppleHealth(payload: MobileHealthSyncPayload) {
+  return apiRequest<WearableSyncResponse>('/wearables/apple-health/sync', {
+    method: 'POST',
+    body: payload,
+  });
+}
+
+export async function syncLongevityHealthConnect(payload: MobileHealthSyncPayload) {
+  return apiRequest<WearableSyncResponse>('/wearables/health-connect/sync', {
+    method: 'POST',
+    body: payload,
+  });
+}
+
+export async function fetchLongevityHealthSummary() {
+  return apiRequest<HealthMetricSummaryResponse>('/health-data/me/summary');
 }
 
 export async function updateLongevityHabit(habitId: string, done: boolean) {
