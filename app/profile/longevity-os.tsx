@@ -23,7 +23,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Colors } from '../../constants/Colors';
 import VictoryHeader from '../../components/VictoryHeader';
 import {
-  connectLongevityDemoProvider,
+  connectLongevityLocalProvider,
   connectWearableProvider,
   fetchCurrentUser,
   fetchLongevityHealthSummary,
@@ -36,13 +36,14 @@ import {
   LongevityMasterclass,
   LongevityWeeklyPlan,
   LongevityWearableDevice,
+  markNativeIntegrationConnected,
   WearableProvider,
   syncLongevityQrImport,
   syncLongevityWearables,
   updateLongevityHabit,
 } from '../../lib/api';
 import { canAccessFeature } from '../../lib/access';
-import { type NativeSyncTarget, syncNativeHealthSource } from '../../lib/nativeHealthSync';
+import { authorizeNativeHealthSource, type NativeSyncTarget, syncNativeHealthSource } from '../../lib/nativeHealthSync';
 import { useModuleAccessGuard } from '../../lib/useModuleAccessGuard';
 
 const FALLBACK_CARD_IMAGE = 'https://images.unsplash.com/photo-1517836357463-d25dfeac3438?w=600&q=80';
@@ -66,18 +67,102 @@ function safeImageUri(value: string | null | undefined) {
 function getWearableSourceDescription(deviceId: string) {
   switch (deviceId) {
     case 'fitbit':
+      return 'Browser login with Fitbit OAuth';
     case 'garmin':
-      return 'Real provider connection';
+      return 'Browser login with Garmin OAuth';
     case 'this-phone':
-      return Platform.OS === 'ios' ? 'Read this iPhone via Apple Health' : Platform.OS === 'android' ? 'Read this Android phone via Health Connect' : 'Read this phone in a native mobile build';
+      return Platform.OS === 'ios' ? 'Uses native Apple Health permission on this iPhone' : Platform.OS === 'android' ? 'Uses native Health Connect permission on this Android phone' : 'Uses native phone health permission';
     case 'qr-import':
-      return 'Scan or paste real QR health payloads';
+      return 'Fallback import by QR payload';
     case 'apple-health':
-      return 'Read real Apple Health records';
+      return 'Native Apple Health permission for Apple Watch and iPhone data';
     case 'health-connect':
-      return 'Read real Health Connect records';
+      return 'Native Health Connect permission for Android health data';
     default:
       return 'Health data source';
+  }
+}
+
+function getWearableDisplayName(deviceId: string, fallbackName: string) {
+  switch (deviceId) {
+    case 'apple-health':
+      return 'Apple Watch / Apple Health';
+    case 'health-connect':
+      return 'Samsung / Pixel / Health Connect';
+    case 'fitbit':
+      return 'Fitbit Devices';
+    case 'garmin':
+      return 'Garmin Devices';
+    case 'this-phone':
+      return Platform.OS === 'ios' ? 'This iPhone' : Platform.OS === 'android' ? 'This Android Phone' : fallbackName;
+    case 'qr-import':
+      return 'QR Import / Other Device';
+    default:
+      return fallbackName;
+  }
+}
+
+function getWearableCompatibleDevices(deviceId: string) {
+  switch (deviceId) {
+    case 'apple-health':
+      return ['Apple Watch', 'iPhone Health', 'Oura Ring', 'Withings', 'Polar'];
+    case 'health-connect':
+      return ['Samsung Galaxy Watch', 'Pixel Watch', 'Realme phone', 'Redmi / Xiaomi phone', 'Amazfit'];
+    case 'fitbit':
+      return ['Fitbit Charge', 'Fitbit Sense', 'Fitbit Versa', 'Google Fitbit'];
+    case 'garmin':
+      return ['Garmin Venu', 'Garmin Forerunner', 'Garmin Fenix', 'Garmin Instinct'];
+    case 'this-phone':
+      return Platform.OS === 'ios'
+        ? ['iPhone Health App', 'Apple Watch on this iPhone']
+        : Platform.OS === 'android'
+          ? ['Health Connect', 'Realme / Redmi', 'Samsung / Pixel']
+          : ['Native mobile health source'];
+    case 'qr-import':
+      return ['Other wearable export', 'Partner QR bridge', 'Manual clinic data'];
+    default:
+      return [];
+  }
+}
+
+function getWearableFlowSummary(deviceId: string) {
+  switch (deviceId) {
+    case 'fitbit':
+      return 'Login in browser, return to app, then sync real Fitbit data.';
+    case 'garmin':
+      return 'Login in browser, return to app, then sync real Garmin data.';
+    case 'apple-health':
+      return 'Approve Apple Health access on iPhone, then sync Apple Watch and Health data.';
+    case 'health-connect':
+      return 'Approve Health Connect access on Android, then sync real phone and wearable data.';
+    case 'this-phone':
+      return Platform.OS === 'ios'
+        ? 'Uses Apple Health on this iPhone, then syncs the approved health data.'
+        : Platform.OS === 'android'
+          ? 'Uses Health Connect on this Android phone, then syncs the approved health data.'
+          : 'Uses the native phone health connection, then syncs the approved health data.';
+    case 'qr-import':
+      return 'Connect the import option, then paste or scan a QR payload when syncing.';
+    default:
+      return 'Connect first, then sync the health data.';
+  }
+}
+
+function getWearableCategoryLabel(deviceId: string) {
+  switch (deviceId) {
+    case 'apple-health':
+    case 'this-phone':
+      return 'iPhone / Apple';
+    case 'health-connect':
+      return 'Android / Health Connect';
+    case 'fitbit':
+      return 'Fitbit';
+    case 'garmin':
+      return 'Garmin';
+    case 'qr-import':
+      return 'Other Device / QR';
+    default:
+      return 'Other Devices';
   }
 }
 
@@ -157,6 +242,10 @@ export default function LongevityOS() {
         fetchLongevityHealthSummary().catch(() => null),
       ]);
       setDashboard(response);
+      const activeDeviceIds = Array.isArray(response?.wearables?.devices)
+        ? response.wearables.devices.filter((device) => device.active).map((device) => device.id)
+        : [];
+      setSelectedWearableIds((current) => (current.length > 0 ? current : activeDeviceIds));
       setHealthSummary(Array.isArray(summary?.items) ? summary.items : []);
       setCanGenerateLongevityPlan(canAccessFeature('longevity_plan', user));
     } catch (error) {
@@ -209,15 +298,20 @@ export default function LongevityOS() {
     if (syncingWearables) {
       return;
     }
-    if (selectedWearableIds.length === 0) {
-      Alert.alert('Select wearable', 'Tap one or more wearable sources first, then press Sync Data Now.');
+    const connectedDeviceIds = (dashboard?.wearables.devices || [])
+      .filter((device) => device.active)
+      .map((device) => device.id);
+    const targetDeviceIds = selectedWearableIds.length > 0 ? selectedWearableIds : connectedDeviceIds;
+
+    if (targetDeviceIds.length === 0) {
+      Alert.alert('Add device', 'Connect a device first, then press Sync Data Now.');
       return;
     }
-    if (selectedWearableIds.length === 1 && selectedWearableIds[0] === 'qr-import') {
+    if (targetDeviceIds.length === 1 && targetDeviceIds[0] === 'qr-import') {
       setShowQrImportModal(true);
       return;
     }
-    if (selectedWearableIds.includes('qr-import')) {
+    if (targetDeviceIds.includes('qr-import')) {
       Alert.alert(
         'Sync separately',
         'QR Import needs a payload input, so sync it separately from Fitbit, Garmin, Apple Health, or Health Connect.',
@@ -225,10 +319,10 @@ export default function LongevityOS() {
       return;
     }
 
-    const wantsPhoneBridge = selectedWearableIds.includes('this-phone');
-    const wantsAppleHealth = selectedWearableIds.includes('apple-health');
-    const wantsHealthConnect = selectedWearableIds.includes('health-connect');
-    const backendProviderIds = selectedWearableIds.filter((providerId) => !['this-phone', 'apple-health', 'health-connect'].includes(providerId));
+    const wantsPhoneBridge = targetDeviceIds.includes('this-phone');
+    const wantsAppleHealth = targetDeviceIds.includes('apple-health');
+    const wantsHealthConnect = targetDeviceIds.includes('health-connect');
+    const backendProviderIds = targetDeviceIds.filter((providerId) => !['this-phone', 'apple-health', 'health-connect'].includes(providerId));
 
     setSyncingWearables(true);
     try {
@@ -284,6 +378,15 @@ export default function LongevityOS() {
     ));
   };
 
+  const handleChooseDevice = async (device: LongevityWearableDevice) => {
+    if (device.active) {
+      setSelectedWearableIds([device.id]);
+      setShowWearablePicker(false);
+      return;
+    }
+    await handleSelectWearable(device);
+  };
+
   const closeQrImportModal = () => {
     setShowQrImportModal(false);
     setQrPayload('');
@@ -302,22 +405,32 @@ export default function LongevityOS() {
           throw new Error('Unable to open the wearable connection page.');
         }
         await Linking.openURL(response.authorization_url);
-        Alert.alert('Continue in browser', `Finish the ${device.name} connection flow, then return here and press Sync Data Now.`);
+        Alert.alert('Continue in browser', `Finish the ${device.name} login in browser, then return here and press Sync Data.`);
+      } else if (
+        (Platform.OS === 'ios' && (device.id === 'apple-health' || device.id === 'this-phone')) ||
+        (Platform.OS === 'android' && (device.id === 'health-connect' || device.id === 'this-phone'))
+      ) {
+        await authorizeNativeHealthSource(device.id as NativeSyncTarget);
+        await markNativeIntegrationConnected({
+          provider: device.id as WearableProvider,
+          permission_granted: true,
+          platform: Platform.OS,
+          source_device: getWearableDisplayName(device.id, device.name),
+        });
+        Alert.alert('Connected', `${getWearableDisplayName(device.id, device.name)} connected successfully. You can now press Sync Data to read and store real health data.`);
       } else {
-        await connectLongevityDemoProvider(device.id as WearableProvider);
+        await connectLongevityLocalProvider(device.id as WearableProvider);
         if (device.id === 'qr-import') {
-          Alert.alert(`${device.name} added`, 'QR import is ready. Press Sync Data Now, scan or paste the QR payload, and save the real synced data.');
+          Alert.alert(`${device.name} added`, 'QR import is ready. Press Sync Data, then scan or paste the QR payload to save real synced data.');
         } else if (device.id === 'this-phone') {
-          Alert.alert(`${device.name} added`, `This phone is ready. Press Sync Data Now to read live health data from ${Platform.OS === 'ios' ? 'Apple Health' : Platform.OS === 'android' ? 'Health Connect' : 'your supported mobile health source'}.`);
+          Alert.alert(`${device.name} added`, `This phone is ready. Press Sync Data to read live health data from ${Platform.OS === 'ios' ? 'Apple Health' : Platform.OS === 'android' ? 'Health Connect' : 'your supported mobile health source'}.`);
         } else if (device.id === 'apple-health' || device.id === 'health-connect') {
-          Alert.alert(`${device.name} added`, `Press Sync Data Now to read real health records from ${device.name} and store them in Longevity OS.`);
+          Alert.alert(`${device.name} added`, `Press Sync Data to read real health records from ${device.name} and store them in Longevity OS.`);
         } else {
-          Alert.alert(`${device.name} added`, `${device.name} is ready. Press Sync Data Now to import synced health data.`);
+          Alert.alert(`${device.name} added`, `${device.name} is ready. Press Sync Data to import synced health data.`);
         }
       }
-      setSelectedWearableIds((current) => (
-        current.includes(device.id) ? current : [...current, device.id]
-      ));
+      setSelectedWearableIds([device.id]);
       setShowWearablePicker(false);
       await loadDashboard(false);
     } catch (error) {
@@ -421,58 +534,34 @@ export default function LongevityOS() {
   const renderWearables = () => (
     (() => {
       const devices = dashboard?.wearables.devices || [];
-      const availableDevices = devices.filter((device) => !device.active);
-      const selectedSourceLabels = selectedWearableIds
-        .map((providerId) => devices.find((device) => device.id === providerId)?.name || providerId)
-        .join(', ');
+      const deviceGroups = [
+        'iPhone / Apple',
+        'Android / Health Connect',
+        'Fitbit',
+        'Garmin',
+        'Other Device / QR',
+      ].map((label) => ({
+        label,
+        devices: devices.filter((device) => getWearableCategoryLabel(device.id) === label),
+      })).filter((group) => group.devices.length > 0);
       return (
         <ScrollView style={styles.tabContent} contentContainerStyle={styles.contentContainer} showsVerticalScrollIndicator={false} refreshControl={refreshControl}>
-            <View style={styles.sectionHeaderRow}>
-              <SectionTitle>Wearable Sources</SectionTitle>
-              <TouchableOpacity style={styles.inlineActionButton} activeOpacity={0.88} onPress={handleAddWearable}>
-                <Ionicons name="add" size={16} color="#000" />
-                <Text style={styles.inlineActionText}>Add Wearable</Text>
-              </TouchableOpacity>
-            </View>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.horizontalList}>
-              {devices.map((device) => (
-                <TouchableOpacity
-                  key={device.id}
-                  activeOpacity={0.88}
-                  onPress={() => handleToggleWearableSelection(device.id)}
-                  style={[
-                    styles.deviceCard,
-                    { width: (width - 32) * 0.52 },
-                    selectedWearableIds.includes(device.id) && styles.deviceCardSelected,
-                  ]}
-                >
-                  <Image source={{ uri: safeImageUri(device.image) }} style={styles.deviceImage} />
-                  <View style={styles.deviceOverlay} />
-                  <View style={styles.deviceContent}>
-                    <Text style={[styles.deviceTitle, device.active && { color: Colors.primary }]}>{device.name}</Text>
-                    <Text style={styles.deviceMeta}>{device.status}</Text>
-                    <View style={styles.deviceConnectedBadge}>
-                      <Ionicons name={device.active ? 'checkmark-circle' : 'hardware-chip-outline'} size={15} color={device.active ? '#10B981' : Colors.primary} />
-                      <Text style={styles.deviceConnectedText}>{selectedWearableIds.includes(device.id) ? 'SELECTED' : device.active ? 'SYNCED' : 'READY'}</Text>
-                    </View>
-                  </View>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-
-            <View style={styles.infoCard}>
-              <Text style={styles.infoText}>
-                Real synced health data is stored in the backend database and used for Longevity OS insights, recovery tracking, and weekly planning. iPhone reads from Apple Health, Android reads from Health Connect, and Fitbit or Garmin stay on direct provider sync.
-              </Text>
-            </View>
+            <SectionTitle>Connected Devices</SectionTitle>
+            <TouchableOpacity style={styles.addDeviceCard} activeOpacity={0.88} onPress={handleAddWearable}>
+              <View style={styles.addDeviceIconWrap}>
+                <Ionicons name="add" size={24} color="#000" />
+              </View>
+              <View style={styles.addDeviceContent}>
+                <Text style={styles.addDeviceTitle}>Add Device</Text>
+                <Text style={styles.addDeviceSubtitle}>Apple Health or Health Connect permissions, Fitbit or Garmin login, or QR fallback import</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={20} color={Colors.primary} />
+            </TouchableOpacity>
 
             <TouchableOpacity style={styles.primaryButton} activeOpacity={0.88} onPress={() => void handleSyncWearables()} disabled={syncingWearables}>
               <Ionicons name={syncingWearables ? 'hourglass-outline' : 'refresh'} size={18} color="#000" />
-              <Text style={styles.primaryButtonText}>{syncingWearables ? 'SYNCING HEALTH DATA...' : 'SYNC DATA NOW'}</Text>
+              <Text style={styles.primaryButtonText}>{syncingWearables ? 'SYNCING HEALTH DATA...' : 'SYNC DATA'}</Text>
             </TouchableOpacity>
-            <Text style={styles.selectionHintText}>
-              Selected sources: {selectedSourceLabels || 'none'}
-            </Text>
             <View style={styles.infoCard}>
               <Text style={styles.infoText}>{dashboard?.wearables.sync_message || 'No data synced yet.'}</Text>
               {dashboard?.wearables.last_synced_at ? (
@@ -498,7 +587,7 @@ export default function LongevityOS() {
             ) : (
               <View style={styles.infoCard}>
                 <Text style={styles.infoText}>
-                  No synced health records yet. Add a wearable source, then import a real payload from QR, this phone, Fitbit, or Garmin.
+                  No synced health records yet. Add a device first, then sync real data from QR, this phone, Fitbit, Garmin, Apple Health, or Health Connect.
                 </Text>
               </View>
             )}
@@ -508,41 +597,66 @@ export default function LongevityOS() {
                 <Pressable style={styles.modalCard} onPress={() => undefined}>
                   <View style={styles.modalHeader}>
                     <View>
-                      <Text style={styles.modalEyebrow}>WEARABLE SETUP</Text>
-                      <Text style={styles.modalTitle}>Add Wearable</Text>
+                      <Text style={styles.modalEyebrow}>DEVICE SETUP</Text>
+                      <Text style={styles.modalTitle}>Add Device</Text>
                     </View>
                     <TouchableOpacity style={styles.modalCloseButton} activeOpacity={0.88} onPress={() => setShowWearablePicker(false)}>
                       <Ionicons name="close" size={20} color="#fff" />
                     </TouchableOpacity>
                   </View>
-                  <Text style={styles.connectionDescription}>
-                    Select one or more wearable sources first. After they are added, use Sync Data Now to import their health data into Longevity OS.
-                  </Text>
-                  <View style={styles.availableDeviceList}>
-                    {availableDevices.length > 0 ? (
-                      availableDevices.map((device) => (
-                        <TouchableOpacity
-                          key={device.id}
-                          style={styles.availableDeviceRow}
-                          activeOpacity={0.88}
-                          disabled={connectingDeviceId === device.id}
-                          onPress={() => void handleSelectWearable(device)}
-                        >
-                          <View style={styles.availableDeviceContent}>
-                            <Text style={styles.availableDeviceTitle}>{device.name}</Text>
-                            <Text style={styles.availableDeviceSubtitle}>{getWearableSourceDescription(device.id)}</Text>
+                  <ScrollView
+                    style={styles.deviceModalScroll}
+                    contentContainerStyle={styles.deviceModalScrollContent}
+                    showsVerticalScrollIndicator={false}
+                    nestedScrollEnabled
+                  >
+                    <Text style={styles.connectionDescription}>
+                      Choose a connection below. Fitbit and Garmin use browser login. Apple Health and Health Connect use native phone permissions. QR is a fallback import option.
+                    </Text>
+                    <View style={styles.availableDeviceList}>
+                      {deviceGroups.length > 0 ? (
+                        deviceGroups.map((group) => (
+                          <View key={group.label} style={styles.availableDeviceGroup}>
+                            <Text style={styles.availableDeviceGroupTitle}>{group.label}</Text>
+                            {group.devices.map((device) => (
+                              <TouchableOpacity
+                                key={device.id}
+                                style={styles.availableDeviceRow}
+                                activeOpacity={0.88}
+                                disabled={connectingDeviceId === device.id}
+                                onPress={() => void handleChooseDevice(device)}
+                              >
+                                <View style={styles.availableDeviceContent}>
+                                  <Text style={styles.availableDeviceTitle}>{getWearableDisplayName(device.id, device.name)}</Text>
+                                  <Text style={styles.availableDeviceSubtitle}>{getWearableSourceDescription(device.id)}</Text>
+                                <Text style={styles.availableDeviceExamples}>
+                                  Supports: {getWearableCompatibleDevices(device.id).join(', ')}
+                                </Text>
+                                <Text style={styles.availableDeviceFlow}>
+                                  {getWearableFlowSummary(device.id)}
+                                </Text>
+                              </View>
+                                {connectingDeviceId === device.id ? (
+                                  <Ionicons name="hourglass-outline" size={18} color={Colors.primary} />
+                                ) : device.active ? (
+                                  <View style={styles.availableDeviceBadge}>
+                                    <Ionicons name="checkmark-circle" size={14} color="#10B981" />
+                                    <Text style={styles.availableDeviceBadgeText}>Connected</Text>
+                                  </View>
+                                ) : (
+                                  <View style={styles.availableDeviceConnectButton}>
+                                    <Text style={styles.availableDeviceConnectText}>Connect</Text>
+                                  </View>
+                                )}
+                              </TouchableOpacity>
+                            ))}
                           </View>
-                          <Ionicons
-                            name={connectingDeviceId === device.id ? 'hourglass-outline' : 'chevron-forward'}
-                            size={18}
-                            color={Colors.primary}
-                          />
-                        </TouchableOpacity>
-                      ))
-                    ) : (
-                      <Text style={styles.infoText}>All wearable sources are already added.</Text>
-                    )}
-                  </View>
+                        ))
+                      ) : (
+                        <Text style={styles.infoText}>No device options are available right now.</Text>
+                      )}
+                    </View>
+                  </ScrollView>
                 </Pressable>
               </Pressable>
             </Modal>
@@ -866,6 +980,41 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontFamily: 'Inter_700Bold',
   },
+  addDeviceCard: {
+    backgroundColor: '#12182B',
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.05)',
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 16,
+  },
+  addDeviceIconWrap: {
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    backgroundColor: Colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  addDeviceContent: {
+    flex: 1,
+  },
+  addDeviceTitle: {
+    color: '#fff',
+    fontSize: 16,
+    fontFamily: 'Inter_700Bold',
+    marginBottom: 4,
+  },
+  addDeviceSubtitle: {
+    color: Colors.textMuted,
+    fontSize: 12,
+    lineHeight: 18,
+    fontFamily: 'Inter_400Regular',
+  },
   heroCard: {
     height: 220,
     borderRadius: 24,
@@ -1092,6 +1241,30 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontFamily: 'Inter_500Medium',
   },
+  deviceHint: {
+    marginTop: 6,
+    color: 'rgba(255,255,255,0.68)',
+    fontSize: 11,
+    lineHeight: 16,
+    fontFamily: 'Inter_400Regular',
+  },
+  deviceTagWrap: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginTop: 10,
+  },
+  deviceTag: {
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  deviceTagText: {
+    color: '#DCE7F5',
+    fontSize: 10,
+    fontFamily: 'Inter_600SemiBold',
+  },
   deviceActionButton: {
     marginTop: 12,
     alignSelf: 'flex-start',
@@ -1160,6 +1333,21 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     marginBottom: 16,
   },
+  availableDeviceGroup: {
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255,255,255,0.05)',
+  },
+  availableDeviceGroupTitle: {
+    color: Colors.primary,
+    fontSize: 12,
+    letterSpacing: 1,
+    fontFamily: 'Inter_700Bold',
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    paddingBottom: 8,
+    textTransform: 'uppercase',
+    backgroundColor: 'rgba(255,255,255,0.02)',
+  },
   availableDeviceRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1183,6 +1371,50 @@ const styles = StyleSheet.create({
     color: Colors.textMuted,
     fontSize: 12,
     fontFamily: 'Inter_400Regular',
+  },
+  availableDeviceExamples: {
+    color: 'rgba(255,255,255,0.52)',
+    fontSize: 11,
+    lineHeight: 17,
+    marginTop: 5,
+    fontFamily: 'Inter_400Regular',
+  },
+  availableDeviceFlow: {
+    color: '#DCE7F5',
+    fontSize: 11,
+    lineHeight: 17,
+    marginTop: 6,
+    fontFamily: 'Inter_500Medium',
+  },
+  availableDeviceBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: 'rgba(16,185,129,0.12)',
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderWidth: 1,
+    borderColor: 'rgba(16,185,129,0.28)',
+  },
+  availableDeviceBadgeText: {
+    color: '#10B981',
+    fontSize: 11,
+    fontFamily: 'Inter_700Bold',
+  },
+  availableDeviceConnectButton: {
+    backgroundColor: Colors.primary,
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    minWidth: 78,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  availableDeviceConnectText: {
+    color: '#000',
+    fontSize: 11,
+    fontFamily: 'Inter_700Bold',
   },
   primaryButton: {
     backgroundColor: Colors.primary,
@@ -1293,6 +1525,7 @@ const styles = StyleSheet.create({
     padding: 22,
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.06)',
+    maxHeight: '86%',
   },
   modalHeader: {
     flexDirection: 'row',
@@ -1326,6 +1559,12 @@ const styles = StyleSheet.create({
     lineHeight: 21,
     fontFamily: 'Inter_400Regular',
     marginBottom: 16,
+  },
+  deviceModalScroll: {
+    maxHeight: '100%',
+  },
+  deviceModalScrollContent: {
+    paddingBottom: 4,
   },
   connectionInfoCard: {
     backgroundColor: 'rgba(255,255,255,0.04)',

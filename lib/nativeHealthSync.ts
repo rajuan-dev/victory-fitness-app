@@ -96,31 +96,7 @@ function callbackToPromise<T>(register: (callback: (error: string | null, result
 
 async function collectAppleHealthMetrics(): Promise<MobileHealthSyncPayload> {
   const AppleHealthKit = require('react-native-health').default;
-  const permissions = {
-    permissions: {
-      read: [
-        AppleHealthKit.Constants.Permissions.StepCount,
-        AppleHealthKit.Constants.Permissions.DistanceWalkingRunning,
-        AppleHealthKit.Constants.Permissions.ActiveEnergyBurned,
-        AppleHealthKit.Constants.Permissions.HeartRate,
-        AppleHealthKit.Constants.Permissions.HeartRateVariability,
-        AppleHealthKit.Constants.Permissions.SleepAnalysis,
-        AppleHealthKit.Constants.Permissions.OxygenSaturation,
-      ],
-      write: [],
-    },
-  };
-
-  const available = await callbackToPromise<boolean>((callback) => {
-    AppleHealthKit.isAvailable((error: string | null, result: boolean) => callback(error, result));
-  });
-  if (!available) {
-    throw new Error('Apple Health is not available on this device.');
-  }
-
-  await callbackToPromise((callback) => {
-    AppleHealthKit.initHealthKit(permissions, (error: string | null) => callback(error, true));
-  });
+  await authorizeAppleHealth(AppleHealthKit);
 
   const { startIso, endIso } = getSyncWindow();
   const baseOptions = {
@@ -263,20 +239,7 @@ async function collectAppleHealthMetrics(): Promise<MobileHealthSyncPayload> {
 
 async function collectHealthConnectMetrics(): Promise<MobileHealthSyncPayload> {
   const HealthConnect = require('react-native-health-connect') as typeof import('react-native-health-connect');
-  const initialized = await HealthConnect.initialize();
-  if (!initialized) {
-    throw new Error('Health Connect could not be initialized on this device.');
-  }
-
-  await HealthConnect.requestPermission([
-    { accessType: 'read', recordType: 'Steps' },
-    { accessType: 'read', recordType: 'Distance' },
-    { accessType: 'read', recordType: 'ActiveCaloriesBurned' },
-    { accessType: 'read', recordType: 'HeartRate' },
-    { accessType: 'read', recordType: 'HeartRateVariabilityRmssd' },
-    { accessType: 'read', recordType: 'SleepSession' },
-    { accessType: 'read', recordType: 'OxygenSaturation' },
-  ]);
+  await authorizeHealthConnect(HealthConnect);
 
   const { startIso, endIso } = getSyncWindow();
   const timeRangeFilter = {
@@ -389,6 +352,66 @@ async function collectHealthConnectMetrics(): Promise<MobileHealthSyncPayload> {
 export function getNativeSyncLabel(target: NativeSyncTarget) {
   const effectiveTarget = normalizeNativeSyncTarget(target);
   return effectiveTarget === 'apple-health' ? 'Apple Health' : 'Health Connect';
+}
+
+async function authorizeAppleHealth(AppleHealthKit: any) {
+  const permissions = {
+    permissions: {
+      read: [
+        AppleHealthKit.Constants.Permissions.StepCount,
+        AppleHealthKit.Constants.Permissions.DistanceWalkingRunning,
+        AppleHealthKit.Constants.Permissions.ActiveEnergyBurned,
+        AppleHealthKit.Constants.Permissions.HeartRate,
+        AppleHealthKit.Constants.Permissions.HeartRateVariability,
+        AppleHealthKit.Constants.Permissions.SleepAnalysis,
+        AppleHealthKit.Constants.Permissions.OxygenSaturation,
+      ],
+      write: [],
+    },
+  };
+
+  const available = await callbackToPromise<boolean>((callback) => {
+    AppleHealthKit.isAvailable((error: string | null, result: boolean) => callback(error, result));
+  });
+  if (!available) {
+    throw new Error('Apple Health is not available on this device.');
+  }
+
+  await callbackToPromise((callback) => {
+    AppleHealthKit.initHealthKit(permissions, (error: string | null) => callback(error, true));
+  });
+}
+
+async function authorizeHealthConnect(HealthConnect: typeof import('react-native-health-connect')) {
+  const initialized = await HealthConnect.initialize();
+  if (!initialized) {
+    throw new Error('Health Connect could not be initialized on this device.');
+  }
+
+  await HealthConnect.requestPermission([
+    { accessType: 'read', recordType: 'Steps' },
+    { accessType: 'read', recordType: 'Distance' },
+    { accessType: 'read', recordType: 'ActiveCaloriesBurned' },
+    { accessType: 'read', recordType: 'HeartRate' },
+    { accessType: 'read', recordType: 'HeartRateVariabilityRmssd' },
+    { accessType: 'read', recordType: 'SleepSession' },
+    { accessType: 'read', recordType: 'OxygenSaturation' },
+  ]);
+}
+
+export async function authorizeNativeHealthSource(target: NativeSyncTarget) {
+  const effectiveTarget = normalizeNativeSyncTarget(target);
+  assertNativePlatform(effectiveTarget);
+
+  if (effectiveTarget === 'apple-health') {
+    const AppleHealthKit = require('react-native-health').default;
+    await authorizeAppleHealth(AppleHealthKit);
+    return getNativeSyncLabel(target);
+  }
+
+  const HealthConnect = require('react-native-health-connect') as typeof import('react-native-health-connect');
+  await authorizeHealthConnect(HealthConnect);
+  return getNativeSyncLabel(target);
 }
 
 export async function syncNativeHealthSource(target: NativeSyncTarget): Promise<WearableSyncResponse> {

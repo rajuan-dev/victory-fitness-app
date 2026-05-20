@@ -784,12 +784,37 @@ export async function syncLongevityWearables(provider?: WearableProvider | Weara
 }
 
 export async function connectWearableProvider(provider: Extract<WearableProvider, 'fitbit' | 'garmin'>) {
-  return apiRequest<WearableOAuthConnectResponse>(`/wearables/${encodeURIComponent(provider)}/connect`);
+  return apiRequest<WearableOAuthConnectResponse>(`/integrations/${encodeURIComponent(provider)}/connect`);
 }
 
 export async function connectLongevityDemoProvider(provider: WearableProvider) {
   return apiRequest<WearableConnectionResponse>(`/wearables/${encodeURIComponent(provider)}/demo-connect`, {
     method: 'POST',
+  });
+}
+
+export async function connectLongevityLocalProvider(provider: WearableProvider) {
+  return apiRequest<WearableConnectionResponse>(`/integrations/${encodeURIComponent(provider)}/connect-local`, {
+    method: 'POST',
+  });
+}
+
+export async function markNativeIntegrationConnected(payload: {
+  provider: WearableProvider;
+  source_device?: string;
+  permission_granted?: boolean;
+  platform?: string;
+  metadata?: Record<string, unknown>;
+}) {
+  return apiRequest<WearableConnectionResponse>('/integrations/native/connected', {
+    method: 'POST',
+    body: {
+      provider: payload.provider,
+      source_device: payload.source_device || '',
+      permission_granted: payload.permission_granted ?? true,
+      platform: payload.platform || '',
+      metadata: payload.metadata || {},
+    },
   });
 }
 
@@ -811,16 +836,28 @@ export async function syncLongevityThisPhone(payload: MobileHealthSyncPayload) {
 }
 
 export async function syncLongevityAppleHealth(payload: MobileHealthSyncPayload) {
-  return apiRequest<WearableSyncResponse>('/wearables/apple-health/sync', {
+  return apiRequest<WearableSyncResponse>('/integrations/native/samples', {
     method: 'POST',
-    body: payload,
+    body: {
+      provider: 'apple-health',
+      source_device: payload.source_device || '',
+      batch_id: payload.batch_id || null,
+      platform: 'ios',
+      metrics: payload.metrics,
+    },
   });
 }
 
 export async function syncLongevityHealthConnect(payload: MobileHealthSyncPayload) {
-  return apiRequest<WearableSyncResponse>('/wearables/health-connect/sync', {
+  return apiRequest<WearableSyncResponse>('/integrations/native/samples', {
     method: 'POST',
-    body: payload,
+    body: {
+      provider: 'health-connect',
+      source_device: payload.source_device || '',
+      batch_id: payload.batch_id || null,
+      platform: 'android',
+      metrics: payload.metrics,
+    },
   });
 }
 
