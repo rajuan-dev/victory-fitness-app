@@ -371,6 +371,7 @@ function buildHealthSummaryCards(items: HealthMetricSummaryItem[]) {
     distance_meters: number;
     distance_unit_counts: Record<string, number>;
     latest_end_time?: string | null;
+    latest_value?: number | null;
   }>();
 
   for (const item of items) {
@@ -390,27 +391,40 @@ function buildHealthSummaryCards(items: HealthMetricSummaryItem[]) {
       distance_meters: 0,
       distance_unit_counts: {},
       latest_end_time: null,
+      latest_value: null,
     };
 
     bucket.records += Number(item.records || 0);
-    if (item.latest_end_time && (!bucket.latest_end_time || new Date(item.latest_end_time) > new Date(bucket.latest_end_time))) {
-      bucket.latest_end_time = item.latest_end_time;
-    }
+    const itemLatestEndTime = item.latest_end_time ? new Date(item.latest_end_time) : null;
+    const bucketLatestEndTime = bucket.latest_end_time ? new Date(bucket.latest_end_time) : null;
 
     if (metricType === 'distance') {
       const normalizedUnit = unit === 'mi' || unit === 'mile' || unit === 'miles'
         ? 'mi'
         : 'km';
-      bucket.distance_meters += distanceToMeters(Number(item.total_value || 0), unit);
+      const latestValue = Number(item.latest_value ?? item.total_value ?? 0);
+      if (!bucketLatestEndTime || (itemLatestEndTime && itemLatestEndTime > bucketLatestEndTime)) {
+        bucket.latest_end_time = item.latest_end_time ?? bucket.latest_end_time ?? null;
+        bucket.latest_value = latestValue;
+        bucket.distance_meters = distanceToMeters(latestValue, unit);
+        bucket.unit = normalizedUnit;
+      }
       bucket.distance_unit_counts[normalizedUnit] = Number(bucket.distance_unit_counts[normalizedUnit] || 0) + 1;
     } else if (metricType === 'steps' || metricType === 'calories' || metricType === 'workouts') {
-      bucket.total_value += Number(item.total_value || 0);
-      bucket.unit = bucket.unit || unit || (metricType === 'calories' ? 'kcal' : 'count');
+      const latestValue = Number(item.latest_value ?? item.total_value ?? 0);
+      if (!bucketLatestEndTime || (itemLatestEndTime && itemLatestEndTime > bucketLatestEndTime)) {
+        bucket.latest_end_time = item.latest_end_time ?? bucket.latest_end_time ?? null;
+        bucket.latest_value = latestValue;
+        bucket.unit = unit || (metricType === 'calories' ? 'kcal' : 'count');
+      }
     } else {
       const weight = Math.max(Number(item.records || 0), 1);
       bucket.weighted_average_sum += Number(item.average_value || 0) * weight;
       bucket.weighted_average_count += weight;
       bucket.unit = bucket.unit || unit;
+      if (!bucketLatestEndTime || (itemLatestEndTime && itemLatestEndTime > bucketLatestEndTime)) {
+        bucket.latest_end_time = item.latest_end_time ?? bucket.latest_end_time ?? null;
+      }
     }
 
     buckets.set(metricType, bucket);
@@ -440,16 +454,17 @@ function buildHealthSummaryCards(items: HealthMetricSummaryItem[]) {
           }
         : {}),
       average_value: bucket.weighted_average_count > 0 ? bucket.weighted_average_sum / bucket.weighted_average_count : 0,
+      latest_value: bucket.latest_value ?? undefined,
     }));
 }
 
-function formatHealthMetricValue(item: Pick<HealthMetricSummaryItem, 'metric_type' | 'total_value' | 'average_value' | 'unit'>) {
+function formatHealthMetricValue(item: Pick<HealthMetricSummaryItem, 'metric_type' | 'total_value' | 'average_value' | 'unit' | 'latest_value'>) {
   const metricType = String(item.metric_type || '').toLowerCase();
   const unit = String(item.unit || '').trim().toLowerCase();
   const isAdditiveLike = ['steps', 'distance', 'calories', 'workouts'].includes(metricType) || unit === 'count';
   const isRateLike = ['heart_rate', 'hrv', 'spo2', 'stress', 'body_battery'].includes(metricType);
   const isDurationLike = metricType === 'sleep' || unit === 'hours' || unit === 'hrs' || unit === 'hr' || unit === 'h';
-  const value = isAdditiveLike ? item.total_value : item.average_value;
+  const value = isAdditiveLike ? Number(item.latest_value ?? item.total_value) : item.average_value;
   const displayNumber = formatMetricNumber(value);
 
   if (metricType === 'steps') {
@@ -986,6 +1001,9 @@ export default function LongevityOS() {
         (Platform.OS === 'android' && (device.id === 'health-connect' || device.id === 'this-phone'))
       ) {
         const readiness = await getNativeHealthReadiness(device.id as NativeSyncTarget);
+        const detectedSourceLabel = Array.isArray(readiness.detectedSourceLabels) && readiness.detectedSourceLabels.length > 0
+          ? readiness.detectedSourceLabels.join(', ')
+          : getWearableDisplayName(device.id, device.name);
         if (!readiness.isReady) {
           throw new Error(readiness.message);
         }
@@ -995,7 +1013,7 @@ export default function LongevityOS() {
             provider: device.id as WearableProvider,
             permission_granted: true,
             platform: Platform.OS,
-            source_device: getWearableDisplayName(device.id, device.name),
+            source_device: detectedSourceLabel,
             metadata: {
               bridge_mode: 'native-aggregator',
               bridge_title: Platform.OS === 'ios' ? 'Apple Health source bridge' : 'Android Health Connect source bridge',
@@ -1020,7 +1038,7 @@ export default function LongevityOS() {
             provider: device.id as WearableProvider,
             permission_granted: false,
             platform: Platform.OS,
-            source_device: getWearableDisplayName(device.id, device.name),
+            source_device: detectedSourceLabel,
             metadata: {
               bridge_mode: 'native-aggregator',
               bridge_title: Platform.OS === 'ios' ? 'Apple Health source bridge' : 'Android Health Connect source bridge',
@@ -1206,18 +1224,38 @@ export default function LongevityOS() {
       }, {});
       const nativeDeviceId = Platform.OS === 'ios' ? 'apple-health' : 'health-connect';
       const nativeDevice = devices.find((device) => device.id === nativeDeviceId);
+      const nativeDeviceLabel = nativeDevice
+        ? (nativeDevice.source_device?.trim() || getWearableDisplayName(nativeDevice.id, nativeDevice.name))
+        : '';
+      const connectedDevice = devices.find((device) => device.active);
+      const visibleAddDeviceLabel = connectedDevice
+        ? (connectedDevice.source_device?.trim() || getWearableDisplayName(connectedDevice.id, connectedDevice.name))
+        : 'Add Device';
+      const visibleAddDeviceSubtitle = connectedDevice
+        ? 'Tap to disconnect this device.'
+        : 'Choose Apple Health on iPhone or Health Connect on Android.';
       return (
         <ScrollView style={styles.tabContent} contentContainerStyle={styles.contentContainer} showsVerticalScrollIndicator={false} refreshControl={refreshControl}>
             <SectionTitle>Connected Devices</SectionTitle>
-            <TouchableOpacity style={styles.addDeviceCard} activeOpacity={0.88} onPress={handleAddWearable}>
+            <TouchableOpacity
+              style={styles.addDeviceCard}
+              activeOpacity={0.88}
+              onPress={() => {
+                if (connectedDevice) {
+                  void handlePromptDisconnectWearable(connectedDevice);
+                  return;
+                }
+                handleAddWearable();
+              }}
+            >
               <View style={styles.addDeviceIconWrap}>
-                <Ionicons name="add" size={24} color="#000" />
+                <Ionicons name={connectedDevice ? 'watch' : 'add'} size={24} color="#000" />
               </View>
               <View style={styles.addDeviceContent}>
-                <Text style={styles.addDeviceTitle}>Add Device</Text>
-                <Text style={styles.addDeviceSubtitle}>Choose Apple Health on iPhone or Health Connect on Android.</Text>
+                <Text style={styles.addDeviceTitle}>{visibleAddDeviceLabel}</Text>
+                <Text style={styles.addDeviceSubtitle}>{visibleAddDeviceSubtitle}</Text>
               </View>
-              <Ionicons name="chevron-forward" size={20} color={Colors.primary} />
+              <Ionicons name={connectedDevice ? 'remove-circle-outline' : 'chevron-forward'} size={20} color={Colors.primary} />
             </TouchableOpacity>
 
             <TouchableOpacity style={styles.primaryButton} activeOpacity={0.88} onPress={() => void handleSyncWearables()} disabled={syncingWearables}>
@@ -1279,8 +1317,6 @@ export default function LongevityOS() {
                           {(() => {
                             const integration = integrationsByProvider[nativeDevice.id];
                             const statusValue = getIntegrationStatusValue(integration, syncingProviderIds.includes(nativeDevice.id));
-                            const statusLabel = getIntegrationStatusLabel(statusValue);
-                            const lastSyncedLabel = formatIntegrationTimestamp(integration?.last_synced_at);
                             const isNativeSuccess = nativeConnectionSuccessDeviceId === nativeDevice.id;
                             const isNativeFailure = nativeConnectionFailedDeviceId === nativeDevice.id;
                             const isNativeDisconnected = nativeConnectionDisconnectedDeviceId === nativeDevice.id;
@@ -1302,47 +1338,7 @@ export default function LongevityOS() {
                             return (
                               <>
                                 <View style={styles.availableDeviceContent}>
-                                  <Text style={styles.availableDeviceTitle}>{getWearableDisplayName(nativeDevice.id, nativeDevice.name)}</Text>
-                                  <Text style={styles.availableDeviceSubtitle}>{getWearableSourceDescription(nativeDevice.id)}</Text>
-                                  <Text style={styles.availableDeviceFlow}>{getRunmefitBridgeSummary(nativeDevice.id)}</Text>
-                                  {isNativeSuccess ? (
-                                    <Animated.View
-                                      style={[
-                                        styles.deviceConnectedBadge,
-                                        {
-                                          opacity: nativeSuccessOpacity,
-                                          transform: [{ scale: nativeSuccessScale }],
-                                        },
-                                      ]}
-                                    >
-                                      <Ionicons name="checkmark-circle" size={14} color="#10B981" />
-                                      <Text style={styles.deviceConnectedText}>Connected successfully</Text>
-                                    </Animated.View>
-                                  ) : isNativeDisconnected ? (
-                                    <View style={styles.deviceDisconnectedBadge}>
-                                      <Ionicons name="information-circle-outline" size={14} color="#93C5FD" />
-                                      <View style={styles.deviceFailedCopy}>
-                                        <Text style={styles.deviceDisconnectedText}>Disconnected</Text>
-                                        <Text style={styles.deviceDisconnectedMessage} numberOfLines={2}>
-                                          Your health data is not being synced.
-                                        </Text>
-                                      </View>
-                                    </View>
-                                  ) : isNativeFailure ? (
-                                    <View style={styles.deviceFailedBadge}>
-                                      <Ionicons name="close-circle" size={14} color="#F87171" />
-                                      <View style={styles.deviceFailedCopy}>
-                                        <Text style={styles.deviceFailedText}>Connection failed</Text>
-                                        <Text style={styles.deviceFailedMessage} numberOfLines={2}>
-                                          {nativeConnectionFailureMessage || 'Permission was denied or the native flow could not complete.'}
-                                        </Text>
-                                      </View>
-                                    </View>
-                                  ) : (
-                                    <Text style={styles.availableDeviceStatus}>
-                                      {statusLabel}{lastSyncedLabel ? ` · Last synced ${lastSyncedLabel}` : ''}
-                                    </Text>
-                                  )}
+                                  <Text style={styles.availableDeviceTitle}>{nativeDeviceLabel || getWearableDisplayName(nativeDevice.id, nativeDevice.name)}</Text>
                                 </View>
                                 <TouchableOpacity
                                   style={styles.availableDeviceConnectButton}
@@ -1354,15 +1350,15 @@ export default function LongevityOS() {
                                   )}
                                 >
                                   {connectingDeviceId === nativeDevice.id ? (
-                                    <Ionicons name="hourglass-outline" size={14} color="#000" />
+                                    <Ionicons name="hourglass-outline" size={14} color="#fff" />
                                   ) : isConnectedState ? (
-                                    <Ionicons name="remove-circle-outline" size={14} color="#000" />
+                                    <Ionicons name="remove-circle-outline" size={14} color="#fff" />
                                   ) : isNativeFailure ? (
-                                    <Ionicons name="refresh" size={14} color="#000" />
+                                    <Ionicons name="refresh" size={14} color="#fff" />
                                   ) : statusValue === 'syncing' ? (
-                                    <Ionicons name="sync" size={14} color="#000" />
+                                    <Ionicons name="sync" size={14} color="#fff" />
                                   ) : statusValue === 'provider_not_configured' ? (
-                                    <Ionicons name="alert-circle-outline" size={14} color="#000" />
+                                    <Ionicons name="alert-circle-outline" size={14} color="#fff" />
                                   ) : null}
                                   <Text style={styles.availableDeviceConnectText}>
                                     {connectLabel}
@@ -2155,31 +2151,6 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 15,
     fontFamily: 'Inter_700Bold',
-    marginBottom: 3,
-  },
-  availableDeviceSubtitle: {
-    color: Colors.textMuted,
-    fontSize: 12,
-    fontFamily: 'Inter_400Regular',
-  },
-  availableDeviceStatus: {
-    fontSize: 11,
-    marginTop: 6,
-    fontFamily: 'Inter_700Bold',
-  },
-  availableDeviceExamples: {
-    color: 'rgba(255,255,255,0.52)',
-    fontSize: 11,
-    lineHeight: 17,
-    marginTop: 5,
-    fontFamily: 'Inter_400Regular',
-  },
-  availableDeviceFlow: {
-    color: '#DCE7F5',
-    fontSize: 11,
-    lineHeight: 17,
-    marginTop: 6,
-    fontFamily: 'Inter_500Medium',
   },
   availableDeviceBadge: {
     flexDirection: 'row',
@@ -2207,7 +2178,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   availableDeviceConnectText: {
-    color: '#000',
+    color: '#fff',
     fontSize: 11,
     fontFamily: 'Inter_700Bold',
   },

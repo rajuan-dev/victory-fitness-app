@@ -147,6 +147,8 @@ export type LongevityWearableDevice = {
   status: string;
   active: boolean;
   image: string;
+  source_device?: string;
+  platform?: string;
 };
 
 export type WearableProvider = 'apple-health' | 'health-connect' | 'fitbit' | 'google-fit' | 'garmin' | 'this-phone' | 'qr-import';
@@ -184,6 +186,7 @@ export type HealthMetricSummaryItem = {
   max_value?: number | null;
   unit?: string;
   latest_end_time?: string | null;
+  latest_value?: number | null;
 };
 
 export type HealthMetricSummaryResponse = {

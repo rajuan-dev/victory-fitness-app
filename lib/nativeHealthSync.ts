@@ -16,6 +16,7 @@ export type NativeHealthReadiness = {
   message: string;
   actionLabel?: string;
   action?: 'open_settings' | 'open_data_management';
+  detectedSourceLabels?: string[];
 };
 export type NativeHealthChecklistItem = {
   id: string;
