@@ -182,6 +182,7 @@ export type HealthMetricSummaryItem = {
   average_value: number;
   min_value?: number | null;
   max_value?: number | null;
+  unit?: string;
   latest_end_time?: string | null;
 };
 
@@ -817,6 +818,19 @@ export async function connectLongevityDemoProvider(provider: WearableProvider) {
 export async function connectLongevityLocalProvider(provider: WearableProvider) {
   return apiRequest<WearableConnectionResponse>(`/integrations/${encodeURIComponent(provider)}/connect-local`, {
     method: 'POST',
+  });
+}
+
+export async function disconnectLongevityProvider(provider: WearableProvider) {
+  return apiRequest<{
+    provider: WearableProvider;
+    disconnected: boolean;
+    status: string;
+    source_device: string;
+    platform: string;
+    message: string;
+  }>(`/wearables/${encodeURIComponent(provider)}/connection`, {
+    method: 'DELETE',
   });
 }
 

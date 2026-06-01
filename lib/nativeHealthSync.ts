@@ -870,6 +870,17 @@ export async function authorizeNativeHealthSource(target: NativeSyncTarget) {
   return getNativeSyncLabel(target);
 }
 
+export async function revokeNativeHealthPermissions(target: NativeSyncTarget) {
+  const effectiveTarget = normalizeNativeSyncTarget(target);
+  if (effectiveTarget !== 'health-connect' || Platform.OS !== 'android') {
+    return false;
+  }
+
+  const HealthConnect = require('react-native-health-connect') as typeof import('react-native-health-connect');
+  await HealthConnect.revokeAllPermissions();
+  return true;
+}
+
 export async function syncNativeHealthSource(target: NativeSyncTarget): Promise<WearableSyncResponse> {
   const effectiveTarget = normalizeNativeSyncTarget(target);
   assertNativePlatform(effectiveTarget);
