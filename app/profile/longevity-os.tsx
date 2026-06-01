@@ -27,6 +27,7 @@ import VictoryHeader from '../../components/VictoryHeader';
 import {
   connectLongevityLocalProvider,
   connectWearableProvider,
+  disconnectLongevityProvider,
   fetchCurrentUser,
   fetchLongevityHealthSummary,
   fetchLongevityDashboard,
@@ -52,10 +53,16 @@ import {
   getNativeHealthReadiness,
   inspectNativeHealthChecklist,
   getPreferredNativeSyncTargetForPlatform,
+  openNativeHealthSettings,
+  revokeNativeHealthPermissions,
   type NativeHealthChecklistState,
   type NativeSyncTarget,
   syncNativeHealthSource,
 } from '../../lib/nativeHealthSync';
+import {
+  appendRunLog,
+} from '../../lib/runLog';
+import type { RunLogEntry } from '../../lib/runLog';
 import { useModuleAccessGuard } from '../../lib/useModuleAccessGuard';
 
 const FALLBACK_CARD_IMAGE = 'https://images.unsplash.com/photo-1517836357463-d25dfeac3438?w=600&q=80';
@@ -135,10 +142,6 @@ function getRunmefitBridgeSummary(deviceId: string) {
         : 'Sync into the phone health store first, then press Sync Data here.';
   }
   return 'Connect the supported phone health framework first, then press Sync Data here.';
-}
-
-function getNativeConnectButtonLabel() {
-  return Platform.OS === 'ios' ? 'Connect Apple Health' : Platform.OS === 'android' ? 'Connect Health Connect' : 'Connect';
 }
 
 function getWearableSourceDescription(deviceId: string) {
@@ -311,18 +314,185 @@ function formatIntegrationTimestamp(value?: string | null) {
   return parsed.toLocaleString();
 }
 
-function formatHealthMetricValue(item: HealthMetricSummaryItem) {
-  const roundedAverage = Number.isFinite(item.average_value) ? Math.round(item.average_value * 100) / 100 : 0;
-  const unitLabel = item.metric_type === 'steps'
-    ? 'steps'
-    : item.metric_type === 'sleep'
-      ? 'hrs'
-      : item.metric_type === 'heart_rate'
-        ? 'bpm'
-        : item.metric_type === 'distance'
-          ? 'distance'
-          : 'avg';
-  return `${roundedAverage} ${unitLabel}`;
+function formatMetricNumber(value: number) {
+  if (!Number.isFinite(value)) {
+    return '0';
+  }
+  const rounded = Math.round((value + Number.EPSILON) * 100) / 100;
+  return Number.isInteger(rounded) ? `${rounded}` : `${rounded.toFixed(2).replace(/\.?0+$/, '')}`;
+}
+
+const DISPLAYABLE_HEALTH_METRICS = new Set([
+  'steps',
+  'distance',
+  'calories',
+  'heart_rate',
+  'sleep',
+  'spo2',
+  'hrv',
+  'stress',
+  'body_battery',
+  'workouts',
+]);
+
+function distanceToMeters(value: number, unit: string) {
+  const normalizedUnit = String(unit || '').trim().toLowerCase();
+  if (normalizedUnit === 'mi' || normalizedUnit === 'mile' || normalizedUnit === 'miles') {
+    return value * 1609.344;
+  }
+  if (normalizedUnit === 'km' || normalizedUnit === 'kilometer' || normalizedUnit === 'kilometers') {
+    return value * 1000;
+  }
+  return value;
+}
+
+function normalizeDistance(value: number, unit: string) {
+  const normalizedUnit = String(unit || '').trim().toLowerCase();
+  if (normalizedUnit === 'mi' || normalizedUnit === 'mile' || normalizedUnit === 'miles') {
+    return { value, unit: 'mi' };
+  }
+  if (normalizedUnit === 'km' || normalizedUnit === 'kilometer' || normalizedUnit === 'kilometers') {
+    return { value, unit: 'km' };
+  }
+  if (normalizedUnit === 'm' || normalizedUnit === 'meter' || normalizedUnit === 'meters' || !normalizedUnit) {
+    return { value: value / 1000, unit: 'km' };
+  }
+  return { value, unit: normalizedUnit };
+}
+
+function buildHealthSummaryCards(items: HealthMetricSummaryItem[]) {
+  const buckets = new Map<string, {
+    metric_type: string;
+    total_value: number;
+    weighted_average_sum: number;
+    weighted_average_count: number;
+    records: number;
+    unit: string;
+    distance_meters: number;
+    distance_unit_counts: Record<string, number>;
+    latest_end_time?: string | null;
+    latest_value?: number | null;
+  }>();
+
+  for (const item of items) {
+    const metricType = String(item.metric_type || '').toLowerCase();
+    if (!DISPLAYABLE_HEALTH_METRICS.has(metricType)) {
+      continue;
+    }
+
+    const unit = String(item.unit || '').trim().toLowerCase();
+    const bucket = buckets.get(metricType) ?? {
+      metric_type: metricType,
+      total_value: 0,
+      weighted_average_sum: 0,
+      weighted_average_count: 0,
+      records: 0,
+      unit: '',
+      distance_meters: 0,
+      distance_unit_counts: {},
+      latest_end_time: null,
+      latest_value: null,
+    };
+
+    bucket.records += Number(item.records || 0);
+    const itemLatestEndTime = item.latest_end_time ? new Date(item.latest_end_time) : null;
+    const bucketLatestEndTime = bucket.latest_end_time ? new Date(bucket.latest_end_time) : null;
+
+    if (metricType === 'distance') {
+      const normalizedUnit = unit === 'mi' || unit === 'mile' || unit === 'miles'
+        ? 'mi'
+        : 'km';
+      const latestValue = Number(item.latest_value ?? item.total_value ?? 0);
+      if (!bucketLatestEndTime || (itemLatestEndTime && itemLatestEndTime > bucketLatestEndTime)) {
+        bucket.latest_end_time = item.latest_end_time ?? bucket.latest_end_time ?? null;
+        bucket.latest_value = latestValue;
+        bucket.distance_meters = distanceToMeters(latestValue, unit);
+        bucket.unit = normalizedUnit;
+      }
+      bucket.distance_unit_counts[normalizedUnit] = Number(bucket.distance_unit_counts[normalizedUnit] || 0) + 1;
+    } else if (metricType === 'steps' || metricType === 'calories' || metricType === 'workouts') {
+      const latestValue = Number(item.latest_value ?? item.total_value ?? 0);
+      if (!bucketLatestEndTime || (itemLatestEndTime && itemLatestEndTime > bucketLatestEndTime)) {
+        bucket.latest_end_time = item.latest_end_time ?? bucket.latest_end_time ?? null;
+        bucket.latest_value = latestValue;
+        bucket.unit = unit || (metricType === 'calories' ? 'kcal' : 'count');
+      }
+    } else {
+      const weight = Math.max(Number(item.records || 0), 1);
+      bucket.weighted_average_sum += Number(item.average_value || 0) * weight;
+      bucket.weighted_average_count += weight;
+      bucket.unit = bucket.unit || unit;
+      if (!bucketLatestEndTime || (itemLatestEndTime && itemLatestEndTime > bucketLatestEndTime)) {
+        bucket.latest_end_time = item.latest_end_time ?? bucket.latest_end_time ?? null;
+      }
+    }
+
+    buckets.set(metricType, bucket);
+  }
+
+  const priority: Record<string, number> = {
+    steps: 0,
+    distance: 1,
+    calories: 2,
+    heart_rate: 3,
+    sleep: 4,
+    spo2: 5,
+    hrv: 6,
+    stress: 7,
+    body_battery: 8,
+    workouts: 9,
+  };
+
+  return Array.from(buckets.values())
+    .sort((left, right) => (priority[left.metric_type] ?? 99) - (priority[right.metric_type] ?? 99))
+    .map((bucket) => ({
+      ...bucket,
+      ...(bucket.metric_type === 'distance'
+        ? {
+            total_value: bucket.distance_meters / ((bucket.distance_unit_counts.mi || 0) > 0 ? 1609.344 : 1000),
+            unit: (bucket.distance_unit_counts.mi || 0) > 0 ? 'mi' : 'km',
+          }
+        : {}),
+      average_value: bucket.weighted_average_count > 0 ? bucket.weighted_average_sum / bucket.weighted_average_count : 0,
+      latest_value: bucket.latest_value ?? undefined,
+    }));
+}
+
+function formatHealthMetricValue(item: Pick<HealthMetricSummaryItem, 'metric_type' | 'total_value' | 'average_value' | 'unit' | 'latest_value'>) {
+  const metricType = String(item.metric_type || '').toLowerCase();
+  const unit = String(item.unit || '').trim().toLowerCase();
+  const isAdditiveLike = ['steps', 'distance', 'calories', 'workouts'].includes(metricType) || unit === 'count';
+  const isRateLike = ['heart_rate', 'hrv', 'spo2', 'stress', 'body_battery'].includes(metricType);
+  const isDurationLike = metricType === 'sleep' || unit === 'hours' || unit === 'hrs' || unit === 'hr' || unit === 'h';
+  const value = isAdditiveLike ? Number(item.latest_value ?? item.total_value) : item.average_value;
+  const displayNumber = formatMetricNumber(value);
+
+  if (metricType === 'steps') {
+    return `${displayNumber} steps`;
+  }
+
+  if (metricType === 'distance') {
+    const distance = normalizeDistance(value, unit);
+    return `${formatMetricNumber(distance.value)} ${distance.unit}`;
+  }
+
+  if (metricType === 'calories') {
+    return unit ? `${displayNumber} ${unit}` : `${displayNumber} kcal`;
+  }
+
+  if (isDurationLike) {
+    return `${displayNumber} ${unit === 'hours' ? 'hrs' : unit || 'hrs'}`;
+  }
+
+  if (isRateLike) {
+    return `${displayNumber} ${unit || (metricType === 'heart_rate' ? 'bpm' : 'avg')}`;
+  }
+
+  if (unit) {
+    return `${displayNumber} ${unit}`;
+  }
+
+  return `${displayNumber} ${metricType || 'avg'}`;
 }
 
 const TABS = [
@@ -380,11 +550,37 @@ export default function LongevityOS() {
   const [nativeChecklistState, setNativeChecklistState] = useState<NativeHealthChecklistState | null>(null);
   const [nativeConnectionSuccessDeviceId, setNativeConnectionSuccessDeviceId] = useState<string | null>(null);
   const [nativeConnectionFailedDeviceId, setNativeConnectionFailedDeviceId] = useState<string | null>(null);
+  const [nativeConnectionDisconnectedDeviceId, setNativeConnectionDisconnectedDeviceId] = useState<string | null>(null);
   const [nativeConnectionFailureMessage, setNativeConnectionFailureMessage] = useState<string>('');
+  const [screenError, setScreenError] = useState<{ title: string; message: string } | null>(null);
   const nativeSuccessOpacity = useRef(new Animated.Value(0)).current;
   const nativeSuccessScale = useRef(new Animated.Value(0.7)).current;
   const nativeSuccessTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const nativeFailureTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const nativeDisconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const recordRunLog = React.useCallback((entry: Omit<RunLogEntry, 'id' | 'timestamp'>) => {
+    void appendRunLog({
+      ...entry,
+      route: '/profile/longevity-os',
+      context: 'LongevityOS',
+    });
+  }, []);
+
+  const showScreenError = React.useCallback((title: string, message: string) => {
+    setScreenError({ title, message });
+    recordRunLog({
+      level: 'error',
+      title,
+      message,
+    });
+  }, [recordRunLog]);
+
+  const dismissScreenError = React.useCallback(() => {
+    setScreenError(null);
+  }, []);
+
+  const visibleHealthSummaryCards = buildHealthSummaryCards(healthSummary);
 
   const loadIntegrationStatuses = React.useCallback(async () => {
     const response = await fetchIntegrationConnections();
@@ -410,15 +606,16 @@ export default function LongevityOS() {
       setHealthSummary(Array.isArray(summary?.items) ? summary.items : []);
       setIntegrations(Array.isArray(integrationResponse?.items) ? integrationResponse.items : []);
       setCanGenerateLongevityPlan(canAccessFeature('longevity_plan', user));
+      dismissScreenError();
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unable to load Longevity OS.';
-      Alert.alert('Load failed', message);
+      showScreenError('Load failed', message);
     } finally {
       if (showLoader) {
         setLoading(false);
       }
     }
-  }, []);
+  }, [dismissScreenError, showScreenError]);
 
   useFocusEffect(
     React.useCallback(() => {
@@ -457,6 +654,9 @@ export default function LongevityOS() {
     if (nativeFailureTimerRef.current) {
       clearTimeout(nativeFailureTimerRef.current);
     }
+    if (nativeDisconnectTimerRef.current) {
+      clearTimeout(nativeDisconnectTimerRef.current);
+    }
   }, []);
 
   const handleRefresh = React.useCallback(async () => {
@@ -489,7 +689,7 @@ export default function LongevityOS() {
     }
   };
 
-  const syncWearableTargets = async (
+  const syncWearableTargets = React.useCallback(async (
     targetDeviceIds: string[],
     options: { showSuccessAlert?: boolean; showFailureAlert?: boolean } = {},
   ) => {
@@ -505,7 +705,7 @@ export default function LongevityOS() {
       .map((device) => device.id);
 
     if (targetDeviceIds.length === 0) {
-      Alert.alert('Add device', 'Connect a device first, then press Sync Data Now.');
+      showScreenError('Add device', 'Connect a device first, then press Sync Data Now.');
       return;
     }
     if (targetDeviceIds.length === 1 && targetDeviceIds[0] === 'qr-import') {
@@ -513,7 +713,7 @@ export default function LongevityOS() {
       return;
     }
     if (targetDeviceIds.includes('qr-import')) {
-      Alert.alert(
+      showScreenError(
         'Sync separately',
         'QR Import needs a payload input, so sync it separately from Fitbit, Google Fit, Garmin, Apple Health, or Health Connect.',
       );
@@ -523,6 +723,7 @@ export default function LongevityOS() {
     const wantsAppleHealth = targetDeviceIds.includes('apple-health');
     const wantsHealthConnect = targetDeviceIds.includes('health-connect');
     const backendProviderIds = targetDeviceIds.filter((providerId) => !['apple-health', 'health-connect', 'this-phone'].includes(providerId));
+    let nativeSetupIssue: { title: string; message: string } | null = null;
 
     setSyncingWearables(true);
     setSyncingProviderIds(targetDeviceIds);
@@ -544,8 +745,36 @@ export default function LongevityOS() {
       for (const provider of nativeTargets) {
         const checklist = await inspectNativeHealthChecklist(provider);
         if (!checklist.isReady) {
+          if (checklist.action === 'open_data_management') {
+            await authorizeNativeHealthSource(provider);
+            const refreshedChecklist = await inspectNativeHealthChecklist(provider);
+            setNativeChecklistState(refreshedChecklist);
+            if (!refreshedChecklist.isReady) {
+              nativeSetupIssue = {
+                title: refreshedChecklist.action === 'open_settings'
+                  ? 'Health Connect update required'
+                  : 'Health Connect permissions needed',
+                message: refreshedChecklist.message,
+              };
+              if (refreshedChecklist.action === 'open_settings') {
+                void openNativeHealthSettings(provider);
+              }
+              continue;
+            }
+            tasks.push(syncNativeHealthSource(provider));
+            continue;
+          }
           setNativeChecklistState(checklist);
-          throw new Error(checklist.message);
+          nativeSetupIssue = {
+            title: checklist.action === 'open_settings'
+              ? 'Health Connect update required'
+              : 'Health Connect permissions needed',
+            message: checklist.message,
+          };
+          if (checklist.action === 'open_settings') {
+            void openNativeHealthSettings(provider);
+          }
+          continue;
         }
         tasks.push(syncNativeHealthSource(provider));
       }
@@ -592,17 +821,22 @@ export default function LongevityOS() {
       if (showSuccessAlert) {
         Alert.alert('Data sync successful', 'All available synced health records are now flowing into Longevity OS.');
       }
+      if (nativeSetupIssue) {
+        showScreenError(nativeSetupIssue.title, nativeSetupIssue.message);
+      } else {
+        dismissScreenError();
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unable to sync wearables.';
       if (showFailureAlert) {
-        Alert.alert('Sync failed', message);
+        showScreenError('Sync failed', message);
       }
       throw error;
     } finally {
       setSyncingWearables(false);
       setSyncingProviderIds([]);
     }
-  };
+  }, [dashboard?.wearables.devices, dismissScreenError, loadDashboard, showScreenError, syncingWearables]);
 
   const handleSyncWearables = async () => {
     if (syncingWearables) {
@@ -612,7 +846,16 @@ export default function LongevityOS() {
       .filter((device) => device.active && isVisibleWearableForPlatform(device.id))
       .map((device) => device.id);
     const targetDeviceIds = selectedWearableIds.length > 0 ? selectedWearableIds : connectedDeviceIds;
-    await syncWearableTargets(targetDeviceIds, { showSuccessAlert: true, showFailureAlert: true });
+    try {
+      await syncWearableTargets(targetDeviceIds, { showSuccessAlert: true, showFailureAlert: true });
+      recordRunLog({
+        level: 'success',
+        title: 'Sync complete',
+        message: 'Longevity OS synced the selected health sources successfully.',
+      });
+    } catch {
+      // The sync path already surfaces a card-level error for the user.
+    }
   };
 
   const playNativeSuccessAnimation = (deviceId: string) => {
@@ -670,10 +913,54 @@ export default function LongevityOS() {
     await handleSelectWearable(device);
   };
 
-  const handleRetryNativeConnection = async (device: LongevityWearableDevice) => {
-    setNativeConnectionFailedDeviceId(null);
-    setNativeConnectionFailureMessage('');
-    await handleSelectWearable(device);
+  const handleDisconnectWearable = async (device: LongevityWearableDevice) => {
+    if (connectingDeviceId) {
+      return;
+    }
+    setConnectingDeviceId(device.id);
+    try {
+      if (Platform.OS === 'android' && (device.id === 'health-connect' || device.id === 'this-phone')) {
+        await revokeNativeHealthPermissions('health-connect').catch(() => undefined);
+      }
+      await disconnectLongevityProvider(device.id as WearableProvider);
+      setSelectedWearableIds((current) => current.filter((item) => item !== device.id));
+      setNativeConnectionSuccessDeviceId(null);
+      setNativeConnectionFailedDeviceId(null);
+      setNativeConnectionFailureMessage('');
+      setNativeConnectionDisconnectedDeviceId(device.id);
+      await loadDashboard(false);
+      dismissScreenError();
+      recordRunLog({
+        level: 'info',
+        title: 'Device disconnected',
+        message: `${getWearableDisplayName(device.id, device.name)} disconnected from Longevity OS.`,
+      });
+      if (nativeDisconnectTimerRef.current) {
+        clearTimeout(nativeDisconnectTimerRef.current);
+      }
+      nativeDisconnectTimerRef.current = setTimeout(() => {
+        setNativeConnectionDisconnectedDeviceId(null);
+      }, 8000);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : `Unable to disconnect ${device.name}.`;
+      showScreenError('Disconnect failed', message);
+    } finally {
+      setConnectingDeviceId(null);
+    }
+  };
+
+  const handlePromptDisconnectWearable = (device: LongevityWearableDevice) => {
+    if (connectingDeviceId) {
+      return;
+    }
+    Alert.alert(
+      'Disconnect device?',
+      `Disconnect ${getWearableDisplayName(device.id, device.name)} from Longevity OS?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Disconnect', style: 'destructive', onPress: () => void handleDisconnectWearable(device) },
+      ],
+    );
   };
 
   const closeQrImportModal = () => {
@@ -687,9 +974,10 @@ export default function LongevityOS() {
     }
     setNativeConnectionFailedDeviceId(null);
     setNativeConnectionFailureMessage('');
+    setNativeConnectionDisconnectedDeviceId(null);
     const integration = integrations.find((item) => item.provider === device.id);
     if (integration?.status === 'provider_not_configured') {
-      Alert.alert('Provider not configured', `${getWearableDisplayName(device.id, device.name)} is not configured on the backend yet.`);
+      showScreenError('Provider not configured', `${getWearableDisplayName(device.id, device.name)} is not configured on the backend yet.`);
       return;
     }
     setConnectingDeviceId(device.id);
@@ -713,6 +1001,9 @@ export default function LongevityOS() {
         (Platform.OS === 'android' && (device.id === 'health-connect' || device.id === 'this-phone'))
       ) {
         const readiness = await getNativeHealthReadiness(device.id as NativeSyncTarget);
+        const detectedSourceLabel = Array.isArray(readiness.detectedSourceLabels) && readiness.detectedSourceLabels.length > 0
+          ? readiness.detectedSourceLabels.join(', ')
+          : getWearableDisplayName(device.id, device.name);
         if (!readiness.isReady) {
           throw new Error(readiness.message);
         }
@@ -722,7 +1013,7 @@ export default function LongevityOS() {
             provider: device.id as WearableProvider,
             permission_granted: true,
             platform: Platform.OS,
-            source_device: getWearableDisplayName(device.id, device.name),
+            source_device: detectedSourceLabel,
             metadata: {
               bridge_mode: 'native-aggregator',
               bridge_title: Platform.OS === 'ios' ? 'Apple Health source bridge' : 'Android Health Connect source bridge',
@@ -734,25 +1025,20 @@ export default function LongevityOS() {
             },
           });
           playNativeSuccessAnimation(device.id);
-          try {
-            await syncWearableTargets([device.id], { showSuccessAlert: false, showFailureAlert: false });
-            Alert.alert(
-              'Connected successfully',
-              `${getWearableDisplayName(device.id, device.name)} connected successfully. Health data was synced and stored in the database.`,
-            );
-          } catch {
-            Alert.alert(
-              'Connected successfully',
-              `${getWearableDisplayName(device.id, device.name)} connected successfully. Open Sync Data when Health Connect has source records available.`,
-            );
-          }
+          setNativeConnectionDisconnectedDeviceId(null);
+          recordRunLog({
+            level: 'success',
+            title: 'Connected successfully',
+            message: `${getWearableDisplayName(device.id, device.name)} connected and permission was granted.`,
+          });
+          dismissScreenError();
         } catch (connectError) {
           const message = connectError instanceof Error ? connectError.message : `Unable to connect ${device.name}.`;
           await markNativeIntegrationConnected({
             provider: device.id as WearableProvider,
             permission_granted: false,
             platform: Platform.OS,
-            source_device: getWearableDisplayName(device.id, device.name),
+            source_device: detectedSourceLabel,
             metadata: {
               bridge_mode: 'native-aggregator',
               bridge_title: Platform.OS === 'ios' ? 'Apple Health source bridge' : 'Android Health Connect source bridge',
@@ -767,6 +1053,11 @@ export default function LongevityOS() {
           }).catch(() => undefined);
           setNativeConnectionFailedDeviceId(device.id);
           setNativeConnectionFailureMessage(message);
+          recordRunLog({
+            level: 'error',
+            title: 'Connection failed',
+            message,
+          });
           if (nativeFailureTimerRef.current) {
             clearTimeout(nativeFailureTimerRef.current);
           }
@@ -778,6 +1069,11 @@ export default function LongevityOS() {
         }
       } else {
         await connectLongevityLocalProvider(device.id as WearableProvider);
+        recordRunLog({
+          level: 'success',
+          title: 'Device added',
+          message: `${getWearableDisplayName(device.id, device.name)} was added.`,
+        });
         if (device.id === 'qr-import') {
           Alert.alert(`${device.name} added`, 'QR import is ready. Press Sync Data, then scan or paste the QR payload to save real synced data.');
         } else if (device.id === 'this-phone') {
@@ -793,6 +1089,7 @@ export default function LongevityOS() {
       if (device.id !== 'apple-health' && device.id !== 'health-connect' && device.id !== 'this-phone') {
         await loadDashboard(false);
       }
+      dismissScreenError();
       const nativeTarget = getPreferredNativeSyncTargetForPlatform();
       if (nativeTarget) {
         void inspectNativeHealthChecklist(nativeTarget)
@@ -804,7 +1101,7 @@ export default function LongevityOS() {
         return;
       }
       const message = error instanceof Error ? error.message : `Unable to add ${device.name}.`;
-      Alert.alert('Add wearable failed', message);
+      showScreenError('Add wearable failed', message);
     } finally {
       setConnectingDeviceId(null);
     }
@@ -819,10 +1116,16 @@ export default function LongevityOS() {
       const response = await syncLongevityQrImport(qrPayload, 'QR Import');
       await loadDashboard(false);
       closeQrImportModal();
+      dismissScreenError();
+      recordRunLog({
+        level: 'success',
+        title: 'QR imported',
+        message: response.message || 'QR health data was imported successfully.',
+      });
       Alert.alert('QR data imported', response.message || 'The QR health data was stored successfully.');
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unable to import QR health data.';
-      Alert.alert('Import failed', message);
+      showScreenError('Import failed', message);
     } finally {
       setImportingPayload(false);
     }
@@ -836,10 +1139,16 @@ export default function LongevityOS() {
     try {
       await generateLongevityWeeklyPlan();
       await loadDashboard(false);
+      dismissScreenError();
+      recordRunLog({
+        level: 'success',
+        title: 'Weekly plan ready',
+        message: 'The AI weekly plan was generated and saved.',
+      });
       Alert.alert('Weekly plan ready', 'Your AI weekly plan has been generated and saved in Healthy Food Library.');
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unable to generate weekly plan.';
-      Alert.alert('Generation failed', message);
+      showScreenError('Generation failed', message);
     } finally {
       setGeneratingPlan(false);
     }
@@ -849,9 +1158,15 @@ export default function LongevityOS() {
     try {
       const response = await updateLongevityHabit(habit.id, !habit.done);
       setDashboard((current) => (current ? { ...current, habits: response } : current));
+      dismissScreenError();
+      recordRunLog({
+        level: 'info',
+        title: 'Habit updated',
+        message: `${habit.title} is now ${!habit.done ? 'done' : 'not done'}.`,
+      });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unable to update habit.';
-      Alert.alert('Update failed', message);
+      showScreenError('Update failed', message);
     }
   };
 
@@ -909,18 +1224,38 @@ export default function LongevityOS() {
       }, {});
       const nativeDeviceId = Platform.OS === 'ios' ? 'apple-health' : 'health-connect';
       const nativeDevice = devices.find((device) => device.id === nativeDeviceId);
+      const nativeDeviceLabel = nativeDevice
+        ? (nativeDevice.source_device?.trim() || getWearableDisplayName(nativeDevice.id, nativeDevice.name))
+        : '';
+      const connectedDevice = devices.find((device) => device.active);
+      const visibleAddDeviceLabel = connectedDevice
+        ? (connectedDevice.source_device?.trim() || getWearableDisplayName(connectedDevice.id, connectedDevice.name))
+        : 'Add Device';
+      const visibleAddDeviceSubtitle = connectedDevice
+        ? 'Tap to disconnect this device.'
+        : 'Choose Apple Health on iPhone or Health Connect on Android.';
       return (
         <ScrollView style={styles.tabContent} contentContainerStyle={styles.contentContainer} showsVerticalScrollIndicator={false} refreshControl={refreshControl}>
             <SectionTitle>Connected Devices</SectionTitle>
-            <TouchableOpacity style={styles.addDeviceCard} activeOpacity={0.88} onPress={handleAddWearable}>
+            <TouchableOpacity
+              style={styles.addDeviceCard}
+              activeOpacity={0.88}
+              onPress={() => {
+                if (connectedDevice) {
+                  void handlePromptDisconnectWearable(connectedDevice);
+                  return;
+                }
+                handleAddWearable();
+              }}
+            >
               <View style={styles.addDeviceIconWrap}>
-                <Ionicons name="add" size={24} color="#000" />
+                <Ionicons name={connectedDevice ? 'watch' : 'add'} size={24} color="#000" />
               </View>
               <View style={styles.addDeviceContent}>
-                <Text style={styles.addDeviceTitle}>Add Device</Text>
-                <Text style={styles.addDeviceSubtitle}>Choose Apple Health on iPhone or Health Connect on Android.</Text>
+                <Text style={styles.addDeviceTitle}>{visibleAddDeviceLabel}</Text>
+                <Text style={styles.addDeviceSubtitle}>{visibleAddDeviceSubtitle}</Text>
               </View>
-              <Ionicons name="chevron-forward" size={20} color={Colors.primary} />
+              <Ionicons name={connectedDevice ? 'remove-circle-outline' : 'chevron-forward'} size={20} color={Colors.primary} />
             </TouchableOpacity>
 
             <TouchableOpacity style={styles.primaryButton} activeOpacity={0.88} onPress={() => void handleSyncWearables()} disabled={syncingWearables}>
@@ -928,15 +1263,15 @@ export default function LongevityOS() {
               <Text style={styles.primaryButtonText}>{syncingWearables ? 'SYNCING HEALTH DATA...' : 'SYNC DATA'}</Text>
             </TouchableOpacity>
             <SectionTitle>Synced Data</SectionTitle>
-            {healthSummary.length > 0 ? (
+            {visibleHealthSummaryCards.length > 0 ? (
               <View style={styles.summaryGrid}>
-                {healthSummary.slice(0, 6).map((item) => (
-                  <View key={`${item.provider}-${item.metric_type}`} style={styles.summaryCard}>
-                    <Text style={styles.summaryMetric}>{item.metric_type.replace(/_/g, ' ').toUpperCase()}</Text>
-                    <Text style={styles.summaryValue}>{formatHealthMetricValue(item)}</Text>
-                    <Text style={styles.summaryMeta}>
-                      {item.records} records · {item.provider}
+                {visibleHealthSummaryCards.slice(0, 6).map((item) => (
+                  <View key={item.metric_type} style={styles.summaryCard}>
+                    <Text style={styles.summaryMetric}>
+                      {item.metric_type.replace(/_/g, ' ').toUpperCase()}
+                      {item.metric_type === 'distance' && item.unit ? ` (${item.unit.toUpperCase()})` : ''}
                     </Text>
+                    <Text style={styles.summaryValue}>{formatHealthMetricValue(item)}</Text>
                   </View>
                 ))}
               </View>
@@ -982,70 +1317,48 @@ export default function LongevityOS() {
                           {(() => {
                             const integration = integrationsByProvider[nativeDevice.id];
                             const statusValue = getIntegrationStatusValue(integration, syncingProviderIds.includes(nativeDevice.id));
-                            const statusLabel = getIntegrationStatusLabel(statusValue);
-                            const lastSyncedLabel = formatIntegrationTimestamp(integration?.last_synced_at);
                             const isNativeSuccess = nativeConnectionSuccessDeviceId === nativeDevice.id;
                             const isNativeFailure = nativeConnectionFailedDeviceId === nativeDevice.id;
-                            const connectLabel = statusValue === 'syncing'
-                              ? 'Syncing'
-                              : statusValue === 'provider_not_configured'
-                                ? 'Unavailable'
-                                : statusValue === 'error'
-                                  ? 'Retry Connect'
-                                  : statusValue === 'needs_permission'
-                                    ? 'Allow'
-                                    : isNativeSuccess || statusValue === 'connected'
-                                      ? 'Connected'
-                                      : isNativeFailure
-                                        ? 'Retry Connect'
-                                      : getNativeConnectButtonLabel();
+                            const isNativeDisconnected = nativeConnectionDisconnectedDeviceId === nativeDevice.id;
+                            const isConnectedState = isNativeSuccess || statusValue === 'connected';
+                            const connectLabel = connectingDeviceId === nativeDevice.id
+                              ? (isConnectedState ? 'Disconnecting...' : 'Connecting...')
+                              : statusValue === 'syncing'
+                                ? 'Syncing...'
+                                : statusValue === 'provider_not_configured'
+                                  ? 'Unavailable'
+                                  : isNativeFailure
+                                    ? 'Retry Connect'
+                                    : isConnectedState
+                                      ? 'Disconnect'
+                                      : 'Connect';
+                            const connectDisabled = connectingDeviceId === nativeDevice.id
+                              || statusValue === 'syncing'
+                              || statusValue === 'provider_not_configured';
                             return (
                               <>
                                 <View style={styles.availableDeviceContent}>
-                                  <Text style={styles.availableDeviceTitle}>{getWearableDisplayName(nativeDevice.id, nativeDevice.name)}</Text>
-                                  <Text style={styles.availableDeviceSubtitle}>{getWearableSourceDescription(nativeDevice.id)}</Text>
-                                  <Text style={styles.availableDeviceFlow}>{getRunmefitBridgeSummary(nativeDevice.id)}</Text>
-                                  {isNativeSuccess ? (
-                                    <Animated.View
-                                      style={[
-                                        styles.deviceConnectedBadge,
-                                        {
-                                          opacity: nativeSuccessOpacity,
-                                          transform: [{ scale: nativeSuccessScale }],
-                                        },
-                                      ]}
-                                    >
-                                      <Ionicons name="checkmark-circle" size={14} color="#10B981" />
-                                      <Text style={styles.deviceConnectedText}>Connected successfully</Text>
-                                    </Animated.View>
-                                  ) : isNativeFailure ? (
-                                    <View style={styles.deviceFailedBadge}>
-                                      <Ionicons name="close-circle" size={14} color="#F87171" />
-                                      <View style={styles.deviceFailedCopy}>
-                                        <Text style={styles.deviceFailedText}>Connection failed</Text>
-                                        <Text style={styles.deviceFailedMessage} numberOfLines={2}>
-                                          {nativeConnectionFailureMessage || 'Permission was denied or the native flow could not complete.'}
-                                        </Text>
-                                      </View>
-                                    </View>
-                                  ) : (
-                                    <Text style={styles.availableDeviceStatus}>
-                                      {statusLabel}{lastSyncedLabel ? ` · Last synced ${lastSyncedLabel}` : ''}
-                                    </Text>
-                                  )}
+                                  <Text style={styles.availableDeviceTitle}>{nativeDeviceLabel || getWearableDisplayName(nativeDevice.id, nativeDevice.name)}</Text>
                                 </View>
                                 <TouchableOpacity
                                   style={styles.availableDeviceConnectButton}
                                   activeOpacity={0.88}
-                                  disabled={connectingDeviceId === nativeDevice.id || statusValue === 'syncing' || statusValue === 'provider_not_configured' || isNativeSuccess || statusValue === 'connected'}
-                                  onPress={() => void (isNativeFailure ? handleRetryNativeConnection(nativeDevice) : handleChooseDevice(nativeDevice))}
+                                  disabled={connectDisabled}
+                                  onPress={() => void (
+                                    isConnectedState ? handlePromptDisconnectWearable(nativeDevice)
+                                      : handleChooseDevice(nativeDevice)
+                                  )}
                                 >
                                   {connectingDeviceId === nativeDevice.id ? (
-                                    <Ionicons name="hourglass-outline" size={14} color="#000" />
-                                  ) : isNativeSuccess ? (
-                                    <Ionicons name="checkmark" size={14} color="#000" />
+                                    <Ionicons name="hourglass-outline" size={14} color="#fff" />
+                                  ) : isConnectedState ? (
+                                    <Ionicons name="remove-circle-outline" size={14} color="#fff" />
                                   ) : isNativeFailure ? (
-                                    <Ionicons name="refresh" size={14} color="#000" />
+                                    <Ionicons name="refresh" size={14} color="#fff" />
+                                  ) : statusValue === 'syncing' ? (
+                                    <Ionicons name="sync" size={14} color="#fff" />
+                                  ) : statusValue === 'provider_not_configured' ? (
+                                    <Ionicons name="alert-circle-outline" size={14} color="#fff" />
                                   ) : null}
                                   <Text style={styles.availableDeviceConnectText}>
                                     {connectLabel}
@@ -1265,6 +1578,19 @@ export default function LongevityOS() {
         </View>
 
         <Text style={styles.pageTitle}>LONGEVITY OS</Text>
+
+        {screenError ? (
+          <View style={styles.screenErrorCard}>
+            <View style={styles.screenErrorHeader}>
+              <Ionicons name="warning-outline" size={18} color="#FCA5A5" />
+              <Text style={styles.screenErrorTitle}>{screenError.title}</Text>
+              <TouchableOpacity onPress={dismissScreenError} activeOpacity={0.88} style={styles.screenErrorClose}>
+                <Ionicons name="close" size={16} color="#FCA5A5" />
+              </TouchableOpacity>
+            </View>
+            <Text style={styles.screenErrorMessage}>{screenError.message}</Text>
+          </View>
+        ) : null}
 
         <View style={styles.tabBarContainer}>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tabBar}>
@@ -1734,6 +2060,33 @@ const styles = StyleSheet.create({
     lineHeight: 14,
     fontFamily: 'Inter_400Regular',
   },
+  deviceDisconnectedBadge: {
+    marginTop: 12,
+    alignSelf: 'flex-start',
+    maxWidth: '100%',
+    backgroundColor: 'rgba(59,130,246,0.10)',
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(96,165,250,0.28)',
+  },
+  deviceDisconnectedText: {
+    color: '#93C5FD',
+    fontSize: 11,
+    fontFamily: 'Inter_700Bold',
+    letterSpacing: 0.8,
+  },
+  deviceDisconnectedMessage: {
+    marginTop: 2,
+    color: '#DBEAFE',
+    fontSize: 10,
+    lineHeight: 14,
+    fontFamily: 'Inter_400Regular',
+  },
   emptyConnectCard: {
     backgroundColor: '#12182B',
     borderRadius: 24,
@@ -1798,31 +2151,6 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 15,
     fontFamily: 'Inter_700Bold',
-    marginBottom: 3,
-  },
-  availableDeviceSubtitle: {
-    color: Colors.textMuted,
-    fontSize: 12,
-    fontFamily: 'Inter_400Regular',
-  },
-  availableDeviceStatus: {
-    fontSize: 11,
-    marginTop: 6,
-    fontFamily: 'Inter_700Bold',
-  },
-  availableDeviceExamples: {
-    color: 'rgba(255,255,255,0.52)',
-    fontSize: 11,
-    lineHeight: 17,
-    marginTop: 5,
-    fontFamily: 'Inter_400Regular',
-  },
-  availableDeviceFlow: {
-    color: '#DCE7F5',
-    fontSize: 11,
-    lineHeight: 17,
-    marginTop: 6,
-    fontFamily: 'Inter_500Medium',
   },
   availableDeviceBadge: {
     flexDirection: 'row',
@@ -1850,7 +2178,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   availableDeviceConnectText: {
-    color: '#000',
+    color: '#fff',
     fontSize: 11,
     fontFamily: 'Inter_700Bold',
   },
@@ -2051,6 +2379,37 @@ const styles = StyleSheet.create({
     color: Colors.textMuted,
     fontSize: 14,
     fontFamily: 'Inter_500Medium',
+  },
+  screenErrorCard: {
+    marginHorizontal: 16,
+    marginTop: 6,
+    marginBottom: 10,
+    backgroundColor: 'rgba(248,113,113,0.12)',
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: 'rgba(248,113,113,0.24)',
+    padding: 14,
+  },
+  screenErrorHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  screenErrorTitle: {
+    flex: 1,
+    color: '#FECACA',
+    fontSize: 13,
+    fontFamily: 'Inter_700Bold',
+  },
+  screenErrorClose: {
+    padding: 4,
+  },
+  screenErrorMessage: {
+    marginTop: 8,
+    color: '#FDE8E8',
+    fontSize: 12,
+    lineHeight: 18,
+    fontFamily: 'Inter_400Regular',
   },
   emptyCard: {
     minHeight: 220,

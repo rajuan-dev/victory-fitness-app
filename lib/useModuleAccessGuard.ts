@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'expo-router';
 import { fetchCurrentUser, getValidAuthTokens } from './api';
 import { getPostAuthRoute, isRouteAllowedForPlan } from './access';
+import { appendRunLog } from './runLog';
 
 export function useModuleAccessGuard(routePath: string) {
   const router = useRouter();
@@ -18,6 +19,13 @@ export function useModuleAccessGuard(routePath: string) {
         }
 
         if (!tokens) {
+          void appendRunLog({
+            level: 'warning',
+            title: 'Access guard redirect',
+            message: `No valid session for ${routePath}; redirecting to /login.`,
+            route: routePath,
+            context: 'ModuleGuard',
+          });
           router.replace('/login');
           return;
         }
@@ -28,11 +36,25 @@ export function useModuleAccessGuard(routePath: string) {
         }
 
         if (!isRouteAllowedForPlan(routePath, user)) {
+          void appendRunLog({
+            level: 'warning',
+            title: 'Access guard redirect',
+            message: `Plan access blocked for ${routePath}; redirecting to ${getPostAuthRoute(user)}.`,
+            route: routePath,
+            context: 'ModuleGuard',
+          });
           router.replace(getPostAuthRoute(user));
           return;
         }
       } catch {
         if (!cancelled) {
+          void appendRunLog({
+            level: 'error',
+            title: 'Access guard failure',
+            message: `Failed to validate access for ${routePath}; redirecting to /login.`,
+            route: routePath,
+            context: 'ModuleGuard',
+          });
           router.replace('/login');
           return;
         }

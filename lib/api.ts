@@ -147,6 +147,8 @@ export type LongevityWearableDevice = {
   status: string;
   active: boolean;
   image: string;
+  source_device?: string;
+  platform?: string;
 };
 
 export type WearableProvider = 'apple-health' | 'health-connect' | 'fitbit' | 'google-fit' | 'garmin' | 'this-phone' | 'qr-import';
@@ -182,7 +184,9 @@ export type HealthMetricSummaryItem = {
   average_value: number;
   min_value?: number | null;
   max_value?: number | null;
+  unit?: string;
   latest_end_time?: string | null;
+  latest_value?: number | null;
 };
 
 export type HealthMetricSummaryResponse = {
@@ -817,6 +821,19 @@ export async function connectLongevityDemoProvider(provider: WearableProvider) {
 export async function connectLongevityLocalProvider(provider: WearableProvider) {
   return apiRequest<WearableConnectionResponse>(`/integrations/${encodeURIComponent(provider)}/connect-local`, {
     method: 'POST',
+  });
+}
+
+export async function disconnectLongevityProvider(provider: WearableProvider) {
+  return apiRequest<{
+    provider: WearableProvider;
+    disconnected: boolean;
+    status: string;
+    source_device: string;
+    platform: string;
+    message: string;
+  }>(`/wearables/${encodeURIComponent(provider)}/connection`, {
+    method: 'DELETE',
   });
 }
 
