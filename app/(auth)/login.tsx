@@ -17,9 +17,10 @@ import { AuthInput } from '../../components/AuthInput';
 import { AuthButton } from '../../components/AuthButton';
 import { ErrorPopupModal } from '../../components/ErrorPopupModal';
 import { GoogleSignInButton } from '../../components/GoogleSignInButton';
-import { apiRequest, AuthResponse, fetchCurrentUser, getValidAuthTokens, setAuthTokens } from '../../lib/api';
-import { getPostAuthRoute } from '../../lib/access';
+import { apiRequest, AuthResponse, fetchCurrentUser, getValidAuthTokens, markNativeIntegrationConnected, setAuthTokens } from '../../lib/api';
+import { canAccessFeature, getPostAuthRoute } from '../../lib/access';
 import { formatAppError } from '../../lib/error';
+import { authorizeNativeHealthSource } from '../../lib/nativeHealthSync';
 
 const { height } = Dimensions.get('window');
 
@@ -60,6 +61,25 @@ export default function LoginScreen() {
     };
   }, [router]);
 
+  const connectNativeHealthAfterLogin = async (user: AuthResponse['user']) => {
+    if (!canAccessFeature('longevity', user)) {
+      return;
+    }
+
+    if (Platform.OS !== 'ios' && Platform.OS !== 'android') {
+      return;
+    }
+
+    const provider = Platform.OS === 'ios' ? 'apple-health' : 'health-connect';
+
+    try {
+      await authorizeNativeHealthSource('this-phone');
+      await markNativeIntegrationConnected({ provider });
+    } catch (error) {
+      console.warn('Native health connection skipped during login', error);
+    }
+  };
+
   const handleLogin = async () => {
     const normalizedEmail = email.trim().toLowerCase();
     if (!normalizedEmail || !password) {
@@ -77,6 +97,7 @@ export default function LoginScreen() {
         body: { email: normalizedEmail, password },
       });
       await setAuthTokens(auth);
+      await connectNativeHealthAfterLogin(auth.user);
       router.replace(getPostAuthRoute(auth.user));
     } catch (error) {
       setErrorDialog(formatAppError(error));

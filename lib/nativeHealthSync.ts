@@ -7,8 +7,48 @@ import {
 } from './api';
 
 export type NativeSyncTarget = 'apple-health' | 'health-connect' | 'this-phone';
+export type NativeSyncEffectiveTarget = 'apple-health' | 'health-connect';
+export type NativeHealthReadiness = {
+  effectiveTarget: NativeSyncEffectiveTarget;
+  label: string;
+  isReady: boolean;
+  status: 'ready' | 'needs_setup' | 'update_required' | 'unsupported_platform';
+  message: string;
+  actionLabel?: string;
+  action?: 'open_settings' | 'open_data_management';
+};
+export type NativeHealthChecklistItem = {
+  id: string;
+  label: string;
+  detail: string;
+  done: boolean;
+};
+export type NativeHealthChecklistState = NativeHealthReadiness & {
+  items: NativeHealthChecklistItem[];
+  detectedSourceLabels: string[];
+  recordsFound: number;
+  missingPermissions: string[];
+};
 
 const HEALTH_SYNC_LOOKBACK_DAYS = 7;
+const HEALTH_CONNECT_READ_PERMISSIONS = [
+  { accessType: 'read' as const, recordType: 'Steps' as const },
+  { accessType: 'read' as const, recordType: 'Distance' as const },
+  { accessType: 'read' as const, recordType: 'ActiveCaloriesBurned' as const },
+  { accessType: 'read' as const, recordType: 'HeartRate' as const },
+  { accessType: 'read' as const, recordType: 'HeartRateVariabilityRmssd' as const },
+  { accessType: 'read' as const, recordType: 'SleepSession' as const },
+  { accessType: 'read' as const, recordType: 'OxygenSaturation' as const },
+];
+const HEALTH_CONNECT_SOURCE_CHECK_RECORD_TYPES = [
+  'Steps',
+  'Distance',
+  'ActiveCaloriesBurned',
+  'HeartRate',
+  'HeartRateVariabilityRmssd',
+  'SleepSession',
+  'OxygenSaturation',
+] as const;
 
 function getSyncWindow() {
   const end = new Date();
@@ -55,7 +95,76 @@ function toHours(startTime: string, endTime: string) {
   return Math.max((end - start) / (1000 * 60 * 60), 0);
 }
 
-function normalizeNativeSyncTarget(target: NativeSyncTarget): 'apple-health' | 'health-connect' {
+function normalizeHealthSourceLabel(origin: string) {
+  const normalized = String(origin || '').toLowerCase();
+  if (!normalized) {
+    return 'Unknown source';
+  }
+  if (normalized.includes('samsung')) {
+    return 'Samsung Health';
+  }
+  if (normalized.includes('runmefit')) {
+    return 'Runmefit';
+  }
+  if (normalized.includes('fitbit')) {
+    return 'Fitbit';
+  }
+  if (normalized.includes('google') && normalized.includes('fit')) {
+    return 'Google Fit';
+  }
+  if (normalized.includes('garmin')) {
+    return 'Garmin';
+  }
+  if (normalized.includes('oura')) {
+    return 'Oura';
+  }
+  if (normalized.includes('withings')) {
+    return 'Withings';
+  }
+  return origin;
+}
+
+function buildNativeChecklistItems(base: {
+  platformLabel: string;
+  ready: boolean;
+  hasPermission: boolean;
+  hasSourceData: boolean;
+  detectedSourceLabels: string[];
+  recordsFound: number;
+  setupMessage: string;
+  permissionMessage: string;
+  sourceMessage: string;
+  syncMessage: string;
+}): NativeHealthChecklistItem[] {
+  return [
+    {
+      id: `${base.platformLabel}-available`,
+      label: `${base.platformLabel} available`,
+      detail: base.setupMessage,
+      done: base.ready,
+    },
+    {
+      id: `${base.platformLabel}-permission`,
+      label: 'This app can read health data',
+      detail: base.permissionMessage,
+      done: base.hasPermission,
+    },
+    {
+      id: `${base.platformLabel}-source`,
+      label: 'Source app writes data',
+      detail: base.sourceMessage,
+      done: base.hasSourceData,
+    },
+    {
+      id: `${base.platformLabel}-sync`,
+      label: 'Ready to sync',
+      detail: base.syncMessage,
+      done: base.ready && base.hasPermission && base.hasSourceData,
+    },
+  ];
+}
+
+export function normalizeNativeSyncTarget(target: NativeSyncTarget): NativeSyncEffectiveTarget {
   if (target === 'this-phone') {
     if (Platform.OS === 'ios') {
       return 'apple-health';
@@ -68,6 +177,16 @@ function normalizeNativeSyncTarget(target: NativeSyncTarget): 'apple-health' | '
     return 'apple-health';
   }
   return 'health-connect';
+}
+
+export function getPreferredNativeSyncTargetForPlatform(): NativeSyncEffectiveTarget | null {
+  if (Platform.OS === 'ios') {
+    return 'apple-health';
+  }
+  if (Platform.OS === 'android') {
+    return 'health-connect';
+  }
+  return null;
 }
 
 function assertNativePlatform(target: 'apple-health' | 'health-connect') {
@@ -123,7 +242,7 @@ async function collectAppleHealthMetrics(): Promise<MobileHealthSyncPayload> {
     callbackToPromise<any[]>((callback) => AppleHealthKit.getOxygenSaturationSamples({ ...baseOptions, limit: 100 }, callback)),
   ]);
 
-  const sourceDevice = 'Apple Watch / Apple Health';
+  const sourceDevice = 'Apple Health';
   const metrics: NormalizedHealthMetricPayload[] = [];
 
   stepSamples.forEach((item) => {
@@ -227,7 +346,7 @@ async function collectAppleHealthMetrics(): Promise<MobileHealthSyncPayload> {
   });
 
   if (metrics.length === 0) {
-    throw new Error('No Apple Watch / Apple Health records were found for the last 7 days.');
+    throw new Error('No Apple Health records were found for the last 7 days.');
   }
 
   return {
@@ -351,7 +470,7 @@ async function collectHealthConnectMetrics(): Promise<MobileHealthSyncPayload> {
 
 export function getNativeSyncLabel(target: NativeSyncTarget) {
   const effectiveTarget = normalizeNativeSyncTarget(target);
-  return effectiveTarget === 'apple-health' ? 'Apple Watch / Apple Health' : 'Health Connect';
+  return effectiveTarget === 'apple-health' ? 'Apple Health' : 'Health Connect';
 }
 
 async function authorizeAppleHealth(AppleHealthKit: any) {
@@ -374,7 +493,7 @@ async function authorizeAppleHealth(AppleHealthKit: any) {
     AppleHealthKit.isAvailable((error: string | null, result: boolean) => callback(error, result));
   });
   if (!available) {
-    throw new Error('Apple Watch / Apple Health is not available on this device.');
+    throw new Error('Apple Health is not available on this device.');
   }
 
   await callbackToPromise((callback) => {
@@ -388,15 +507,352 @@ async function authorizeHealthConnect(HealthConnect: typeof import('react-native
     throw new Error('Health Connect could not be initialized on this device.');
   }
 
-  await HealthConnect.requestPermission([
-    { accessType: 'read', recordType: 'Steps' },
-    { accessType: 'read', recordType: 'Distance' },
-    { accessType: 'read', recordType: 'ActiveCaloriesBurned' },
-    { accessType: 'read', recordType: 'HeartRate' },
-    { accessType: 'read', recordType: 'HeartRateVariabilityRmssd' },
-    { accessType: 'read', recordType: 'SleepSession' },
-    { accessType: 'read', recordType: 'OxygenSaturation' },
-  ]);
+  await HealthConnect.requestPermission(HEALTH_CONNECT_READ_PERMISSIONS);
+}
+
+export async function getNativeHealthReadiness(target: NativeSyncTarget): Promise<NativeHealthReadiness> {
+  const effectiveTarget = normalizeNativeSyncTarget(target);
+  const label = getNativeSyncLabel(target);
+
+  if (effectiveTarget === 'apple-health') {
+    if (Platform.OS !== 'ios') {
+      return {
+        effectiveTarget,
+        label,
+        isReady: false,
+        status: 'unsupported_platform',
+        message: 'Apple Health is only available on iPhone.',
+      };
+    }
+    return {
+      effectiveTarget,
+      label,
+      isReady: true,
+      status: 'ready',
+      message: 'Apple Health is available. Connect it and allow read access to sync iPhone health sources.',
+    };
+  }
+
+  if (Platform.OS !== 'android') {
+    return {
+      effectiveTarget,
+      label,
+      isReady: false,
+      status: 'unsupported_platform',
+      message: 'Health Connect is only available on Android.',
+    };
+  }
+
+  const HealthConnect = require('react-native-health-connect') as typeof import('react-native-health-connect');
+  const { SdkAvailabilityStatus } = HealthConnect;
+  const sdkStatus = await HealthConnect.getSdkStatus();
+
+  if (sdkStatus === SdkAvailabilityStatus.SDK_UNAVAILABLE_PROVIDER_UPDATE_REQUIRED) {
+    return {
+      effectiveTarget,
+      label,
+      isReady: false,
+      status: 'update_required',
+      message: 'Health Connect needs to be installed or updated before this app can sync Android health sources.',
+      action: 'open_settings',
+      actionLabel: 'Open Health Connect',
+    };
+  }
+
+  if (sdkStatus !== SdkAvailabilityStatus.SDK_AVAILABLE) {
+    return {
+      effectiveTarget,
+      label,
+      isReady: false,
+      status: 'needs_setup',
+      message: 'Health Connect is not ready on this phone yet. Install it first, then connect Samsung Health, Runmefit, or other Android health apps.',
+      action: 'open_settings',
+      actionLabel: 'Open Health Connect',
+    };
+  }
+
+  const initialized = await HealthConnect.initialize();
+  if (!initialized) {
+    return {
+      effectiveTarget,
+      label,
+      isReady: false,
+      status: 'needs_setup',
+      message: 'Health Connect is installed, but the app could not initialize it yet. Open Health Connect and finish setup first.',
+      action: 'open_settings',
+      actionLabel: 'Open Health Connect',
+    };
+  }
+
+  const grantedPermissions = await HealthConnect.getGrantedPermissions().catch(() => []);
+  const hasAnyReadPermission = Array.isArray(grantedPermissions)
+    && grantedPermissions.some((permission: any) => permission?.accessType === 'read');
+
+  return {
+    effectiveTarget,
+    label,
+    isReady: true,
+    status: 'ready',
+    message: hasAnyReadPermission
+      ? 'Health Connect is ready. Sync approved records from Samsung Health, Runmefit, and other connected Android apps.'
+      : 'Health Connect is installed. Connect it in this app and allow read access to sync Samsung Health, Runmefit, and other Android apps.',
+    action: 'open_data_management',
+    actionLabel: 'Manage Permissions',
+  };
+}
+
+async function inspectAndroidSourceRecords(HealthConnect: typeof import('react-native-health-connect')) {
+  const { startIso, endIso } = getSyncWindow();
+  const timeRangeFilter = {
+    operator: 'between' as const,
+    startTime: startIso,
+    endTime: endIso,
+  };
+
+  const readResults = await Promise.all(
+    HEALTH_CONNECT_SOURCE_CHECK_RECORD_TYPES.map(async (recordType) => {
+      try {
+        const result = await HealthConnect.readRecords(recordType as any, {
+          timeRangeFilter,
+          ascendingOrder: false,
+          pageSize: 1,
+        });
+        return Array.isArray(result.records) ? result.records : [];
+      } catch {
+        return [];
+      }
+    }),
+  );
+
+  const records = readResults.flat();
+  const origins = new Set<string>();
+  records.forEach((record: any) => {
+    const origin = String(record?.metadata?.dataOrigin || '').trim();
+    if (origin) {
+      origins.add(origin);
+    }
+  });
+
+  const detectedSourceLabels = Array.from(origins).map(normalizeHealthSourceLabel);
+  return {
+    recordsFound: records.length,
+    detectedSourceLabels,
+  };
+}
+
+export async function inspectNativeHealthChecklist(target: NativeSyncTarget): Promise<NativeHealthChecklistState> {
+  const effectiveTarget = normalizeNativeSyncTarget(target);
+  const label = getNativeSyncLabel(target);
+
+  if (effectiveTarget === 'apple-health') {
+    const AppleHealthKit = require('react-native-health').default;
+    const available = await callbackToPromise<boolean>((callback) => {
+      AppleHealthKit.isAvailable((error: string | null, result: boolean) => callback(error, result));
+    }).catch(() => false);
+    const detectedSourceLabels = available ? ['Apple Health'] : [];
+    const items = buildNativeChecklistItems({
+      platformLabel: 'Apple Health',
+      ready: available,
+      hasPermission: available,
+      hasSourceData: available,
+      detectedSourceLabels,
+      recordsFound: available ? 1 : 0,
+      setupMessage: available
+        ? 'Apple Health is available on this iPhone.'
+        : 'Apple Health is not available on this device.',
+      permissionMessage: available
+        ? 'Apple Health can be read after you approve the permission prompt.'
+        : 'Open Apple Health on iPhone first.',
+      sourceMessage: available
+        ? 'Apple Health can contain data from approved iPhone health apps and devices.'
+        : 'No Apple Health data can be read yet.',
+      syncMessage: available
+        ? 'Press Sync Data to import the last 7 days into Longevity OS.'
+        : 'Enable Apple Health first, then sync.',
+    });
+
+    return {
+      effectiveTarget,
+      label,
+      isReady: available,
+      status: available ? 'ready' : 'needs_setup',
+      message: available
+        ? 'Apple Health is available. Connect it and allow read access to sync iPhone health sources.'
+        : 'Apple Health is not available on this device.',
+      items,
+      detectedSourceLabels,
+      recordsFound: available ? 1 : 0,
+      missingPermissions: [],
+    };
+  }
+
+  if (Platform.OS !== 'android') {
+    return {
+      effectiveTarget,
+      label,
+      isReady: false,
+      status: 'unsupported_platform',
+      message: 'Health Connect is only available on Android.',
+      items: [],
+      detectedSourceLabels: [],
+      recordsFound: 0,
+      missingPermissions: [],
+    };
+  }
+
+  const HealthConnect = require('react-native-health-connect') as typeof import('react-native-health-connect');
+  const { SdkAvailabilityStatus } = HealthConnect;
+  const sdkStatus = await HealthConnect.getSdkStatus();
+
+  if (sdkStatus === SdkAvailabilityStatus.SDK_UNAVAILABLE_PROVIDER_UPDATE_REQUIRED) {
+    return {
+      effectiveTarget,
+      label,
+      isReady: false,
+      status: 'update_required',
+      message: 'Health Connect needs to be installed or updated before this app can sync Android health sources.',
+      action: 'open_settings',
+      actionLabel: 'Open Health Connect',
+      items: buildNativeChecklistItems({
+        platformLabel: 'Health Connect',
+        ready: false,
+        hasPermission: false,
+        hasSourceData: false,
+        detectedSourceLabels: [],
+        recordsFound: 0,
+        setupMessage: 'Install or update Health Connect first.',
+        permissionMessage: 'Grant read access after Health Connect is ready.',
+        sourceMessage: 'No Android health source data can be checked yet.',
+        syncMessage: 'Finish Health Connect setup before syncing.',
+      }),
+      detectedSourceLabels: [],
+      recordsFound: 0,
+      missingPermissions: [],
+    };
+  }
+
+  if (sdkStatus !== SdkAvailabilityStatus.SDK_AVAILABLE) {
+    return {
+      effectiveTarget,
+      label,
+      isReady: false,
+      status: 'needs_setup',
+      message: 'Health Connect is not ready on this phone yet. Install it first, then connect Samsung Health, Runmefit, or other Android health apps.',
+      action: 'open_settings',
+      actionLabel: 'Open Health Connect',
+      items: buildNativeChecklistItems({
+        platformLabel: 'Health Connect',
+        ready: false,
+        hasPermission: false,
+        hasSourceData: false,
+        detectedSourceLabels: [],
+        recordsFound: 0,
+        setupMessage: 'Install or open Health Connect first.',
+        permissionMessage: 'Grant read access after Health Connect is ready.',
+        sourceMessage: 'No Android health source data can be checked yet.',
+        syncMessage: 'Finish Health Connect setup before syncing.',
+      }),
+      detectedSourceLabels: [],
+      recordsFound: 0,
+      missingPermissions: [],
+    };
+  }
+
+  const initialized = await HealthConnect.initialize();
+  if (!initialized) {
+    return {
+      effectiveTarget,
+      label,
+      isReady: false,
+      status: 'needs_setup',
+      message: 'Health Connect is installed, but the app could not initialize it yet. Open Health Connect and finish setup first.',
+      action: 'open_settings',
+      actionLabel: 'Open Health Connect',
+      items: buildNativeChecklistItems({
+        platformLabel: 'Health Connect',
+        ready: false,
+        hasPermission: false,
+        hasSourceData: false,
+        detectedSourceLabels: [],
+        recordsFound: 0,
+        setupMessage: 'Health Connect is installed but not initialized.',
+        permissionMessage: 'Grant read access after Health Connect is ready.',
+        sourceMessage: 'No Android health source data can be checked yet.',
+        syncMessage: 'Finish Health Connect setup before syncing.',
+      }),
+      detectedSourceLabels: [],
+      recordsFound: 0,
+      missingPermissions: [],
+    };
+  }
+
+  const grantedPermissions = await HealthConnect.getGrantedPermissions().catch(() => []);
+  const grantedPermissionKeys = new Set(
+    (Array.isArray(grantedPermissions) ? grantedPermissions : []).map((permission: any) => `${permission?.accessType || ''}:${permission?.recordType || ''}`),
+  );
+  const missingPermissions = HEALTH_CONNECT_READ_PERMISSIONS
+    .filter((permission) => !grantedPermissionKeys.has(`${permission.accessType}:${permission.recordType}`))
+    .map((permission) => permission.recordType);
+  const hasPermission = missingPermissions.length === 0;
+
+  const { recordsFound, detectedSourceLabels } = await inspectAndroidSourceRecords(HealthConnect);
+  const hasSourceData = recordsFound > 0;
+  const hasSamsungOrRunmefitSource = detectedSourceLabels.some((label) => label === 'Samsung Health' || label === 'Runmefit');
+  const sourceMessage = hasSourceData
+    ? hasSamsungOrRunmefitSource
+      ? `Detected data from ${detectedSourceLabels.join(', ')} in the last 7 days.`
+      : `Detected data from ${detectedSourceLabels.join(', ')}, but not from Samsung Health or Runmefit yet.`
+    : 'No source app data was found in the last 7 days. Open Samsung Health or Runmefit and make sure it is writing into Health Connect.';
+  const isReady = hasPermission && hasSamsungOrRunmefitSource;
+
+  return {
+    effectiveTarget,
+    label,
+    isReady,
+    status: isReady ? 'ready' : 'needs_setup',
+    message: hasPermission && hasSamsungOrRunmefitSource
+      ? `Health Connect is ready. Sync approved records from ${detectedSourceLabels.join(', ')}.`
+      : hasPermission
+        ? 'Health Connect is installed and your app can read it, but Samsung Health or Runmefit has not written data into it yet.'
+        : 'Health Connect is installed, but your app still needs read access for the requested health data types.',
+    action: hasPermission ? undefined : 'open_data_management',
+    actionLabel: hasPermission ? undefined : 'Manage Permissions',
+    items: buildNativeChecklistItems({
+      platformLabel: 'Health Connect',
+      ready: isReady,
+      hasPermission,
+      hasSourceData: hasSamsungOrRunmefitSource,
+      detectedSourceLabels,
+      recordsFound,
+      setupMessage: 'Health Connect is available on this Android phone.',
+      permissionMessage: hasPermission
+        ? 'Read permissions were granted for the requested health record types.'
+        : `Missing read access for: ${missingPermissions.join(', ')}.`,
+      sourceMessage,
+      syncMessage: hasPermission && hasSamsungOrRunmefitSource
+        ? 'Press Sync Data to import the last 7 days into Longevity OS.'
+        : 'Fix permissions or source app data before syncing.',
+    }),
+    detectedSourceLabels,
+    recordsFound,
+    missingPermissions,
+  };
+}
+
+export async function openNativeHealthSettings(target: NativeSyncTarget): Promise<boolean> {
+  const effectiveTarget = normalizeNativeSyncTarget(target);
+  if (effectiveTarget !== 'health-connect' || Platform.OS !== 'android') {
+    return false;
+  }
+
+  const HealthConnect = require('react-native-health-connect') as typeof import('react-native-health-connect');
+  const readiness = await getNativeHealthReadiness(target);
+  if (readiness.action === 'open_data_management') {
+    HealthConnect.openHealthConnectDataManagement();
+    return true;
+  }
+  HealthConnect.openHealthConnectSettings();
+  return true;
 }
 
 export async function authorizeNativeHealthSource(target: NativeSyncTarget) {

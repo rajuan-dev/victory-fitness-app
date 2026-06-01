@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import {
+  Animated,
   ActivityIndicator,
   Alert,
   Image,
@@ -15,6 +16,7 @@ import {
   View,
   Platform,
   useWindowDimensions,
+  Easing,
 } from 'react-native';
 import { Stack, useRouter } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
@@ -45,7 +47,15 @@ import {
   updateLongevityHabit,
 } from '../../lib/api';
 import { canAccessFeature } from '../../lib/access';
-import { authorizeNativeHealthSource, type NativeSyncTarget, syncNativeHealthSource } from '../../lib/nativeHealthSync';
+import {
+  authorizeNativeHealthSource,
+  getNativeHealthReadiness,
+  inspectNativeHealthChecklist,
+  getPreferredNativeSyncTargetForPlatform,
+  type NativeHealthChecklistState,
+  type NativeSyncTarget,
+  syncNativeHealthSource,
+} from '../../lib/nativeHealthSync';
 import { useModuleAccessGuard } from '../../lib/useModuleAccessGuard';
 
 const FALLBACK_CARD_IMAGE = 'https://images.unsplash.com/photo-1517836357463-d25dfeac3438?w=600&q=80';
@@ -66,6 +76,71 @@ function safeImageUri(value: string | null | undefined) {
   return normalized || FALLBACK_CARD_IMAGE;
 }
 
+function isVisibleWearableForPlatform(deviceId: string) {
+  if (Platform.OS === 'ios') {
+    return deviceId !== 'health-connect' && deviceId !== 'this-phone';
+  }
+  if (Platform.OS === 'android') {
+    return deviceId !== 'apple-health' && deviceId !== 'this-phone';
+  }
+  return deviceId !== 'this-phone';
+}
+
+function getPlatformHealthSources(deviceId: string) {
+  if (deviceId === 'apple-health') {
+    return ['Apple Health', 'Apple Watch', 'Oura', 'Withings', 'Polar'];
+  }
+  if (deviceId === 'health-connect') {
+    return ['Samsung Health', 'Runmefit', 'Health Connect apps', 'Galaxy Watch', 'Pixel Watch', 'Amazfit'];
+  }
+  if (deviceId === 'this-phone') {
+    return Platform.OS === 'ios'
+      ? ['Apple Health', 'Apple Watch', 'Oura', 'Withings', 'Polar']
+      : Platform.OS === 'android'
+        ? ['Samsung Health', 'Runmefit', 'Health Connect apps', 'Galaxy Watch', 'Pixel Watch', 'Amazfit']
+        : ['Supported mobile health sources'];
+  }
+  return [];
+}
+
+function getRunmefitBridgeTitle(deviceId: string) {
+  if (deviceId === 'apple-health') {
+    return 'Apple Health source bridge';
+  }
+  if (deviceId === 'health-connect') {
+    return 'Health Connect source bridge';
+  }
+  if (deviceId === 'this-phone') {
+    return Platform.OS === 'ios'
+      ? 'Apple Health source bridge on this iPhone'
+      : Platform.OS === 'android'
+        ? 'Health Connect source bridge on this Android phone'
+        : 'Native phone health bridge';
+  }
+  return 'Native health source bridge';
+}
+
+function getRunmefitBridgeSummary(deviceId: string) {
+  if (deviceId === 'apple-health') {
+    return 'Connect Apple Health once to read approved records from iPhone health apps and devices.';
+  }
+  if (deviceId === 'health-connect') {
+    return 'Connect Health Connect once to read approved records from Samsung Health, Runmefit, and other Android health apps.';
+  }
+  if (deviceId === 'this-phone') {
+    return Platform.OS === 'ios'
+      ? 'Use Apple Health on this iPhone, then press Sync Data here.'
+      : Platform.OS === 'android'
+        ? 'Use Health Connect on this Android phone, then press Sync Data here.'
+        : 'Sync into the phone health store first, then press Sync Data here.';
+  }
+  return 'Connect the supported phone health framework first, then press Sync Data here.';
+}
+
+function getNativeConnectButtonLabel() {
+  return Platform.OS === 'ios' ? 'Connect Apple Health' : Platform.OS === 'android' ? 'Connect Health Connect' : 'Connect';
+}
+
 function getWearableSourceDescription(deviceId: string) {
   switch (deviceId) {
     case 'fitbit':
@@ -75,13 +150,13 @@ function getWearableSourceDescription(deviceId: string) {
     case 'garmin':
       return 'Browser login with Garmin OAuth';
     case 'this-phone':
-      return Platform.OS === 'ios' ? 'Uses native Apple Watch / Apple Health permission on this iPhone' : Platform.OS === 'android' ? 'Uses native Health Connect permission on this Android phone' : 'Uses native phone health permission';
+      return Platform.OS === 'ios' ? 'Uses native Apple Health permission on this iPhone and can read data from apps that sync into Apple Health' : Platform.OS === 'android' ? 'Uses native Health Connect permission on this Android phone and can read data from apps that sync into Health Connect' : 'Uses native phone health permission';
     case 'qr-import':
       return 'Fallback import by QR payload';
     case 'apple-health':
-      return 'Native Apple Watch / Apple Health permission for Apple Watch and iPhone data';
+      return 'Native Apple Health permission for Apple Health and other iPhone health sources';
     case 'health-connect':
-      return 'Native Health Connect permission for Android health data';
+      return 'Native Health Connect permission for Android health data, including Samsung Health and Runmefit when they sync into Health Connect';
     default:
       return 'Health data source';
   }
@@ -90,9 +165,9 @@ function getWearableSourceDescription(deviceId: string) {
 function getWearableDisplayName(deviceId: string, fallbackName: string) {
   switch (deviceId) {
     case 'apple-health':
-      return 'Apple Watch / Apple Health';
+      return 'Apple Health Sources';
     case 'health-connect':
-      return 'Samsung / Pixel / Health Connect';
+      return 'Android Health Sources';
     case 'fitbit':
       return 'Fitbit Devices';
     case 'google-fit':
@@ -111,9 +186,9 @@ function getWearableDisplayName(deviceId: string, fallbackName: string) {
 function getWearableCompatibleDevices(deviceId: string) {
   switch (deviceId) {
     case 'apple-health':
-      return ['Apple Watch', 'iPhone Health', 'Oura Ring', 'Withings', 'Polar'];
+      return ['Apple Watch', 'iPhone Health', 'Oura Ring', 'Withings', 'Polar', 'Health apps synced to Apple Health'];
     case 'health-connect':
-      return ['Samsung Galaxy Watch', 'Pixel Watch', 'Realme phone', 'Redmi / Xiaomi phone', 'Amazfit'];
+      return ['Samsung Health', 'Runmefit', 'Samsung Galaxy Watch', 'Pixel Watch', 'Amazfit', 'Health Connect apps'];
     case 'fitbit':
       return ['Fitbit Charge', 'Fitbit Sense', 'Fitbit Versa', 'Google Fitbit'];
     case 'google-fit':
@@ -122,9 +197,9 @@ function getWearableCompatibleDevices(deviceId: string) {
       return ['Garmin Venu', 'Garmin Forerunner', 'Garmin Fenix', 'Garmin Instinct'];
     case 'this-phone':
       return Platform.OS === 'ios'
-        ? ['iPhone Health App', 'Apple Watch on this iPhone']
+        ? ['Apple Health', 'Apple Watch on this iPhone', 'Oura', 'Withings']
         : Platform.OS === 'android'
-          ? ['Health Connect', 'Realme / Redmi', 'Samsung / Pixel']
+          ? ['Samsung Health', 'Runmefit', 'Health Connect', 'Galaxy Watch', 'Pixel Watch']
           : ['Native mobile health source'];
     case 'qr-import':
       return ['Other wearable export', 'Partner QR bridge', 'Manual clinic data'];
@@ -142,14 +217,14 @@ function getWearableFlowSummary(deviceId: string) {
     case 'garmin':
       return 'Login in browser, return to app, then sync real Garmin data.';
     case 'apple-health':
-      return 'Approve Apple Watch / Apple Health access on iPhone, then sync Apple Watch and Health data.';
+      return 'Approve Apple Health access on iPhone, then sync Apple Health records from connected iPhone health apps and devices.';
     case 'health-connect':
-      return 'Approve Health Connect access on Android, then sync real phone and wearable data.';
+      return 'Approve Health Connect access on Android, then sync Health Connect records from Samsung Health, Runmefit, and other connected Android apps.';
     case 'this-phone':
       return Platform.OS === 'ios'
-        ? 'Uses Apple Watch / Apple Health on this iPhone, then syncs the approved health data.'
+        ? 'Uses Apple Health on this iPhone, then syncs approved health data from connected iPhone health apps.'
         : Platform.OS === 'android'
-          ? 'Uses Health Connect on this Android phone, then syncs the approved health data.'
+          ? 'Uses Health Connect on this Android phone, then syncs approved health data from Samsung Health, Runmefit, and other Android apps.'
           : 'Uses the native phone health connection, then syncs the approved health data.';
     case 'qr-import':
       return 'Connect the import option, then paste or scan a QR payload when syncing.';
@@ -302,6 +377,14 @@ export default function LongevityOS() {
   const [healthSummary, setHealthSummary] = useState<HealthMetricSummaryItem[]>([]);
   const [integrations, setIntegrations] = useState<IntegrationConnection[]>([]);
   const [syncingProviderIds, setSyncingProviderIds] = useState<string[]>([]);
+  const [nativeChecklistState, setNativeChecklistState] = useState<NativeHealthChecklistState | null>(null);
+  const [nativeConnectionSuccessDeviceId, setNativeConnectionSuccessDeviceId] = useState<string | null>(null);
+  const [nativeConnectionFailedDeviceId, setNativeConnectionFailedDeviceId] = useState<string | null>(null);
+  const [nativeConnectionFailureMessage, setNativeConnectionFailureMessage] = useState<string>('');
+  const nativeSuccessOpacity = useRef(new Animated.Value(0)).current;
+  const nativeSuccessScale = useRef(new Animated.Value(0.7)).current;
+  const nativeSuccessTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const nativeFailureTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const loadIntegrationStatuses = React.useCallback(async () => {
     const response = await fetchIntegrationConnections();
@@ -321,7 +404,7 @@ export default function LongevityOS() {
       ]);
       setDashboard(response);
       const activeDeviceIds = Array.isArray(response?.wearables?.devices)
-        ? response.wearables.devices.filter((device) => device.active).map((device) => device.id)
+        ? response.wearables.devices.filter((device) => device.active && isVisibleWearableForPlatform(device.id)).map((device) => device.id)
         : [];
       setSelectedWearableIds((current) => (current.length > 0 ? current : activeDeviceIds));
       setHealthSummary(Array.isArray(summary?.items) ? summary.items : []);
@@ -353,6 +436,29 @@ export default function LongevityOS() {
     return () => clearInterval(interval);
   }, [activeTab, loadIntegrationStatuses]);
 
+  React.useEffect(() => {
+    if (activeTab !== 'wearables') {
+      return;
+    }
+    const nativeTarget = getPreferredNativeSyncTargetForPlatform();
+    if (!nativeTarget) {
+      setNativeChecklistState(null);
+      return;
+    }
+    void inspectNativeHealthChecklist(nativeTarget)
+      .then((checklist) => setNativeChecklistState(checklist))
+      .catch(() => setNativeChecklistState(null));
+  }, [activeTab, dashboard?.wearables.last_synced_at]);
+
+  React.useEffect(() => () => {
+    if (nativeSuccessTimerRef.current) {
+      clearTimeout(nativeSuccessTimerRef.current);
+    }
+    if (nativeFailureTimerRef.current) {
+      clearTimeout(nativeFailureTimerRef.current);
+    }
+  }, []);
+
   const handleRefresh = React.useCallback(async () => {
     if (refreshing) {
       return;
@@ -383,14 +489,20 @@ export default function LongevityOS() {
     }
   };
 
-  const handleSyncWearables = async () => {
+  const syncWearableTargets = async (
+    targetDeviceIds: string[],
+    options: { showSuccessAlert?: boolean; showFailureAlert?: boolean } = {},
+  ) => {
+    const {
+      showSuccessAlert = true,
+      showFailureAlert = true,
+    } = options;
     if (syncingWearables) {
       return;
     }
     const connectedDeviceIds = (dashboard?.wearables.devices || [])
-      .filter((device) => device.active)
+      .filter((device) => device.active && isVisibleWearableForPlatform(device.id))
       .map((device) => device.id);
-    const targetDeviceIds = selectedWearableIds.length > 0 ? selectedWearableIds : connectedDeviceIds;
 
     if (targetDeviceIds.length === 0) {
       Alert.alert('Add device', 'Connect a device first, then press Sync Data Now.');
@@ -403,61 +515,141 @@ export default function LongevityOS() {
     if (targetDeviceIds.includes('qr-import')) {
       Alert.alert(
         'Sync separately',
-        'QR Import needs a payload input, so sync it separately from Fitbit, Google Fit, Garmin, Apple Watch / Apple Health, or Health Connect.',
+        'QR Import needs a payload input, so sync it separately from Fitbit, Google Fit, Garmin, Apple Health, or Health Connect.',
       );
       return;
     }
 
-    const wantsPhoneBridge = targetDeviceIds.includes('this-phone');
     const wantsAppleHealth = targetDeviceIds.includes('apple-health');
     const wantsHealthConnect = targetDeviceIds.includes('health-connect');
-    const backendProviderIds = targetDeviceIds.filter((providerId) => !['this-phone', 'apple-health', 'health-connect'].includes(providerId));
+    const backendProviderIds = targetDeviceIds.filter((providerId) => !['apple-health', 'health-connect', 'this-phone'].includes(providerId));
 
     setSyncingWearables(true);
     setSyncingProviderIds(targetDeviceIds);
     try {
       const tasks: Promise<unknown>[] = [];
-      const nativeTargets = new Set<WearableProvider>();
+      const nativeTargets = new Set<NativeSyncTarget>();
+      const preferredNativeTarget = getPreferredNativeSyncTargetForPlatform();
 
-      if (Platform.OS === 'ios' && (wantsPhoneBridge || wantsAppleHealth)) {
+      if (Platform.OS === 'ios' && wantsAppleHealth) {
         nativeTargets.add('apple-health');
       }
-      if (Platform.OS === 'android' && (wantsPhoneBridge || wantsHealthConnect)) {
+      if (Platform.OS === 'android' && wantsHealthConnect) {
         nativeTargets.add('health-connect');
+      }
+      if (!nativeTargets.size && preferredNativeTarget && connectedDeviceIds.includes(preferredNativeTarget) && targetDeviceIds.length === 1) {
+        nativeTargets.add(preferredNativeTarget);
+      }
+
+      for (const provider of nativeTargets) {
+        const checklist = await inspectNativeHealthChecklist(provider);
+        if (!checklist.isReady) {
+          setNativeChecklistState(checklist);
+          throw new Error(checklist.message);
+        }
+        tasks.push(syncNativeHealthSource(provider));
       }
 
       if (Platform.OS === 'ios' && wantsHealthConnect) {
         throw new Error('Health Connect is available on Android only.');
       }
       if (Platform.OS === 'android' && wantsAppleHealth) {
-        throw new Error('Apple Watch / Apple Health is available on iPhone only.');
+        throw new Error('Apple Health is available on iPhone only.');
       }
 
-      nativeTargets.forEach((provider) => {
-        tasks.push(syncNativeHealthSource(provider as NativeSyncTarget));
-      });
+      if (tasks.length === 0 && backendProviderIds.length === 0 && preferredNativeTarget) {
+        const checklist = await inspectNativeHealthChecklist(preferredNativeTarget);
+        setNativeChecklistState(checklist);
+        throw new Error(checklist.message);
+      }
+
+      if (tasks.length === 0 && backendProviderIds.length === 0) {
+        throw new Error('Select at least one supported data source to sync.');
+      }
 
       if (backendProviderIds.length > 0) {
         tasks.push(syncLongevityWearables(backendProviderIds as WearableProvider[]));
       }
 
-      if (tasks.length === 0) {
-        throw new Error('Select at least one supported data source to sync.');
+      try {
+        await Promise.all(tasks);
+      } catch (error) {
+        if (error instanceof Error && error.message.includes('No Health Connect records were found for the last 7 days.')) {
+          throw new Error('Health Connect is connected, but no records were found in the last 7 days. Open Health Connect and confirm Samsung Health, Runmefit, or another source app is writing data.');
+        }
+        if (error instanceof Error && error.message.includes('No Apple Health records were found for the last 7 days.')) {
+          throw new Error('Apple Health is connected, but no records were found in the last 7 days. Confirm your health apps or devices are writing data into Apple Health.');
+        }
+        throw error;
       }
 
-      await Promise.all(tasks);
       await loadDashboard(false);
-      Alert.alert('Data sync successfully', 'All Longevity OS calculations are now using the synced data.');
+      if (preferredNativeTarget) {
+        void inspectNativeHealthChecklist(preferredNativeTarget)
+          .then((checklist) => setNativeChecklistState(checklist))
+          .catch(() => undefined);
+      }
+      if (showSuccessAlert) {
+        Alert.alert('Data sync successful', 'All available synced health records are now flowing into Longevity OS.');
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unable to sync wearables.';
-      Alert.alert('Sync failed', message);
+      if (showFailureAlert) {
+        Alert.alert('Sync failed', message);
+      }
+      throw error;
     } finally {
       setSyncingWearables(false);
       setSyncingProviderIds([]);
     }
   };
 
+  const handleSyncWearables = async () => {
+    if (syncingWearables) {
+      return;
+    }
+    const connectedDeviceIds = (dashboard?.wearables.devices || [])
+      .filter((device) => device.active && isVisibleWearableForPlatform(device.id))
+      .map((device) => device.id);
+    const targetDeviceIds = selectedWearableIds.length > 0 ? selectedWearableIds : connectedDeviceIds;
+    await syncWearableTargets(targetDeviceIds, { showSuccessAlert: true, showFailureAlert: true });
+  };
+
+  const playNativeSuccessAnimation = (deviceId: string) => {
+    if (nativeSuccessTimerRef.current) {
+      clearTimeout(nativeSuccessTimerRef.current);
+    }
+    if (nativeFailureTimerRef.current) {
+      clearTimeout(nativeFailureTimerRef.current);
+    }
+    setNativeConnectionFailedDeviceId(null);
+    setNativeConnectionFailureMessage('');
+    setNativeConnectionSuccessDeviceId(deviceId);
+    nativeSuccessOpacity.setValue(0);
+    nativeSuccessScale.setValue(0.7);
+    Animated.parallel([
+      Animated.timing(nativeSuccessOpacity, {
+        toValue: 1,
+        duration: 160,
+        easing: Easing.out(Easing.quad),
+        useNativeDriver: true,
+      }),
+      Animated.spring(nativeSuccessScale, {
+        toValue: 1,
+        friction: 6,
+        tension: 120,
+        useNativeDriver: true,
+      }),
+    ]).start();
+    nativeSuccessTimerRef.current = setTimeout(() => {
+      setNativeConnectionSuccessDeviceId(null);
+    }, 8000);
+  };
+
   const handleAddWearable = () => {
+    setNativeConnectionSuccessDeviceId(null);
+    setNativeConnectionFailedDeviceId(null);
+    setNativeConnectionFailureMessage('');
     setShowWearablePicker(true);
   };
 
@@ -478,6 +670,12 @@ export default function LongevityOS() {
     await handleSelectWearable(device);
   };
 
+  const handleRetryNativeConnection = async (device: LongevityWearableDevice) => {
+    setNativeConnectionFailedDeviceId(null);
+    setNativeConnectionFailureMessage('');
+    await handleSelectWearable(device);
+  };
+
   const closeQrImportModal = () => {
     setShowQrImportModal(false);
     setQrPayload('');
@@ -487,6 +685,8 @@ export default function LongevityOS() {
     if (connectingDeviceId) {
       return;
     }
+    setNativeConnectionFailedDeviceId(null);
+    setNativeConnectionFailureMessage('');
     const integration = integrations.find((item) => item.provider === device.id);
     if (integration?.status === 'provider_not_configured') {
       Alert.alert('Provider not configured', `${getWearableDisplayName(device.id, device.name)} is not configured on the backend yet.`);
@@ -503,39 +703,106 @@ export default function LongevityOS() {
         await Linking.openURL(response.authorization_url);
         Alert.alert('Continue in browser', `Finish the ${device.name} login in browser, then return here and press Sync Data.`);
       } else if (Platform.OS === 'web' && device.id === 'apple-health') {
-        Alert.alert('Open mobile app', 'Open the iPhone app to connect Apple Watch / Apple Health and approve HealthKit permissions.');
+        Alert.alert('Open mobile app', 'Open the iPhone app to connect Apple Health and approve Health permissions.');
       } else if (Platform.OS === 'web' && device.id === 'health-connect') {
         Alert.alert('Open mobile app', 'Open the Android app to connect Health Connect and approve permissions.');
       } else if (Platform.OS === 'web' && device.id === 'this-phone') {
-        Alert.alert('Use mobile app', 'Connect This Phone from the mobile app on the device you want to sync.');
+        Alert.alert('Use mobile app', 'Connect the native health source from the mobile app on the device you want to sync.');
       } else if (
         (Platform.OS === 'ios' && (device.id === 'apple-health' || device.id === 'this-phone')) ||
         (Platform.OS === 'android' && (device.id === 'health-connect' || device.id === 'this-phone'))
       ) {
-        await authorizeNativeHealthSource(device.id as NativeSyncTarget);
-        await markNativeIntegrationConnected({
-          provider: device.id as WearableProvider,
-          permission_granted: true,
-          platform: Platform.OS,
-          source_device: getWearableDisplayName(device.id, device.name),
-        });
-        Alert.alert('Connected', `${getWearableDisplayName(device.id, device.name)} connected successfully. You can now press Sync Data to read and store real health data.`);
+        const readiness = await getNativeHealthReadiness(device.id as NativeSyncTarget);
+        if (!readiness.isReady) {
+          throw new Error(readiness.message);
+        }
+        try {
+          await authorizeNativeHealthSource(device.id as NativeSyncTarget);
+          await markNativeIntegrationConnected({
+            provider: device.id as WearableProvider,
+            permission_granted: true,
+            platform: Platform.OS,
+            source_device: getWearableDisplayName(device.id, device.name),
+            metadata: {
+              bridge_mode: 'native-aggregator',
+              bridge_title: Platform.OS === 'ios' ? 'Apple Health source bridge' : 'Android Health Connect source bridge',
+              bridge_summary: Platform.OS === 'ios'
+                ? 'Reads approved data from apps and devices that sync into Apple Health.'
+                : 'Reads approved data from apps and devices that sync into Health Connect.',
+              accepted_sources: getPlatformHealthSources(device.id),
+              preferred_source_hints: ['Samsung Health', 'Runmefit', 'Apple Health'],
+            },
+          });
+          playNativeSuccessAnimation(device.id);
+          try {
+            await syncWearableTargets([device.id], { showSuccessAlert: false, showFailureAlert: false });
+            Alert.alert(
+              'Connected successfully',
+              `${getWearableDisplayName(device.id, device.name)} connected successfully. Health data was synced and stored in the database.`,
+            );
+          } catch {
+            Alert.alert(
+              'Connected successfully',
+              `${getWearableDisplayName(device.id, device.name)} connected successfully. Open Sync Data when Health Connect has source records available.`,
+            );
+          }
+        } catch (connectError) {
+          const message = connectError instanceof Error ? connectError.message : `Unable to connect ${device.name}.`;
+          await markNativeIntegrationConnected({
+            provider: device.id as WearableProvider,
+            permission_granted: false,
+            platform: Platform.OS,
+            source_device: getWearableDisplayName(device.id, device.name),
+            metadata: {
+              bridge_mode: 'native-aggregator',
+              bridge_title: Platform.OS === 'ios' ? 'Apple Health source bridge' : 'Android Health Connect source bridge',
+              bridge_summary: Platform.OS === 'ios'
+                ? 'Reads approved data from apps and devices that sync into Apple Health.'
+                : 'Reads approved data from apps and devices that sync into Health Connect.',
+              accepted_sources: getPlatformHealthSources(device.id),
+              preferred_source_hints: ['Samsung Health', 'Runmefit', 'Apple Health'],
+              connection_failed: true,
+              failure_message: message,
+            },
+          }).catch(() => undefined);
+          setNativeConnectionFailedDeviceId(device.id);
+          setNativeConnectionFailureMessage(message);
+          if (nativeFailureTimerRef.current) {
+            clearTimeout(nativeFailureTimerRef.current);
+          }
+          nativeFailureTimerRef.current = setTimeout(() => {
+            setNativeConnectionFailedDeviceId(null);
+            setNativeConnectionFailureMessage('');
+          }, 8000);
+          throw new Error('__NATIVE_CONNECT_FAILED__');
+        }
       } else {
         await connectLongevityLocalProvider(device.id as WearableProvider);
         if (device.id === 'qr-import') {
           Alert.alert(`${device.name} added`, 'QR import is ready. Press Sync Data, then scan or paste the QR payload to save real synced data.');
         } else if (device.id === 'this-phone') {
-          Alert.alert(`${device.name} added`, `This phone is ready. Press Sync Data to read live health data from ${Platform.OS === 'ios' ? 'Apple Watch / Apple Health' : Platform.OS === 'android' ? 'Health Connect' : 'your supported mobile health source'}.`);
+          Alert.alert(`${device.name} added`, `This phone is ready. Press Sync Data to read live health data from ${Platform.OS === 'ios' ? 'Apple Health and connected iPhone health apps' : Platform.OS === 'android' ? 'Health Connect and connected Android health apps such as Samsung Health or Runmefit' : 'your supported mobile health source'}.`);
         } else if (device.id === 'apple-health' || device.id === 'health-connect') {
-          Alert.alert(`${device.name} added`, `Press Sync Data to read real health records from ${device.name} and store them in Longevity OS.`);
+          Alert.alert(`${device.name} added`, `Press Sync Data to read real health records from ${device.name} and store them in Longevity OS. This path accepts any supported source that syncs into the OS health store.`);
         } else {
           Alert.alert(`${device.name} added`, `${device.name} is ready. Press Sync Data to import synced health data.`);
         }
       }
       setSelectedWearableIds([device.id]);
       setShowWearablePicker(false);
-      await loadDashboard(false);
+      if (device.id !== 'apple-health' && device.id !== 'health-connect' && device.id !== 'this-phone') {
+        await loadDashboard(false);
+      }
+      const nativeTarget = getPreferredNativeSyncTargetForPlatform();
+      if (nativeTarget) {
+        void inspectNativeHealthChecklist(nativeTarget)
+          .then((checklist) => setNativeChecklistState(checklist))
+          .catch(() => undefined);
+      }
     } catch (error) {
+      if (error instanceof Error && error.message === '__NATIVE_CONNECT_FAILED__') {
+        return;
+      }
       const message = error instanceof Error ? error.message : `Unable to add ${device.name}.`;
       Alert.alert('Add wearable failed', message);
     } finally {
@@ -635,22 +902,13 @@ export default function LongevityOS() {
 
   const renderWearables = () => (
     (() => {
-      const devices = dashboard?.wearables.devices || [];
+      const devices = (dashboard?.wearables.devices || []).filter((device) => isVisibleWearableForPlatform(device.id));
       const integrationsByProvider = integrations.reduce<Record<string, IntegrationConnection>>((accumulator, item) => {
         accumulator[item.provider] = item;
         return accumulator;
       }, {});
-      const deviceGroups = [
-        'iPhone / Apple',
-        'Android / Health Connect',
-        'Fitbit',
-        'Google Fit',
-        'Garmin',
-        'Other Device / QR',
-      ].map((label) => ({
-        label,
-        devices: devices.filter((device) => getWearableCategoryLabel(device.id) === label),
-      })).filter((group) => group.devices.length > 0);
+      const nativeDeviceId = Platform.OS === 'ios' ? 'apple-health' : 'health-connect';
+      const nativeDevice = devices.find((device) => device.id === nativeDeviceId);
       return (
         <ScrollView style={styles.tabContent} contentContainerStyle={styles.contentContainer} showsVerticalScrollIndicator={false} refreshControl={refreshControl}>
             <SectionTitle>Connected Devices</SectionTitle>
@@ -660,7 +918,7 @@ export default function LongevityOS() {
               </View>
               <View style={styles.addDeviceContent}>
                 <Text style={styles.addDeviceTitle}>Add Device</Text>
-                <Text style={styles.addDeviceSubtitle}>Apple Watch / Apple Health, Health Connect, Google Fit, Fitbit, Garmin, or QR fallback import</Text>
+                <Text style={styles.addDeviceSubtitle}>Choose Apple Health on iPhone or Health Connect on Android.</Text>
               </View>
               <Ionicons name="chevron-forward" size={20} color={Colors.primary} />
             </TouchableOpacity>
@@ -669,41 +927,6 @@ export default function LongevityOS() {
               <Ionicons name={syncingWearables ? 'hourglass-outline' : 'refresh'} size={18} color="#000" />
               <Text style={styles.primaryButtonText}>{syncingWearables ? 'SYNCING HEALTH DATA...' : 'SYNC DATA'}</Text>
             </TouchableOpacity>
-            <View style={styles.infoCard}>
-              <Text style={styles.infoText}>{dashboard?.wearables.sync_message || 'No data synced yet.'}</Text>
-              {dashboard?.wearables.last_synced_at ? (
-                <Text style={styles.infoMetaText}>
-                  Last synced {new Date(dashboard.wearables.last_synced_at).toLocaleString()}
-                </Text>
-              ) : null}
-            </View>
-
-            <SectionTitle>Device Status</SectionTitle>
-            <View style={styles.listCard}>
-              {devices.map((device) => {
-                const integration = integrationsByProvider[device.id];
-                const statusValue = getIntegrationStatusValue(integration, syncingProviderIds.includes(device.id));
-                const statusLabel = getIntegrationStatusLabel(statusValue);
-                const statusColor = getIntegrationStatusColor(statusValue);
-                const lastSyncedLabel = formatIntegrationTimestamp(integration?.last_synced_at);
-                return (
-                  <View key={`status-${device.id}`} style={styles.listRow}>
-                    <Ionicons name="hardware-chip-outline" size={18} color={statusColor} />
-                    <View style={styles.listTextWrap}>
-                      <Text style={styles.listText}>{getWearableDisplayName(device.id, device.name)}</Text>
-                      <Text style={styles.listSubtext}>
-                        {integration?.last_error || integration?.last_sync_message || getWearableFlowSummary(device.id)}
-                      </Text>
-                      {lastSyncedLabel ? <Text style={styles.statusTimestampText}>Last synced {lastSyncedLabel}</Text> : null}
-                    </View>
-                    <View style={[styles.statusBadge, { borderColor: statusColor, backgroundColor: `${statusColor}1A` }]}>
-                      <Text style={[styles.statusBadgeText, { color: statusColor }]}>{statusLabel}</Text>
-                    </View>
-                  </View>
-                );
-              })}
-            </View>
-
             <SectionTitle>Synced Data</SectionTitle>
             {healthSummary.length > 0 ? (
               <View style={styles.summaryGrid}>
@@ -719,21 +942,28 @@ export default function LongevityOS() {
               </View>
             ) : (
               <View style={styles.infoCard}>
-                <Text style={styles.infoText}>
-                  No synced health records yet. Add a device first, then sync real data from QR, this phone, Fitbit, Google Fit, Garmin, Apple Watch / Apple Health, or Health Connect.
-                </Text>
+                <Text style={styles.infoText}>No synced health records yet.</Text>
               </View>
             )}
 
-            <Modal visible={showWearablePicker} transparent animationType="fade" onRequestClose={() => setShowWearablePicker(false)}>
-              <Pressable style={styles.modalBackdrop} onPress={() => setShowWearablePicker(false)}>
+            <Modal visible={showWearablePicker} transparent animationType="fade" onRequestClose={() => {
+              setNativeConnectionSuccessDeviceId(null);
+              setShowWearablePicker(false);
+            }}>
+              <Pressable style={styles.modalBackdrop} onPress={() => {
+                setNativeConnectionSuccessDeviceId(null);
+                setShowWearablePicker(false);
+              }}>
                 <Pressable style={styles.modalCard} onPress={() => undefined}>
                   <View style={styles.modalHeader}>
                     <View>
                       <Text style={styles.modalEyebrow}>DEVICE SETUP</Text>
                       <Text style={styles.modalTitle}>Add Device</Text>
                     </View>
-                    <TouchableOpacity style={styles.modalCloseButton} activeOpacity={0.88} onPress={() => setShowWearablePicker(false)}>
+                    <TouchableOpacity style={styles.modalCloseButton} activeOpacity={0.88} onPress={() => {
+                      setNativeConnectionSuccessDeviceId(null);
+                      setShowWearablePicker(false);
+                    }}>
                       <Ionicons name="close" size={20} color="#fff" />
                     </TouchableOpacity>
                   </View>
@@ -743,73 +973,90 @@ export default function LongevityOS() {
                     showsVerticalScrollIndicator={false}
                     nestedScrollEnabled
                   >
-                    <Text style={styles.connectionDescription}>
-                      Choose a connection below. Fitbit, Google Fit, and Garmin use browser login. Apple Watch / Apple Health and Health Connect use native phone permissions. QR is a fallback import option.
-                    </Text>
                     <View style={styles.availableDeviceList}>
-                      {deviceGroups.length > 0 ? (
-                        deviceGroups.map((group) => (
-                          <View key={group.label} style={styles.availableDeviceGroup}>
-                            <Text style={styles.availableDeviceGroupTitle}>{group.label}</Text>
-                            {group.devices.map((device) => (
-                              <TouchableOpacity
-                                key={device.id}
-                                style={styles.availableDeviceRow}
-                                activeOpacity={0.88}
-                                disabled={connectingDeviceId === device.id}
-                                onPress={() => void handleChooseDevice(device)}
-                              >
-                                {(() => {
-                                  const integration = integrationsByProvider[device.id];
-                                  const statusValue = getIntegrationStatusValue(integration, syncingProviderIds.includes(device.id));
-                                  const statusLabel = getIntegrationStatusLabel(statusValue);
-                                  const statusColor = getIntegrationStatusColor(statusValue);
-                                  const lastSyncedLabel = formatIntegrationTimestamp(integration?.last_synced_at);
-
-                                  return (
-                                    <>
-                                      <View style={styles.availableDeviceContent}>
-                                        <Text style={styles.availableDeviceTitle}>{getWearableDisplayName(device.id, device.name)}</Text>
-                                        <Text style={styles.availableDeviceSubtitle}>{getWearableSourceDescription(device.id)}</Text>
-                                        <Text style={[styles.availableDeviceStatus, { color: statusColor }]}>
-                                          Status: {statusLabel}{lastSyncedLabel ? ` · Last synced ${lastSyncedLabel}` : ''}
-                                        </Text>
-                                        <Text style={styles.availableDeviceExamples}>
-                                          Supports: {getWearableCompatibleDevices(device.id).join(', ')}
-                                        </Text>
-                                        <Text style={styles.availableDeviceFlow}>
-                                          {integration?.last_error || integration?.last_sync_message || getWearableFlowSummary(device.id)}
+                      {nativeDevice ? (
+                        <View
+                          key={nativeDevice.id}
+                          style={styles.availableDeviceRow}
+                        >
+                          {(() => {
+                            const integration = integrationsByProvider[nativeDevice.id];
+                            const statusValue = getIntegrationStatusValue(integration, syncingProviderIds.includes(nativeDevice.id));
+                            const statusLabel = getIntegrationStatusLabel(statusValue);
+                            const lastSyncedLabel = formatIntegrationTimestamp(integration?.last_synced_at);
+                            const isNativeSuccess = nativeConnectionSuccessDeviceId === nativeDevice.id;
+                            const isNativeFailure = nativeConnectionFailedDeviceId === nativeDevice.id;
+                            const connectLabel = statusValue === 'syncing'
+                              ? 'Syncing'
+                              : statusValue === 'provider_not_configured'
+                                ? 'Unavailable'
+                                : statusValue === 'error'
+                                  ? 'Retry Connect'
+                                  : statusValue === 'needs_permission'
+                                    ? 'Allow'
+                                    : isNativeSuccess || statusValue === 'connected'
+                                      ? 'Connected'
+                                      : isNativeFailure
+                                        ? 'Retry Connect'
+                                      : getNativeConnectButtonLabel();
+                            return (
+                              <>
+                                <View style={styles.availableDeviceContent}>
+                                  <Text style={styles.availableDeviceTitle}>{getWearableDisplayName(nativeDevice.id, nativeDevice.name)}</Text>
+                                  <Text style={styles.availableDeviceSubtitle}>{getWearableSourceDescription(nativeDevice.id)}</Text>
+                                  <Text style={styles.availableDeviceFlow}>{getRunmefitBridgeSummary(nativeDevice.id)}</Text>
+                                  {isNativeSuccess ? (
+                                    <Animated.View
+                                      style={[
+                                        styles.deviceConnectedBadge,
+                                        {
+                                          opacity: nativeSuccessOpacity,
+                                          transform: [{ scale: nativeSuccessScale }],
+                                        },
+                                      ]}
+                                    >
+                                      <Ionicons name="checkmark-circle" size={14} color="#10B981" />
+                                      <Text style={styles.deviceConnectedText}>Connected successfully</Text>
+                                    </Animated.View>
+                                  ) : isNativeFailure ? (
+                                    <View style={styles.deviceFailedBadge}>
+                                      <Ionicons name="close-circle" size={14} color="#F87171" />
+                                      <View style={styles.deviceFailedCopy}>
+                                        <Text style={styles.deviceFailedText}>Connection failed</Text>
+                                        <Text style={styles.deviceFailedMessage} numberOfLines={2}>
+                                          {nativeConnectionFailureMessage || 'Permission was denied or the native flow could not complete.'}
                                         </Text>
                                       </View>
-                                      {connectingDeviceId === device.id ? (
-                                        <Ionicons name="hourglass-outline" size={18} color={Colors.primary} />
-                                      ) : statusValue === 'connected' || statusValue === 'syncing' ? (
-                                        <View style={[styles.availableDeviceBadge, { borderColor: statusColor, backgroundColor: `${statusColor}1A` }]}>
-                                          <Ionicons name="checkmark-circle" size={14} color={statusColor} />
-                                          <Text style={[styles.availableDeviceBadgeText, { color: statusColor }]}>{statusLabel}</Text>
-                                        </View>
-                                      ) : (
-                                        <View style={styles.availableDeviceConnectButton}>
-                                          <Text style={styles.availableDeviceConnectText}>
-                                            {statusValue === 'provider_not_configured'
-                                              ? 'Unavailable'
-                                              : statusValue === 'error'
-                                                ? 'Retry'
-                                                : statusValue === 'needs_permission'
-                                                  ? 'Allow'
-                                                  : 'Connect'}
-                                          </Text>
-                                        </View>
-                                      )}
-                                    </>
-                                  );
-                                })()}
-                              </TouchableOpacity>
-                            ))}
-                          </View>
-                        ))
+                                    </View>
+                                  ) : (
+                                    <Text style={styles.availableDeviceStatus}>
+                                      {statusLabel}{lastSyncedLabel ? ` · Last synced ${lastSyncedLabel}` : ''}
+                                    </Text>
+                                  )}
+                                </View>
+                                <TouchableOpacity
+                                  style={styles.availableDeviceConnectButton}
+                                  activeOpacity={0.88}
+                                  disabled={connectingDeviceId === nativeDevice.id || statusValue === 'syncing' || statusValue === 'provider_not_configured' || isNativeSuccess || statusValue === 'connected'}
+                                  onPress={() => void (isNativeFailure ? handleRetryNativeConnection(nativeDevice) : handleChooseDevice(nativeDevice))}
+                                >
+                                  {connectingDeviceId === nativeDevice.id ? (
+                                    <Ionicons name="hourglass-outline" size={14} color="#000" />
+                                  ) : isNativeSuccess ? (
+                                    <Ionicons name="checkmark" size={14} color="#000" />
+                                  ) : isNativeFailure ? (
+                                    <Ionicons name="refresh" size={14} color="#000" />
+                                  ) : null}
+                                  <Text style={styles.availableDeviceConnectText}>
+                                    {connectLabel}
+                                  </Text>
+                                </TouchableOpacity>
+                              </>
+                            );
+                          })()}
+                        </View>
                       ) : (
-                        <Text style={styles.infoText}>No device options are available right now.</Text>
+                        <Text style={styles.infoText}>No native source is available for this platform.</Text>
                       )}
                     </View>
                   </ScrollView>
@@ -1357,23 +1604,6 @@ const styles = StyleSheet.create({
     marginTop: 2,
     fontFamily: 'Inter_400Regular',
   },
-  statusTimestampText: {
-    color: 'rgba(255,255,255,0.45)',
-    fontSize: 11,
-    marginTop: 6,
-    fontFamily: 'Inter_400Regular',
-  },
-  statusBadge: {
-    borderWidth: 1,
-    borderRadius: 999,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    alignSelf: 'center',
-  },
-  statusBadgeText: {
-    fontSize: 11,
-    fontFamily: 'Inter_700Bold',
-  },
   horizontalList: {
     paddingRight: 16,
     gap: 12,
@@ -1473,6 +1703,36 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontFamily: 'Inter_700Bold',
     letterSpacing: 0.8,
+  },
+  deviceFailedBadge: {
+    marginTop: 12,
+    alignSelf: 'flex-start',
+    maxWidth: '100%',
+    backgroundColor: 'rgba(248,113,113,0.12)',
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(248,113,113,0.28)',
+  },
+  deviceFailedCopy: {
+    flex: 1,
+  },
+  deviceFailedText: {
+    color: '#F87171',
+    fontSize: 11,
+    fontFamily: 'Inter_700Bold',
+    letterSpacing: 0.8,
+  },
+  deviceFailedMessage: {
+    marginTop: 2,
+    color: '#FECACA',
+    fontSize: 10,
+    lineHeight: 14,
+    fontFamily: 'Inter_400Regular',
   },
   emptyConnectCard: {
     backgroundColor: '#12182B',
@@ -1643,12 +1903,6 @@ const styles = StyleSheet.create({
     color: Colors.textMuted,
     fontSize: 14,
     lineHeight: 20,
-    fontFamily: 'Inter_400Regular',
-  },
-  infoMetaText: {
-    marginTop: 8,
-    color: 'rgba(255,255,255,0.5)',
-    fontSize: 12,
     fontFamily: 'Inter_400Regular',
   },
   summaryGrid: {
