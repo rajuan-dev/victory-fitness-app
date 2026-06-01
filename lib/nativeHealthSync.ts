@@ -125,6 +125,20 @@ function normalizeHealthSourceLabel(origin: string) {
   return origin;
 }
 
+function sortHealthSourceLabels(labels: string[]) {
+  const priority = ['Runmefit', 'Samsung Health', 'Apple Health'];
+  return [...labels].sort((left, right) => {
+    const leftIndex = priority.indexOf(left);
+    const rightIndex = priority.indexOf(right);
+    const safeLeft = leftIndex === -1 ? priority.length : leftIndex;
+    const safeRight = rightIndex === -1 ? priority.length : rightIndex;
+    if (safeLeft !== safeRight) {
+      return safeLeft - safeRight;
+    }
+    return left.localeCompare(right);
+  });
+}
+
 function buildNativeChecklistItems(base: {
   platformLabel: string;
   ready: boolean;
@@ -634,7 +648,7 @@ async function inspectAndroidSourceRecords(HealthConnect: typeof import('react-n
     }
   });
 
-  const detectedSourceLabels = Array.from(origins).map(normalizeHealthSourceLabel);
+  const detectedSourceLabels = sortHealthSourceLabels(Array.from(origins).map(normalizeHealthSourceLabel));
   return {
     recordsFound: records.length,
     detectedSourceLabels,
@@ -798,23 +812,20 @@ export async function inspectNativeHealthChecklist(target: NativeSyncTarget): Pr
 
   const { recordsFound, detectedSourceLabels } = await inspectAndroidSourceRecords(HealthConnect);
   const hasSourceData = recordsFound > 0;
-  const hasSamsungOrRunmefitSource = detectedSourceLabels.some((label) => label === 'Samsung Health' || label === 'Runmefit');
   const sourceMessage = hasSourceData
-    ? hasSamsungOrRunmefitSource
-      ? `Detected data from ${detectedSourceLabels.join(', ')} in the last 7 days.`
-      : `Detected data from ${detectedSourceLabels.join(', ')}, but not from Samsung Health or Runmefit yet.`
-    : 'No source app data was found in the last 7 days. Open Samsung Health or Runmefit and make sure it is writing into Health Connect.';
-  const isReady = hasPermission && hasSamsungOrRunmefitSource;
+    ? `Detected data from ${detectedSourceLabels.join(', ')} in the last 7 days.`
+    : 'No source app data was found in the last 7 days. Open Runmefit, Samsung Health, or another source app and make sure it is writing into Health Connect.';
+  const isReady = hasPermission && hasSourceData;
 
   return {
     effectiveTarget,
     label,
     isReady,
     status: isReady ? 'ready' : 'needs_setup',
-    message: hasPermission && hasSamsungOrRunmefitSource
+    message: hasPermission && hasSourceData
       ? `Health Connect is ready. Sync approved records from ${detectedSourceLabels.join(', ')}.`
       : hasPermission
-        ? 'Health Connect is installed and your app can read it, but Samsung Health or Runmefit has not written data into it yet.'
+        ? 'Health Connect is installed and your app can read it, but no source app has written data into it yet.'
         : 'Health Connect is installed, but your app still needs read access for the requested health data types.',
     action: hasPermission ? undefined : 'open_data_management',
     actionLabel: hasPermission ? undefined : 'Manage Permissions',
@@ -822,7 +833,7 @@ export async function inspectNativeHealthChecklist(target: NativeSyncTarget): Pr
       platformLabel: 'Health Connect',
       ready: isReady,
       hasPermission,
-      hasSourceData: hasSamsungOrRunmefitSource,
+      hasSourceData,
       detectedSourceLabels,
       recordsFound,
       setupMessage: 'Health Connect is available on this Android phone.',
@@ -830,7 +841,7 @@ export async function inspectNativeHealthChecklist(target: NativeSyncTarget): Pr
         ? 'Read permissions were granted for the requested health record types.'
         : `Missing read access for: ${missingPermissions.join(', ')}.`,
       sourceMessage,
-      syncMessage: hasPermission && hasSamsungOrRunmefitSource
+      syncMessage: hasPermission && hasSourceData
         ? 'Press Sync Data to import the last 7 days into Longevity OS.'
         : 'Fix permissions or source app data before syncing.',
     }),

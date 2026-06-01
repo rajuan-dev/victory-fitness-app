@@ -132,7 +132,7 @@ function getRunmefitBridgeSummary(deviceId: string) {
     return 'Connect Apple Health once to read approved records from iPhone health apps and devices.';
   }
   if (deviceId === 'health-connect') {
-    return 'Connect Health Connect once to read approved records from Samsung Health, Runmefit, and other Android health apps.';
+    return 'Connect Health Connect once to read approved records from Runmefit, Samsung Health, and other Android health apps.';
   }
   if (deviceId === 'this-phone') {
     return Platform.OS === 'ios'
@@ -159,7 +159,7 @@ function getWearableSourceDescription(deviceId: string) {
     case 'apple-health':
       return 'Native Apple Health permission for Apple Health and other iPhone health sources';
     case 'health-connect':
-      return 'Native Health Connect permission for Android health data, including Samsung Health and Runmefit when they sync into Health Connect';
+      return 'Native Health Connect permission for Android health data, including Runmefit, Samsung Health, and other apps that sync into Health Connect';
     default:
       return 'Health data source';
   }
@@ -222,12 +222,12 @@ function getWearableFlowSummary(deviceId: string) {
     case 'apple-health':
       return 'Approve Apple Health access on iPhone, then sync Apple Health records from connected iPhone health apps and devices.';
     case 'health-connect':
-      return 'Approve Health Connect access on Android, then sync Health Connect records from Samsung Health, Runmefit, and other connected Android apps.';
+      return 'Approve Health Connect access on Android, then sync Health Connect records from Runmefit, Samsung Health, and other connected Android apps.';
     case 'this-phone':
       return Platform.OS === 'ios'
         ? 'Uses Apple Health on this iPhone, then syncs approved health data from connected iPhone health apps.'
         : Platform.OS === 'android'
-          ? 'Uses Health Connect on this Android phone, then syncs approved health data from Samsung Health, Runmefit, and other Android apps.'
+          ? 'Uses Health Connect on this Android phone, then syncs approved health data from Runmefit, Samsung Health, and other Android apps.'
           : 'Uses the native phone health connection, then syncs the approved health data.';
     case 'qr-import':
       return 'Connect the import option, then paste or scan a QR payload when syncing.';
@@ -602,7 +602,12 @@ export default function LongevityOS() {
       const activeDeviceIds = Array.isArray(response?.wearables?.devices)
         ? response.wearables.devices.filter((device) => device.active && isVisibleWearableForPlatform(device.id)).map((device) => device.id)
         : [];
-      setSelectedWearableIds((current) => (current.length > 0 ? current : activeDeviceIds));
+      setSelectedWearableIds((current) => {
+        if (activeDeviceIds.length > 0) {
+          return [activeDeviceIds[0]];
+        }
+        return current.length > 0 ? [current[0]] : [];
+      });
       setHealthSummary(Array.isArray(summary?.items) ? summary.items : []);
       setIntegrations(Array.isArray(integrationResponse?.items) ? integrationResponse.items : []);
       setCanGenerateLongevityPlan(canAccessFeature('longevity_plan', user));
@@ -804,7 +809,7 @@ export default function LongevityOS() {
         await Promise.all(tasks);
       } catch (error) {
         if (error instanceof Error && error.message.includes('No Health Connect records were found for the last 7 days.')) {
-          throw new Error('Health Connect is connected, but no records were found in the last 7 days. Open Health Connect and confirm Samsung Health, Runmefit, or another source app is writing data.');
+          throw new Error('Health Connect is connected, but no records were found in the last 7 days. Open Health Connect and confirm Runmefit, Samsung Health, or another source app is writing data.');
         }
         if (error instanceof Error && error.message.includes('No Apple Health records were found for the last 7 days.')) {
           throw new Error('Apple Health is connected, but no records were found in the last 7 days. Confirm your health apps or devices are writing data into Apple Health.');
@@ -897,11 +902,7 @@ export default function LongevityOS() {
   };
 
   const handleToggleWearableSelection = (deviceId: string) => {
-    setSelectedWearableIds((current) => (
-      current.includes(deviceId)
-        ? current.filter((item) => item !== deviceId)
-        : [...current, deviceId]
-    ));
+    setSelectedWearableIds([deviceId]);
   };
 
   const handleChooseDevice = async (device: LongevityWearableDevice) => {
@@ -1021,7 +1022,7 @@ export default function LongevityOS() {
                 ? 'Reads approved data from apps and devices that sync into Apple Health.'
                 : 'Reads approved data from apps and devices that sync into Health Connect.',
               accepted_sources: getPlatformHealthSources(device.id),
-              preferred_source_hints: ['Samsung Health', 'Runmefit', 'Apple Health'],
+              preferred_source_hints: ['Runmefit', 'Samsung Health', 'Apple Health'],
             },
           });
           playNativeSuccessAnimation(device.id);
@@ -1046,7 +1047,7 @@ export default function LongevityOS() {
                 ? 'Reads approved data from apps and devices that sync into Apple Health.'
                 : 'Reads approved data from apps and devices that sync into Health Connect.',
               accepted_sources: getPlatformHealthSources(device.id),
-              preferred_source_hints: ['Samsung Health', 'Runmefit', 'Apple Health'],
+              preferred_source_hints: ['Runmefit', 'Samsung Health', 'Apple Health'],
               connection_failed: true,
               failure_message: message,
             },
@@ -1077,7 +1078,7 @@ export default function LongevityOS() {
         if (device.id === 'qr-import') {
           Alert.alert(`${device.name} added`, 'QR import is ready. Press Sync Data, then scan or paste the QR payload to save real synced data.');
         } else if (device.id === 'this-phone') {
-          Alert.alert(`${device.name} added`, `This phone is ready. Press Sync Data to read live health data from ${Platform.OS === 'ios' ? 'Apple Health and connected iPhone health apps' : Platform.OS === 'android' ? 'Health Connect and connected Android health apps such as Samsung Health or Runmefit' : 'your supported mobile health source'}.`);
+          Alert.alert(`${device.name} added`, `This phone is ready. Press Sync Data to read live health data from ${Platform.OS === 'ios' ? 'Apple Health and connected iPhone health apps' : Platform.OS === 'android' ? 'Health Connect and connected Android health apps such as Runmefit or Samsung Health' : 'your supported mobile health source'}.`);
         } else if (device.id === 'apple-health' || device.id === 'health-connect') {
           Alert.alert(`${device.name} added`, `Press Sync Data to read real health records from ${device.name} and store them in Longevity OS. This path accepts any supported source that syncs into the OS health store.`);
         } else {

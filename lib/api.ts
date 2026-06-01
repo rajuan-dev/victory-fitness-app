@@ -147,6 +147,7 @@ export type LongevityWearableDevice = {
   status: string;
   active: boolean;
   image: string;
+  device_name?: string;
   source_device?: string;
   platform?: string;
 };
@@ -208,10 +209,13 @@ export type WearableConnectionResponse = {
   user_id: string;
   provider: WearableProvider;
   status: string;
+  device_name?: string;
   connected_at?: string | null;
+  disconnected_at?: string | null;
   last_synced_at?: string | null;
   last_sync_status?: string;
   last_sync_message?: string;
+  permission_granted?: boolean;
   metadata?: Record<string, unknown>;
   created_at?: string;
   updated_at?: string;
