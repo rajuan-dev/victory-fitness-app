@@ -20,6 +20,7 @@ function resolveApiUrl(url: string): string {
 }
 
 const API_URL = resolveApiUrl(RAW_API_URL);
+const REQUEST_TIMEOUT_MS = 8_000;
 
 export function resolveRemoteAssetUrl(url: string | null | undefined): string {
   const normalizedUrl = String(url || '').trim();
@@ -148,13 +149,47 @@ export type LongevityWearableDevice = {
   image: string;
 };
 
-export type WearableProvider = 'apple-health' | 'health-connect' | 'fitbit' | 'garmin';
+export type WearableProvider = 'apple-health' | 'health-connect' | 'fitbit' | 'google-fit' | 'garmin' | 'this-phone' | 'qr-import';
+
+export type NormalizedHealthMetricPayload = {
+  metric_type: 'steps' | 'heart_rate' | 'sleep' | 'calories' | 'workouts' | 'hrv' | 'spo2' | 'stress' | 'body_battery' | 'distance';
+  value: number | string;
+  unit: string;
+  start_time: string;
+  end_time: string;
+  source_device?: string;
+  metadata?: Record<string, unknown>;
+};
+
+export type MobileHealthSyncPayload = {
+  metrics: NormalizedHealthMetricPayload[];
+  source_device?: string;
+  batch_id?: string | null;
+};
 
 export type LongevityWearables = {
   devices: LongevityWearableDevice[];
   last_synced_at?: string | null;
   has_data: boolean;
   sync_message: string;
+};
+
+export type HealthMetricSummaryItem = {
+  metric_type: string;
+  provider: string;
+  records: number;
+  total_value: number;
+  average_value: number;
+  min_value?: number | null;
+  max_value?: number | null;
+  latest_end_time?: string | null;
+};
+
+export type HealthMetricSummaryResponse = {
+  user_id: string;
+  from_date?: string | null;
+  to_date?: string | null;
+  items: HealthMetricSummaryItem[];
 };
 
 export type WearableOAuthConnectResponse = {
@@ -178,6 +213,33 @@ export type WearableConnectionResponse = {
   updated_at?: string;
 };
 
+export type IntegrationConnection = {
+  provider: WearableProvider;
+  display_name: string;
+  connection_type: 'oauth' | 'native' | 'import' | string;
+  status: 'connected' | 'needs_permission' | 'syncing' | 'error' | 'not_connected' | 'provider_not_configured' | string;
+  connected: boolean;
+  needs_permission: boolean;
+  connected_at?: string | null;
+  last_synced_at?: string | null;
+  last_error: string;
+  last_sync_message: string;
+};
+
+export type IntegrationListResponse = {
+  items: IntegrationConnection[];
+};
+
+export type WearableSyncResponse = {
+  provider: WearableProvider;
+  user_id: string;
+  synced_records: number;
+  skipped_duplicates: number;
+  connection_status: string;
+  last_synced_at?: string | null;
+  message: string;
+};
+
 export type LongevityHabit = {
   id: string;
   title: string;
@@ -198,6 +260,66 @@ export type LongevityHealCategory = {
   color: string;
 };
 
+export type LongevityWeeklyPlanSection = {
+  id: string;
+  title: string;
+  summary: string;
+  actions: string[];
+};
+
+export type LongevityWeeklyPlan = {
+  status: string;
+  message: string;
+  plan_sections: LongevityWeeklyPlanSection[];
+  generated_at: string;
+};
+
+export type LongevityDashboard = {
+  overview: LongevityOverview;
+  quick_actions: LongevityQuickAction[];
+  wearables: LongevityWearables;
+  habits: LongevityHabits;
+  heal_categories: LongevityHealCategory[];
+  weekly_plan?: LongevityWeeklyPlan | null;
+  masterclasses: LongevityMasterclass[];
+  circles: LongevityCircle[];
+};
+
+export type AdminChallengeItem = {
+  id: string;
+  title: string;
+  description: string;
+  planText: string;
+  planDays: unknown[];
+  category: string;
+  durationDays: number;
+  points: number;
+  difficulty: string;
+  status: string;
+  thumbnail: string;
+  participantCount: number;
+  completionCount: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type AdminChallengeListResponse = {
+  total: number;
+  challenges: AdminChallengeItem[];
+};
+
+export type AdminChallengePayload = {
+  title: string;
+  description: string;
+  category: string;
+  durationDays: number;
+  points: number;
+  difficulty: 'BEGINNER' | 'INTERMEDIATE' | 'ADVANCED';
+  status: 'ACTIVE' | 'UPCOMING' | 'DRAFT' | 'ARCHIVED';
+  thumbnail?: string;
+  planText?: string;
+  planDays?: unknown[];
+};
 export type LongevityMasterclass = {
   id: string;
   title: string;
@@ -210,16 +332,6 @@ export type LongevityCircle = {
   name: string;
   member_count: number;
   description: string;
-};
-
-export type LongevityDashboard = {
-  overview: LongevityOverview;
-  quick_actions: LongevityQuickAction[];
-  wearables: LongevityWearables;
-  habits: LongevityHabits;
-  heal_categories: LongevityHealCategory[];
-  masterclasses: LongevityMasterclass[];
-  circles: LongevityCircle[];
 };
 
 const AUTH_STORAGE_KEY = 'victory-auth-tokens';
@@ -381,6 +493,27 @@ async function persistAuthUser(user: AuthUser | null) {
     await AsyncStorage.setItem(AUTH_USER_STORAGE_KEY, JSON.stringify(user));
   } else {
     await AsyncStorage.removeItem(AUTH_USER_STORAGE_KEY);
+  }
+}
+
+async function fetchWithTimeout(input: string, init: RequestInit = {}, timeoutMs = REQUEST_TIMEOUT_MS) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => {
+    controller.abort();
+  }, timeoutMs);
+
+  try {
+    return await fetch(input, {
+      ...init,
+      signal: init.signal ?? controller.signal,
+    });
+  } catch (error) {
+    if (error instanceof Error && error.name === 'AbortError') {
+      throw new ApiError(0, 'Request timed out');
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
   }
 }
 
@@ -622,6 +755,7 @@ export async function fetchLongevityDashboard() {
   const overview = response?.overview && typeof response.overview === 'object' ? response.overview : {} as LongevityOverview;
   const wearables = response?.wearables && typeof response.wearables === 'object' ? response.wearables : {} as LongevityWearables;
   const habits = response?.habits && typeof response.habits === 'object' ? response.habits : {} as LongevityHabits;
+  const weeklyPlan = response?.weekly_plan && typeof response.weekly_plan === 'object' ? response.weekly_plan : null;
   return {
     overview: {
       biological_age: String(overview.biological_age ?? 'N/A'),
@@ -643,25 +777,113 @@ export async function fetchLongevityDashboard() {
       habits: Array.isArray(habits.habits) ? habits.habits : [],
     },
     heal_categories: Array.isArray(response?.heal_categories) ? response.heal_categories : [],
+    weekly_plan: weeklyPlan ? {
+      status: String(weeklyPlan.status ?? 'success'),
+      message: String(weeklyPlan.message ?? ''),
+      plan_sections: Array.isArray(weeklyPlan.plan_sections) ? weeklyPlan.plan_sections : [],
+      generated_at: String(weeklyPlan.generated_at ?? ''),
+    } : null,
     masterclasses: Array.isArray(response?.masterclasses) ? response.masterclasses : [],
     circles: Array.isArray(response?.circles) ? response.circles : [],
   };
 }
 
-export async function syncLongevityWearables() {
+export async function syncLongevityWearables(provider?: WearableProvider | WearableProvider[] | null) {
+  const body = Array.isArray(provider)
+    ? { providers: provider }
+    : provider
+      ? { provider }
+      : {};
   return apiRequest<LongevityWearables>('/longevity-os/wearables/sync', {
     method: 'POST',
+    body,
   });
 }
 
-export async function connectWearableProvider(provider: Extract<WearableProvider, 'fitbit' | 'garmin'>) {
-  return apiRequest<WearableOAuthConnectResponse>(`/wearables/${encodeURIComponent(provider)}/connect`);
+export async function connectWearableProvider(provider: Extract<WearableProvider, 'fitbit' | 'google-fit' | 'garmin'>) {
+  return apiRequest<WearableOAuthConnectResponse>(`/integrations/${encodeURIComponent(provider)}/connect`);
+}
+
+export async function fetchIntegrationConnections() {
+  return apiRequest<IntegrationListResponse>('/integrations');
 }
 
 export async function connectLongevityDemoProvider(provider: WearableProvider) {
   return apiRequest<WearableConnectionResponse>(`/wearables/${encodeURIComponent(provider)}/demo-connect`, {
     method: 'POST',
   });
+}
+
+export async function connectLongevityLocalProvider(provider: WearableProvider) {
+  return apiRequest<WearableConnectionResponse>(`/integrations/${encodeURIComponent(provider)}/connect-local`, {
+    method: 'POST',
+  });
+}
+
+export async function markNativeIntegrationConnected(payload: {
+  provider: WearableProvider;
+  source_device?: string;
+  permission_granted?: boolean;
+  platform?: string;
+  metadata?: Record<string, unknown>;
+}) {
+  return apiRequest<WearableConnectionResponse>('/integrations/native/connected', {
+    method: 'POST',
+    body: {
+      provider: payload.provider,
+      source_device: payload.source_device || '',
+      permission_granted: payload.permission_granted ?? true,
+      platform: payload.platform || '',
+      metadata: payload.metadata || {},
+    },
+  });
+}
+
+export async function syncLongevityQrImport(qrPayload: string, sourceDevice?: string) {
+  return apiRequest<WearableSyncResponse>('/integrations/import/qr', {
+    method: 'POST',
+    body: {
+      qr_payload: qrPayload,
+      source_device: sourceDevice || '',
+    },
+  });
+}
+
+export async function syncLongevityThisPhone(payload: MobileHealthSyncPayload) {
+  return apiRequest<WearableSyncResponse>('/wearables/this-phone/sync', {
+    method: 'POST',
+    body: payload,
+  });
+}
+
+export async function syncLongevityAppleHealth(payload: MobileHealthSyncPayload) {
+  return apiRequest<WearableSyncResponse>('/integrations/native/samples', {
+    method: 'POST',
+    body: {
+      provider: 'apple-health',
+      source_device: payload.source_device || '',
+      batch_id: payload.batch_id || null,
+      platform: 'ios',
+      metrics: payload.metrics,
+    },
+  });
+}
+
+export async function syncLongevityHealthConnect(payload: MobileHealthSyncPayload) {
+  return apiRequest<WearableSyncResponse>('/integrations/native/samples', {
+    method: 'POST',
+    body: {
+      provider: 'health-connect',
+      source_device: payload.source_device || '',
+      batch_id: payload.batch_id || null,
+      platform: 'android',
+      metrics: payload.metrics,
+    },
+  });
+}
+
+export async function fetchLongevityHealthSummary() {
+  return apiRequest<HealthMetricSummaryResponse>('/health-data/me/summary');
 }
 
 export async function updateLongevityHabit(habitId: string, done: boolean) {
@@ -672,21 +894,50 @@ export async function updateLongevityHabit(habitId: string, done: boolean) {
 }
 
 export async function generateLongevityWeeklyPlan() {
-  return apiRequest<{ status: string; message: string; generated_at: string }>('/longevity-os/heal/weekly-plan', {
+  return apiRequest<LongevityWeeklyPlan>('/longevity-os/heal/weekly-plan', {
     method: 'POST',
   });
 }
 
-async function refreshWithSessionToken(sessionToken: string): Promise<AuthTokens | null> {
-  const response = await fetch(`${API_URL}/auth/refresh`, {
+export async function fetchAdminChallenges(query?: string) {
+  const search = query?.trim();
+  const suffix = search ? `?query=${encodeURIComponent(search)}` : '';
+  return apiRequest<AdminChallengeListResponse>(`/admin/challenges${suffix}`);
+}
+
+export async function createAdminChallenge(payload: AdminChallengePayload) {
+  return apiRequest<AdminChallengeItem>('/admin/challenges', {
     method: 'POST',
-    headers: {
-      Accept: 'application/json',
-      'Content-Type': 'application/json',
+    body: {
+      title: payload.title,
+      description: payload.description,
+      category: payload.category,
+      durationDays: payload.durationDays,
+      points: payload.points,
+      difficulty: payload.difficulty,
+      status: payload.status,
+      thumbnail: payload.thumbnail || '',
+      planText: payload.planText || '',
+      planDays: Array.isArray(payload.planDays) ? payload.planDays : [],
     },
-    credentials: 'include',
-    body: JSON.stringify({ session_token: sessionToken }),
   });
+}
+
+async function refreshWithSessionToken(sessionToken: string): Promise<AuthTokens | null> {
+  let response: Response;
+  try {
+    response = await fetchWithTimeout(`${API_URL}/auth/refresh`, {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+      },
+      credentials: 'include',
+      body: JSON.stringify({ session_token: sessionToken }),
+    });
+  } catch {
+    return null;
+  }
 
   if (!response.ok) {
     return null;
@@ -759,7 +1010,7 @@ export async function apiRequest<T>(
     headers.Authorization = `Bearer ${authTokens.access_token}`;
   }
 
-  const response = await fetch(`${API_URL}${path}`, {
+  const response = await fetchWithTimeout(`${API_URL}${path}`, {
     method: options.method ?? 'GET',
     headers,
     credentials: 'include',

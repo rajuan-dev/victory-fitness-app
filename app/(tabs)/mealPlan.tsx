@@ -16,10 +16,11 @@ import {
   Easing,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useFocusEffect } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { setAudioModeAsync, useAudioPlayer } from 'expo-audio';
 import * as ImagePicker from 'expo-image-picker';
 import { Colors } from '../../constants/Colors';
+import AccessRestrictionModal from '../../components/AccessRestrictionModal';
 import { ErrorPopupModal } from '../../components/ErrorPopupModal';
 import VictoryHeader from '../../components/VictoryHeader';
 import { apiRequest, fetchCurrentUser } from '../../lib/api';
@@ -232,6 +233,7 @@ function MealPlanResult({
   initialPlan?: NutritionPlanApiResponse | null;
   onCreateNewPlan: () => void;
 }) {
+  const router = useRouter();
   const [activeDay, setActiveDay] = useState(() => getCurrentPlanDay());
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [showShopping, setShowShopping] = useState(false);
@@ -253,15 +255,7 @@ function MealPlanResult({
   const [planTab, setPlanTab] = useState<(typeof PLAN_TABS)[number]>('My Plan');
   const [canAccessTracker, setCanAccessTracker] = useState(false);
   const [canAccessMealAnalysis, setCanAccessMealAnalysis] = useState(false);
-  const availablePlanTabs = PLAN_TABS.filter((tab) => {
-    if (tab === 'Tracker') {
-      return canAccessTracker;
-    }
-    if (tab === 'Meal Analysis') {
-      return canAccessMealAnalysis;
-    }
-    return true;
-  });
+  const [restrictedSection, setRestrictedSection] = useState('');
 
   useEffect(() => {
     let cancelled = false;
@@ -288,16 +282,6 @@ function MealPlanResult({
       cancelled = true;
     };
   }, []);
-
-  useEffect(() => {
-    if (planTab === 'Tracker' && !canAccessTracker) {
-      setPlanTab('My Plan');
-      return;
-    }
-    if (planTab === 'Meal Analysis' && !canAccessMealAnalysis) {
-      setPlanTab('My Plan');
-    }
-  }, [canAccessMealAnalysis, canAccessTracker, planTab]);
 
   useFocusEffect(
     useCallback(() => {
@@ -724,13 +708,31 @@ function MealPlanResult({
 
         {/* Tab Bar */}
         <View style={styles.planTabRow}>
-          {availablePlanTabs.map((t) => (
+          {PLAN_TABS.map((t) => (
             <TouchableOpacity
               key={t}
               style={[styles.planTabBtn, planTab === t && styles.planTabBtnActive]}
-              onPress={() => setPlanTab(t)}
+              onPress={() => {
+                if (t === 'Tracker' && !canAccessTracker) {
+                  setRestrictedSection('Nutrition Tracker');
+                  return;
+                }
+                if (t === 'Meal Analysis' && !canAccessMealAnalysis) {
+                  setRestrictedSection('Meal Analysis');
+                  return;
+                }
+                setPlanTab(t);
+              }}
             >
-              <Text style={[styles.planTabText, planTab === t && styles.planTabTextActive]}>{t}</Text>
+              <Text
+                style={[
+                  styles.planTabText,
+                  planTab === t && styles.planTabTextActive,
+                  ((t === 'Tracker' && !canAccessTracker) || (t === 'Meal Analysis' && !canAccessMealAnalysis)) && styles.planTabTextLocked,
+                ]}
+              >
+                {t}
+              </Text>
             </TouchableOpacity>
           ))}
         </View>
@@ -1159,6 +1161,19 @@ function MealPlanResult({
           </View>
         </View>
       </Modal>
+      <AccessRestrictionModal
+        visible={Boolean(restrictedSection)}
+        sectionName={restrictedSection}
+        onClose={() => setRestrictedSection('')}
+        onUpdatePlan={() => {
+          setRestrictedSection('');
+          router.push('/plan');
+        }}
+        onBackHome={() => {
+          setRestrictedSection('');
+          router.replace('/(tabs)');
+        }}
+      />
 
     </View>
   );
@@ -1730,6 +1745,7 @@ const styles = StyleSheet.create({
   planTabBtn: { flex: 1, paddingVertical: 13, alignItems: 'center' },
   planTabBtnActive: { borderBottomWidth: 2, borderBottomColor: '#A855F7' },
   planTabText: { fontSize: 13, fontWeight: '600', color: Colors.textMuted },
+  planTabTextLocked: { opacity: 0.56 },
   planTabTextActive: { color: '#A855F7' },
 
   planContent: { paddingHorizontal: 18, paddingTop: 20 },

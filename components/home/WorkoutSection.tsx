@@ -2,35 +2,17 @@ import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Colors } from '../../constants/Colors';
-import { fetchCurrentUser } from '../../lib/api';
-import { canAccessFeature } from '../../lib/access';
 
-export default function WorkoutSection() {
+type WorkoutSectionProps = {
+  canAccessWorkoutPlans?: boolean;
+  onRestrictedPress?: (sectionName: string) => void;
+};
+
+export default function WorkoutSection({
+  canAccessWorkoutPlans = true,
+  onRestrictedPress,
+}: WorkoutSectionProps) {
   const router = useRouter();
-  const [canAccessWorkoutPlans, setCanAccessWorkoutPlans] = React.useState(true);
-
-  React.useEffect(() => {
-    let cancelled = false;
-
-    const loadAccess = async () => {
-      try {
-        const user = await fetchCurrentUser();
-        if (!cancelled) {
-          setCanAccessWorkoutPlans(canAccessFeature('workoutplan', user));
-        }
-      } catch {
-        if (!cancelled) {
-          setCanAccessWorkoutPlans(false);
-        }
-      }
-    };
-
-    void loadAccess();
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   return (
     <View style={styles.section}>
@@ -61,6 +43,12 @@ export default function WorkoutSection() {
             <Text style={styles.workoutDesc}>
               Your current plan includes the workout library. Upgrade to unlock custom workout plans.
             </Text>
+            <TouchableOpacity
+              style={styles.workoutBtnPrimary}
+              onPress={() => onRestrictedPress?.('Workout Plans')}
+            >
+              <Text style={styles.workoutBtnPrimaryText}>UNLOCK WORKOUT PLANS</Text>
+            </TouchableOpacity>
           </>
         )}
       </View>

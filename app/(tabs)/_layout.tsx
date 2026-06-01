@@ -4,6 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../constants/Colors';
 import { Image, StyleSheet, View } from 'react-native';
 import { useRouter } from 'expo-router';
+import AccessRestrictionModal from '../../components/AccessRestrictionModal';
 import { fetchCurrentUser, getValidAuthTokens } from '../../lib/api';
 import { getAllowedTabNames, isSubscriptionActive } from '../../lib/access';
 
@@ -12,6 +13,7 @@ export default function TabsLayout() {
   const [checkingAuth, setCheckingAuth] = useState(true);
   const [profileImage, setProfileImage] = useState('');
   const [allowedTabs, setAllowedTabs] = useState<string[] | null>(null);
+  const [restrictedSection, setRestrictedSection] = useState('');
 
   useEffect(() => {
     let cancelled = false;
@@ -81,19 +83,19 @@ export default function TabsLayout() {
   const isVisible = (name: string) => visibleTabs.has(name);
 
   return (
-    <Tabs
-      screenOptions={{
-        headerShown: false,
-        tabBarStyle: styles.tabBar,
-        tabBarActiveTintColor: Colors.primary,
-        tabBarInactiveTintColor: Colors.textMuted,
-        tabBarShowLabel: false,
-      }}
-    >
+    <>
+      <Tabs
+        screenOptions={{
+          headerShown: false,
+          tabBarStyle: styles.tabBar,
+          tabBarActiveTintColor: Colors.primary,
+          tabBarInactiveTintColor: Colors.textMuted,
+          tabBarShowLabel: false,
+        }}
+      >
       <Tabs.Screen
         name="index"
         options={{
-          href: isVisible('index') ? undefined : null,
           tabBarIcon: ({ color, focused }) => (
             <View style={focused ? styles.activeTab : undefined}>
               <Ionicons name={focused ? 'home' : 'home-outline'} size={24} color={color} />
@@ -104,40 +106,63 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="workout"
         options={{
-          href: isVisible('workout') ? undefined : null,
           tabBarIcon: ({ color, focused }) => (
             <View style={focused ? styles.activeTab : undefined}>
               <Ionicons name={focused ? 'barbell' : 'barbell-outline'} size={24} color={color} />
             </View>
           ),
         }}
+        listeners={{
+          tabPress: (event) => {
+            if (isVisible('workout')) {
+              return;
+            }
+            event.preventDefault();
+            setRestrictedSection('Workout');
+          },
+        }}
       />
       <Tabs.Screen
         name="challenge"
         options={{
-          href: isVisible('challenge') ? undefined : null,
           tabBarIcon: ({ color, focused }) => (
             <View style={focused ? styles.activeTab : undefined}>
               <Ionicons name={focused ? 'trophy' : 'trophy-outline'} size={24} color={color} />
             </View>
           ),
         }}
+        listeners={{
+          tabPress: (event) => {
+            if (isVisible('challenge')) {
+              return;
+            }
+            event.preventDefault();
+            setRestrictedSection('Challenges');
+          },
+        }}
       />
       <Tabs.Screen
         name="mealPlan"
         options={{
-          href: isVisible('mealPlan') ? undefined : null,
           tabBarIcon: ({ color, focused }) => (
             <View style={focused ? styles.activeTab : undefined}>
               <Ionicons name={focused ? 'restaurant' : 'restaurant-outline'} size={24} color={color} />
             </View>
           ),
         }}
+        listeners={{
+          tabPress: (event) => {
+            if (isVisible('mealPlan')) {
+              return;
+            }
+            event.preventDefault();
+            setRestrictedSection('Meal Plan');
+          },
+        }}
       />
       <Tabs.Screen
         name="profile"
         options={{
-          href: isVisible('profile') ? undefined : null,
           tabBarIcon: ({ color, focused }) => (
             <View style={focused ? styles.activeTab : undefined}>
               <View style={styles.profileBadge}>
@@ -151,7 +176,21 @@ export default function TabsLayout() {
           ),
         }}
       />
-    </Tabs>
+      </Tabs>
+      <AccessRestrictionModal
+        visible={Boolean(restrictedSection)}
+        sectionName={restrictedSection}
+        onClose={() => setRestrictedSection('')}
+        onUpdatePlan={() => {
+          setRestrictedSection('');
+          router.push('/plan');
+        }}
+        onBackHome={() => {
+          setRestrictedSection('');
+          router.replace('/(tabs)');
+        }}
+      />
+    </>
   );
 }
 

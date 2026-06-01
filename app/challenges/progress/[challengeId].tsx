@@ -892,7 +892,7 @@ export default function ChallengeProgressScreen() {
               </View>
               <TouchableOpacity
                 style={styles.chatShortcut}
-                onPress={() => router.push(`/challenges/chat/${thread.challenge_id}` as any)}
+                onPress={() => router.push(`/challenges/${thread.challenge_id}` as any)}
               >
                 <Ionicons name="chatbubble-ellipses-outline" size={16} color="#001311" />
                 <Text style={styles.chatShortcutText}>Open challenge chat</Text>

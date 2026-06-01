@@ -6,16 +6,22 @@ import { Colors } from '../../constants/Colors';
 const { width } = Dimensions.get('window');
 
 type FeatureCardsProps = {
+  canAccessCoachVictor?: boolean;
   canAccessNutrition?: boolean;
+  onRestrictedPress?: (sectionName: string) => void;
 };
 
-export default function FeatureCards({ canAccessNutrition = true }: FeatureCardsProps) {
+export default function FeatureCards({
+  canAccessCoachVictor = true,
+  canAccessNutrition = true,
+  onRestrictedPress,
+}: FeatureCardsProps) {
   const router = useRouter();
 
   return (
     <View style={styles.featureContainer}>
       {/* Coach Victor */}
-      <View style={[styles.featureCardFull, { backgroundColor: Colors.accentBlue }]}>
+      <View style={[styles.featureCardFull, { backgroundColor: Colors.accentBlue }, !canAccessCoachVictor && styles.lockedCard]}>
         <View style={styles.featureIconCircle}>
           <Ionicons name="add" size={24} color="#fff" />
         </View>
@@ -26,15 +32,20 @@ export default function FeatureCards({ canAccessNutrition = true }: FeatureCards
           </Text>
           <TouchableOpacity 
             style={styles.featureAction}
-            onPress={() => router.push('/chat')}
+            onPress={() => {
+              if (!canAccessCoachVictor) {
+                onRestrictedPress?.('Coach Victor');
+                return;
+              }
+              router.push('/chat');
+            }}
           >
-            <Text style={styles.featureLink}>Start Chat +</Text>
+            <Text style={styles.featureLink}>{canAccessCoachVictor ? 'Start Chat +' : 'Unlock Access +'}</Text>
           </TouchableOpacity>
         </View>
       </View>
 
-      {canAccessNutrition ? (
-        <View style={[styles.featureCardFull, { backgroundColor: Colors.accentPurple, marginTop: 16 }]}>
+      <View style={[styles.featureCardFull, { backgroundColor: Colors.accentPurple, marginTop: 16 }, !canAccessNutrition && styles.lockedCard]}>
           <View style={styles.featureIconCircle}>
             <MaterialCommunityIcons name="silverware-fork-knife" size={20} color="#fff" />
           </View>
@@ -45,13 +56,18 @@ export default function FeatureCards({ canAccessNutrition = true }: FeatureCards
             </Text>
             <TouchableOpacity
               style={styles.featureAction}
-              onPress={() => router.push('/mealPlan')}
+              onPress={() => {
+                if (!canAccessNutrition) {
+                  onRestrictedPress?.('Nutrition');
+                  return;
+                }
+                router.push('/mealPlan');
+              }}
             >
-              <Text style={styles.featureLink}>View Plan +</Text>
+              <Text style={styles.featureLink}>{canAccessNutrition ? 'View Plan +' : 'Unlock Access +'}</Text>
             </TouchableOpacity>
           </View>
         </View>
-      ) : null}
     </View>
   );
 }
@@ -65,6 +81,9 @@ const styles = StyleSheet.create({
     padding: 24,
     flexDirection: 'row',
     alignItems: 'center',
+  },
+  lockedCard: {
+    opacity: 0.84,
   },
   featureIconCircle: {
     width: 48,

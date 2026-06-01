@@ -84,7 +84,7 @@ export default function VerificationScreen() {
 
   return (
     <ImageBackground
-      source={require('../../assets/images/gym-bg.png')}
+      source={require('../../assets/w4.jpg')}
       style={styles.background}
       resizeMode="cover"
     >

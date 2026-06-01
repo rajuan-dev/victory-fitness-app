@@ -631,7 +631,7 @@ export default function ChallengeChatScreen() {
           </Text>
         </View>
         <TouchableOpacity
-          onPress={() => thread?.challenge_id && router.push(`/challenges/progress/${thread.challenge_id}` as any)}
+          onPress={() => thread?.challenge_id && router.push(`/challenges/${thread.challenge_id}` as any)}
           style={styles.headerProgressButton}
         >
           <Text style={styles.headerProgressButtonText}>Progress</Text>

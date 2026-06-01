@@ -40,20 +40,20 @@ export default function RootLayout() {
     let cancelled = false;
 
     const guard = async () => {
-      const tokens = await getValidAuthTokens();
-      if (cancelled) {
-        return;
-      }
-
-      if (!tokens) {
-        if (!isPublicRoute(pathname)) {
-          router.replace('/login');
-        }
-        setCheckingAccess(false);
-        return;
-      }
-
       try {
+        const tokens = await getValidAuthTokens();
+        if (cancelled) {
+          return;
+        }
+
+        if (!tokens) {
+          if (!isPublicRoute(pathname)) {
+            router.replace('/login');
+          }
+          setCheckingAccess(false);
+          return;
+        }
+
         const user = await fetchCurrentUser();
         if (cancelled) {
           return;
@@ -68,14 +68,16 @@ export default function RootLayout() {
           router.replace(getPostAuthRoute(user));
           return;
         }
+        setCheckingAccess(false);
       } catch {
-        if (!cancelled && !isPublicRoute(pathname)) {
-          router.replace('/login');
+        if (cancelled) {
           return;
         }
-      }
 
-      if (!cancelled) {
+        if (!isPublicRoute(pathname)) {
+          router.replace('/login');
+        }
+
         setCheckingAccess(false);
       }
     };

@@ -14,7 +14,11 @@
       "backgroundColor": "#ffffff"
     },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSHealthShareUsageDescription": "Victory Fitness reads your health data to power Longevity OS insights and recovery tracking.",
+        "NSHealthUpdateUsageDescription": "Victory Fitness writes health updates only when you choose to sync your wellness data."
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -37,10 +41,35 @@
     "plugins": [
       "expo-router",
       "expo-font",
-      "expo-audio"
+      "expo-audio",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "compileSdkVersion": 35,
+            "targetSdkVersion": 35,
+            "minSdkVersion": 26
+          }
+        }
+      ],
+      "expo-health-connect",
+      [
+        "react-native-health",
+        {
+          "healthSharePermission": "Victory Fitness reads your Apple Health data to power Longevity OS insights and recovery tracking.",
+          "healthUpdatePermission": "Victory Fitness writes health updates only when you choose to sync your wellness data."
+        }
+      ]
     ],
     "extra": {
       "router": {},
+      "googleHealthConnect": {
+        "clientId": "664344615268-kjsk6iq3ae0stfuu025o6hsdp988cvrl.apps.googleusercontent.com",
+        "projectId": "victory-fitness-1779318789941",
+        "authUri": "https://accounts.google.com/o/oauth2/auth",
+        "tokenUri": "https://oauth2.googleapis.com/token",
+        "authProviderCertUrl": "https://www.googleapis.com/oauth2/v1/certs"
+      },
       "eas": {
         "projectId": "b745c8ed-3483-4e3c-8c77-923cce1c5376"
       }
