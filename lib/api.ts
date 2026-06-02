@@ -978,6 +978,7 @@ export async function updateLongevityHabit(habitId: string, done: boolean) {
 export async function generateLongevityWeeklyPlan() {
   return apiRequest<LongevityWeeklyPlan>('/longevity-os/heal/weekly-plan', {
     method: 'POST',
+    timeoutMs: 120_000,
   });
 }
 

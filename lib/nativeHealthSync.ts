@@ -51,9 +51,13 @@ const HEALTH_CONNECT_SOURCE_CHECK_RECORD_TYPES = [
   'OxygenSaturation',
 ] as const;
 
-function getSyncWindow() {
+function getSyncWindow(startFrom?: string | Date | null) {
   const end = new Date();
-  const start = new Date(end.getTime() - HEALTH_SYNC_LOOKBACK_DAYS * 24 * 60 * 60 * 1000);
+  const defaultStart = new Date(end.getTime() - HEALTH_SYNC_LOOKBACK_DAYS * 24 * 60 * 60 * 1000);
+  const requestedStart = startFrom ? new Date(startFrom) : null;
+  const start = requestedStart && !Number.isNaN(requestedStart.getTime())
+    ? new Date(Math.max(requestedStart.getTime() - 24 * 60 * 60 * 1000, defaultStart.getTime()))
+    : defaultStart;
   return {
     start,
     end,
@@ -256,11 +260,11 @@ function callbackToPromise<T>(register: (callback: (error: string | null, result
   });
 }
 
-async function collectAppleHealthMetrics(): Promise<MobileHealthSyncPayload> {
+async function collectAppleHealthMetrics(startFrom?: string | Date | null): Promise<MobileHealthSyncPayload> {
   const AppleHealthKit = require('react-native-health').default;
   await authorizeAppleHealth(AppleHealthKit);
 
-  const { startIso, endIso } = getSyncWindow();
+  const { startIso, endIso } = getSyncWindow(startFrom);
   const baseOptions = {
     startDate: startIso,
     endDate: endIso,
@@ -399,11 +403,11 @@ async function collectAppleHealthMetrics(): Promise<MobileHealthSyncPayload> {
   };
 }
 
-async function collectHealthConnectMetrics(): Promise<MobileHealthSyncPayload> {
+async function collectHealthConnectMetrics(startFrom?: string | Date | null): Promise<MobileHealthSyncPayload> {
   const HealthConnect = require('react-native-health-connect') as typeof import('react-native-health-connect');
   await authorizeHealthConnect(HealthConnect);
 
-  const { startIso, endIso } = getSyncWindow();
+  const { startIso, endIso } = getSyncWindow(startFrom);
   const timeRangeFilter = {
     operator: 'between' as const,
     startTime: startIso,
@@ -944,12 +948,15 @@ export async function revokeNativeHealthPermissions(target: NativeSyncTarget) {
   return true;
 }
 
-export async function syncNativeHealthSource(target: NativeSyncTarget): Promise<WearableSyncResponse> {
+export async function syncNativeHealthSource(
+  target: NativeSyncTarget,
+  options: { startFrom?: string | Date | null } = {},
+): Promise<WearableSyncResponse> {
   const effectiveTarget = normalizeNativeSyncTarget(target);
   assertNativePlatform(effectiveTarget);
   const syncBatchSize = 20;
   if (effectiveTarget === 'apple-health') {
-    const payload = await collectAppleHealthMetrics();
+    const payload = await collectAppleHealthMetrics(options.startFrom);
     if (payload.metrics.length === 0) {
       return {
         provider: 'apple-health',
@@ -992,7 +999,7 @@ export async function syncNativeHealthSource(target: NativeSyncTarget): Promise<
       })),
     };
   }
-  const payload = await collectHealthConnectMetrics();
+  const payload = await collectHealthConnectMetrics(options.startFrom);
   if (payload.metrics.length === 0) {
     return {
       provider: 'health-connect',

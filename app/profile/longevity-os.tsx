@@ -41,6 +41,7 @@ import {
   LongevityHabit,
   LongevityMasterclass,
   LongevityWeeklyPlan,
+  LongevityWeeklyPlanSection,
   LongevityWearableDevice,
   markNativeIntegrationConnected,
   type WearableSyncResponse,
@@ -53,11 +54,8 @@ import { canAccessFeature } from '../../lib/access';
 import {
   authorizeNativeHealthSource,
   getNativeHealthReadiness,
-  inspectNativeHealthChecklist,
-  getPreferredNativeSyncTargetForPlatform,
   openNativeHealthSettings,
   revokeNativeHealthPermissions,
-  type NativeHealthChecklistState,
   type NativeSyncTarget,
   syncNativeHealthSource,
 } from '../../lib/nativeHealthSync';
@@ -83,6 +81,34 @@ function formatWeeklyPlanMessage(plan: LongevityWeeklyPlan) {
 function safeImageUri(value: string | null | undefined) {
   const normalized = String(value || '').trim();
   return normalized || FALLBACK_CARD_IMAGE;
+}
+
+function getHealPlanSectionId(value: string) {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (!normalized) {
+    return 'heart_health';
+  }
+  if (normalized.includes('heart') || normalized.includes('blood pressure') || normalized.includes('hbp')) {
+    return 'heart_health';
+  }
+  if (normalized.includes('recover') || normalized.includes('workout')) {
+    return 'post_workout_recovery';
+  }
+  if (normalized.includes('mental') || normalized.includes('anxiety') || normalized.includes('stress')) {
+    return 'mental_health_and_anxiety';
+  }
+  if (normalized.includes('immunity') || normalized.includes('infection') || normalized.includes('immune')) {
+    return 'immunity_and_infection';
+  }
+  return 'heart_health';
+}
+
+function getHealPlanSection(plan: LongevityWeeklyPlan | null | undefined, healCardId: string): LongevityWeeklyPlanSection | null {
+  if (!plan?.plan_sections?.length) {
+    return null;
+  }
+  const preferredSectionId = getHealPlanSectionId(healCardId);
+  return plan.plan_sections.find((section) => section.id === preferredSectionId) ?? plan.plan_sections[0] ?? null;
 }
 
 function isVisibleWearableForPlatform(deviceId: string) {
@@ -536,23 +562,38 @@ type DynamicHealthCard = {
   unit: string;
   value_label: string;
   records: number;
+  latest_synced_at?: string | null;
   latest_end_time?: string | null;
   raw_json: string;
   analysis: string;
 };
 
 function buildDynamicHealthCards(items: HealthMetricRecord[]): DynamicHealthCard[] {
+  const latestSyncedAt = items.reduce<number>((latest, item) => {
+    const syncedAt = item.synced_at ? new Date(item.synced_at).getTime() : 0;
+    return Number.isFinite(syncedAt) && syncedAt > latest ? syncedAt : latest;
+  }, 0);
+  const syncWindowMs = 5 * 60 * 1000;
+  const latestBatchItems = latestSyncedAt > 0
+    ? items.filter((item) => {
+        const syncedAt = item.synced_at ? new Date(item.synced_at).getTime() : 0;
+        return Number.isFinite(syncedAt) && syncedAt >= (latestSyncedAt - syncWindowMs);
+      })
+    : items;
+  const sourceItems = latestBatchItems.length > 0 ? latestBatchItems : items;
+
   const buckets = new Map<string, {
     metric_type: string;
     provider: string;
     source_device: string;
     unit: string;
     records: number;
+    latest_synced_at?: string | null;
     latest_end_time?: string | null;
     latest_record: HealthMetricRecord | null;
   }>();
 
-  for (const item of items) {
+  for (const item of sourceItems) {
     const metricType = String(item.metric_type || '').trim().toLowerCase();
     if (!metricType) {
       continue;
@@ -561,25 +602,35 @@ function buildDynamicHealthCards(items: HealthMetricRecord[]): DynamicHealthCard
     const provider = String(item.provider || '').trim().toLowerCase() || 'source';
     const sourceDevice = String(item.source_device || '').trim();
     const unit = String(item.unit || '').trim().toLowerCase();
-    const key = [metricType, provider, sourceDevice.toLowerCase(), unit].join('|');
+    const key = metricType;
     const bucket = buckets.get(key) ?? {
       metric_type: metricType,
       provider,
       source_device: sourceDevice,
       unit,
       records: 0,
+      latest_synced_at: null,
       latest_end_time: null,
       latest_record: null,
     };
 
     bucket.records += 1;
+    const itemSyncedAt = item.synced_at ? new Date(item.synced_at) : null;
     const itemEndTime = item.end_time ? new Date(item.end_time) : null;
+    const bucketSyncedAt = bucket.latest_synced_at ? new Date(bucket.latest_synced_at) : null;
     const bucketEndTime = bucket.latest_end_time ? new Date(bucket.latest_end_time) : null;
-    if (!bucket.latest_end_time || (itemEndTime && (!bucketEndTime || itemEndTime > bucketEndTime))) {
+    const itemLatestTime = itemSyncedAt ?? itemEndTime;
+    const bucketLatestTime = bucketSyncedAt ?? bucketEndTime;
+    if (
+      !bucket.latest_record
+      || (itemLatestTime && (!bucketLatestTime || itemLatestTime > bucketLatestTime))
+    ) {
+      bucket.latest_synced_at = item.synced_at ?? bucket.latest_synced_at ?? null;
       bucket.latest_end_time = item.end_time ?? bucket.latest_end_time ?? null;
       bucket.latest_record = item;
       bucket.unit = unit || bucket.unit;
       bucket.source_device = sourceDevice || bucket.source_device;
+      bucket.provider = provider || bucket.provider;
     }
 
     buckets.set(key, bucket);
@@ -587,11 +638,18 @@ function buildDynamicHealthCards(items: HealthMetricRecord[]): DynamicHealthCard
 
   return Array.from(buckets.values())
     .sort((left, right) => {
-      const leftTime = left.latest_end_time ? new Date(left.latest_end_time).getTime() : 0;
-      const rightTime = right.latest_end_time ? new Date(right.latest_end_time).getTime() : 0;
-      if (leftTime !== rightTime) {
-        return rightTime - leftTime;
+      const leftSyncedAt = left.latest_synced_at ? new Date(left.latest_synced_at).getTime() : 0;
+      const rightSyncedAt = right.latest_synced_at ? new Date(right.latest_synced_at).getTime() : 0;
+      if (leftSyncedAt !== rightSyncedAt) {
+        return rightSyncedAt - leftSyncedAt;
       }
+
+      const leftEndTime = left.latest_end_time ? new Date(left.latest_end_time).getTime() : 0;
+      const rightEndTime = right.latest_end_time ? new Date(right.latest_end_time).getTime() : 0;
+      if (leftEndTime !== rightEndTime) {
+        return rightEndTime - leftEndTime;
+      }
+
       return left.metric_type.localeCompare(right.metric_type) || left.provider.localeCompare(right.provider);
     })
     .map((bucket) => {
@@ -600,16 +658,16 @@ function buildDynamicHealthCards(items: HealthMetricRecord[]): DynamicHealthCard
       const analysis = [
         bucket.source_device || '',
         bucket.provider,
-        `${bucket.records} record${bucket.records === 1 ? '' : 's'}`,
       ].filter(Boolean).join(' • ');
       return {
-        key: [bucket.metric_type, bucket.provider, bucket.source_device || 'source', bucket.unit || 'value'].join(':'),
+        key: [bucket.metric_type, bucket.source_device || 'source', bucket.unit || 'value'].join(':'),
         metric_type: bucket.metric_type,
         provider: bucket.provider,
         source_device: bucket.source_device,
         unit: bucket.unit,
         value_label: valueLabel,
         records: bucket.records,
+        latest_synced_at: bucket.latest_synced_at,
         latest_end_time: bucket.latest_end_time,
         raw_json: latest
           ? JSON.stringify({
@@ -619,10 +677,93 @@ function buildDynamicHealthCards(items: HealthMetricRecord[]): DynamicHealthCard
               unit: latest.unit,
               start_time: latest.start_time,
               end_time: latest.end_time,
+              synced_at: latest.synced_at,
               source_device: latest.source_device,
               metadata: latest.metadata,
             }, null, 2)
           : '',
+        analysis,
+      };
+    });
+}
+
+function buildAllSyncedHealthCards(items: HealthMetricRecord[]): DynamicHealthCard[] {
+  const buckets = new Map<string, HealthMetricRecord>();
+
+  for (const item of items) {
+    const metricType = String(item.metric_type || '').trim().toLowerCase();
+    if (!DISPLAYABLE_HEALTH_METRICS.has(metricType)) {
+      continue;
+    }
+
+    const current = buckets.get(metricType);
+    if (!current) {
+      buckets.set(metricType, item);
+      continue;
+    }
+
+    const currentSyncedAt = current.synced_at ? new Date(current.synced_at).getTime() : 0;
+    const itemSyncedAt = item.synced_at ? new Date(item.synced_at).getTime() : 0;
+    if (itemSyncedAt !== currentSyncedAt) {
+      if (itemSyncedAt > currentSyncedAt) {
+        buckets.set(metricType, item);
+      }
+      continue;
+    }
+
+    const currentEndTime = current.end_time ? new Date(current.end_time).getTime() : 0;
+    const itemEndTime = item.end_time ? new Date(item.end_time).getTime() : 0;
+    if (itemEndTime !== currentEndTime) {
+      if (itemEndTime > currentEndTime) {
+        buckets.set(metricType, item);
+      }
+      continue;
+    }
+
+    if (String(item.id || '') > String(current.id || '')) {
+      buckets.set(metricType, item);
+    }
+  }
+
+  return Array.from(buckets.values())
+    .sort((left, right) => {
+      const leftSyncedAt = left.synced_at ? new Date(left.synced_at).getTime() : 0;
+      const rightSyncedAt = right.synced_at ? new Date(right.synced_at).getTime() : 0;
+      if (leftSyncedAt !== rightSyncedAt) {
+        return rightSyncedAt - leftSyncedAt;
+      }
+
+      const leftEndTime = left.end_time ? new Date(left.end_time).getTime() : 0;
+      const rightEndTime = right.end_time ? new Date(right.end_time).getTime() : 0;
+      if (leftEndTime !== rightEndTime) {
+        return rightEndTime - leftEndTime;
+      }
+
+      return String(left.metric_type || '').localeCompare(String(right.metric_type || ''));
+    })
+    .map((item) => {
+      const metricType = String(item.metric_type || '').trim().toLowerCase();
+      const provider = String(item.provider || '').trim().toLowerCase() || 'source';
+      const sourceDevice = String(item.source_device || '').trim() || provider;
+      const unit = String(item.unit || '').trim().toLowerCase();
+      const valueLabel = formatRecordDisplayValue(metricType, item.value, unit);
+      const analysis = [
+        sourceDevice,
+        provider,
+        item.synced_at ? `synced ${new Date(item.synced_at).toLocaleString()}` : '',
+      ].filter(Boolean).join(' • ');
+
+      return {
+        key: String(item.id || [metricType, provider, item.synced_at || item.end_time || item.start_time || valueLabel].join(':')),
+        metric_type: metricType,
+        provider,
+        source_device: sourceDevice,
+        unit,
+        value_label: valueLabel,
+        records: 1,
+        latest_synced_at: item.synced_at ?? null,
+        latest_end_time: item.end_time ?? null,
+        raw_json: JSON.stringify(item),
         analysis,
       };
     });
@@ -680,7 +821,7 @@ export default function LongevityOS() {
   const [healthSummary, setHealthSummary] = useState<HealthMetricRecord[]>([]);
   const [integrations, setIntegrations] = useState<IntegrationConnection[]>([]);
   const [syncingProviderIds, setSyncingProviderIds] = useState<string[]>([]);
-  const [nativeChecklistState, setNativeChecklistState] = useState<NativeHealthChecklistState | null>(null);
+  const [syncProgressMessage, setSyncProgressMessage] = useState<string>('');
   const [nativeConnectionSuccessDeviceId, setNativeConnectionSuccessDeviceId] = useState<string | null>(null);
   const [nativeConnectionFailedDeviceId, setNativeConnectionFailedDeviceId] = useState<string | null>(null);
   const [nativeConnectionDisconnectedDeviceId, setNativeConnectionDisconnectedDeviceId] = useState<string | null>(null);
@@ -713,8 +854,8 @@ export default function LongevityOS() {
     setScreenError(null);
   }, []);
 
-  const visibleHealthSummaryCards = buildDynamicHealthCards(healthSummary);
-  const overviewHealthCards = visibleHealthSummaryCards.slice(0, 6);
+  const visibleHealthSummaryCards = buildAllSyncedHealthCards(healthSummary);
+  const overviewHealthCards = visibleHealthSummaryCards;
 
   const loadIntegrationStatuses = React.useCallback(async () => {
     const response = await fetchIntegrationConnections();
@@ -775,20 +916,6 @@ export default function LongevityOS() {
     }, 15000);
     return () => clearInterval(interval);
   }, [activeTab, loadIntegrationStatuses]);
-
-  React.useEffect(() => {
-    if (activeTab !== 'wearables') {
-      return;
-    }
-    const nativeTarget = getPreferredNativeSyncTargetForPlatform();
-    if (!nativeTarget) {
-      setNativeChecklistState(null);
-      return;
-    }
-    void inspectNativeHealthChecklist(nativeTarget)
-      .then((checklist) => setNativeChecklistState(checklist))
-      .catch(() => setNativeChecklistState(null));
-  }, [activeTab, dashboard?.wearables.last_synced_at]);
 
   React.useEffect(() => () => {
     if (nativeSuccessTimerRef.current) {
@@ -867,14 +994,14 @@ export default function LongevityOS() {
     const wantsHealthConnect = targetDeviceIds.includes('health-connect');
     const wantsThisPhone = targetDeviceIds.includes('this-phone');
     const backendProviderIds = targetDeviceIds.filter((providerId) => !['apple-health', 'health-connect', 'this-phone'].includes(providerId));
-    let nativeSetupIssue: { title: string; message: string } | null = null;
+    const incrementalSyncStart = dashboard?.wearables.last_synced_at || undefined;
 
     setSyncingWearables(true);
     setSyncingProviderIds(targetDeviceIds);
+    setSyncProgressMessage('Preparing sync...');
     try {
       const tasks: Promise<WearableSyncResponse | void>[] = [];
       const nativeTargets = new Set<NativeSyncTarget>();
-      const preferredNativeTarget = getPreferredNativeSyncTargetForPlatform();
 
       if (Platform.OS === 'ios' && (wantsAppleHealth || wantsThisPhone)) {
         nativeTargets.add('apple-health');
@@ -882,49 +1009,20 @@ export default function LongevityOS() {
       if (Platform.OS === 'android' && (wantsHealthConnect || wantsThisPhone)) {
         nativeTargets.add('health-connect');
       }
-      if (!nativeTargets.size && preferredNativeTarget && connectedDeviceIds.includes(preferredNativeTarget) && targetDeviceIds.length === 1) {
-        nativeTargets.add(preferredNativeTarget);
-      }
 
       for (const provider of nativeTargets) {
-        const checklist = await inspectNativeHealthChecklist(provider);
-        if (!checklist.isReady) {
-          if (checklist.recordsFound === 0 && checklist.missingPermissions.length === 0 && !checklist.action) {
-            setNativeChecklistState(checklist);
-            continue;
+        setSyncProgressMessage(provider === 'health-connect' ? 'Reading Health Connect data...' : 'Reading Apple Health data...');
+        try {
+          tasks.push(syncNativeHealthSource(provider, { startFrom: incrementalSyncStart }));
+        } catch (error) {
+          if (error instanceof Error && error.message === 'Health Connect sync is only available on Android.') {
+            throw new Error('Health Connect is available on Android only.');
           }
-          if (checklist.action === 'open_data_management') {
-            await authorizeNativeHealthSource(provider);
-            const refreshedChecklist = await inspectNativeHealthChecklist(provider);
-            setNativeChecklistState(refreshedChecklist);
-            if (!refreshedChecklist.isReady) {
-              nativeSetupIssue = {
-                title: refreshedChecklist.action === 'open_settings'
-                  ? 'Health Connect update required'
-                  : 'Health Connect permissions needed',
-                message: refreshedChecklist.message,
-              };
-              if (refreshedChecklist.action === 'open_settings') {
-                void openNativeHealthSettings(provider);
-              }
-              continue;
-            }
-            tasks.push(syncNativeHealthSource(provider));
-            continue;
+          if (error instanceof Error && error.message === 'Apple Health sync is only available on iPhone.') {
+            throw new Error('Apple Health is available on iPhone only.');
           }
-          setNativeChecklistState(checklist);
-          nativeSetupIssue = {
-            title: checklist.action === 'open_settings'
-              ? 'Health Connect update required'
-              : 'Health Connect permissions needed',
-            message: checklist.message,
-          };
-          if (checklist.action === 'open_settings') {
-            void openNativeHealthSettings(provider);
-          }
-          continue;
+          throw error;
         }
-        tasks.push(syncNativeHealthSource(provider));
       }
 
       if (Platform.OS === 'ios' && wantsHealthConnect) {
@@ -934,31 +1032,12 @@ export default function LongevityOS() {
         throw new Error('Apple Health is available on iPhone only.');
       }
 
-      if (tasks.length === 0 && backendProviderIds.length === 0 && preferredNativeTarget) {
-        const checklist = await inspectNativeHealthChecklist(preferredNativeTarget);
-        setNativeChecklistState(checklist);
-        if (checklist.recordsFound === 0 && checklist.missingPermissions.length === 0 && !checklist.action) {
-          await loadDashboard(false);
-          if (preferredNativeTarget) {
-            void inspectNativeHealthChecklist(preferredNativeTarget)
-              .then((refreshed) => setNativeChecklistState(refreshed))
-              .catch(() => undefined);
-          }
-          if (nativeSetupIssue) {
-            showScreenError(nativeSetupIssue.title, nativeSetupIssue.message);
-          } else {
-            dismissScreenError();
-          }
-          return null;
-        }
-        throw new Error(checklist.message);
-      }
-
       if (tasks.length === 0 && backendProviderIds.length === 0) {
         throw new Error('Select at least one supported data source to sync.');
       }
 
       if (backendProviderIds.length > 0) {
+        setSyncProgressMessage(`Syncing ${backendProviderIds.join(', ')}...`);
         tasks.push(syncLongevityWearables(backendProviderIds as WearableProvider[]).then(() => undefined));
       }
 
@@ -976,20 +1055,13 @@ export default function LongevityOS() {
         throw error;
       }
 
+      setSyncProgressMessage('Refreshing dashboard...');
       await loadDashboard(false);
-      if (preferredNativeTarget) {
-        void inspectNativeHealthChecklist(preferredNativeTarget)
-          .then((checklist) => setNativeChecklistState(checklist))
-          .catch(() => undefined);
-      }
       if (showSuccessAlert) {
         Alert.alert('Data sync successful', 'All available synced health records are now flowing into Longevity OS.');
       }
-      if (nativeSetupIssue) {
-        showScreenError(nativeSetupIssue.title, nativeSetupIssue.message);
-      } else {
-        dismissScreenError();
-      }
+      setSyncProgressMessage('Sync complete.');
+      dismissScreenError();
       return syncResponses[0] || null;
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unable to sync wearables.';
@@ -1000,6 +1072,7 @@ export default function LongevityOS() {
     } finally {
       setSyncingWearables(false);
       setSyncingProviderIds([]);
+      setSyncProgressMessage('');
     }
   }, [dashboard?.wearables.devices, dismissScreenError, loadDashboard, showScreenError, syncingWearables]);
 
@@ -1261,12 +1334,6 @@ export default function LongevityOS() {
         await loadDashboard(false);
       }
       dismissScreenError();
-      const nativeTarget = getPreferredNativeSyncTargetForPlatform();
-      if (nativeTarget) {
-        void inspectNativeHealthChecklist(nativeTarget)
-          .then((checklist) => setNativeChecklistState(checklist))
-          .catch(() => undefined);
-      }
     } catch (error) {
       if (error instanceof Error && error.message === '__NATIVE_CONNECT_FAILED__') {
         return;
@@ -1308,7 +1375,8 @@ export default function LongevityOS() {
     }
     setGeneratingPlan(true);
     try {
-      await generateLongevityWeeklyPlan();
+      const response = await generateLongevityWeeklyPlan();
+      setDashboard((current) => (current ? { ...current, weekly_plan: response } : current));
       await loadDashboard(false);
       dismissScreenError();
       recordRunLog({
@@ -1319,6 +1387,33 @@ export default function LongevityOS() {
       Alert.alert('Weekly plan ready', 'Your AI weekly plan has been generated and saved in Healthy Food Library.');
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unable to generate weekly plan.';
+      const timedOut = message.toLowerCase().includes('timed out');
+      if (timedOut) {
+        let recovered = false;
+        for (const delayMs of [1500, 3000, 5000]) {
+          await new Promise((resolve) => setTimeout(resolve, delayMs));
+          try {
+            const refreshedDashboard = await fetchLongevityDashboard();
+            setDashboard(refreshedDashboard);
+            if (refreshedDashboard.weekly_plan) {
+              recovered = true;
+              dismissScreenError();
+              recordRunLog({
+                level: 'success',
+                title: 'Weekly plan ready',
+                message: 'The AI weekly plan finished after the request timed out and was loaded from the dashboard.',
+              });
+              Alert.alert('Weekly plan ready', 'Your AI weekly plan finished generating and is now available in Healthy Food Library.');
+              break;
+            }
+          } catch {
+            // Keep retrying until the dashboard reflects the saved plan or retries are exhausted.
+          }
+        }
+        if (recovered) {
+          return;
+        }
+      }
       showScreenError('Generation failed', message);
     } finally {
       setGeneratingPlan(false);
@@ -1343,26 +1438,6 @@ export default function LongevityOS() {
 
   const renderOverview = () => (
     <ScrollView style={styles.tabContent} contentContainerStyle={styles.contentContainer} showsVerticalScrollIndicator={false} refreshControl={refreshControl}>
-      <SectionTitle>Your Health Status</SectionTitle>
-      <View style={styles.heroCard}>
-        <Image source={{ uri: 'https://images.unsplash.com/photo-1532187863486-abf9dbad1b69?w=900&q=80' }} style={styles.heroImage} />
-        <View style={styles.heroOverlay} />
-        <View style={styles.heroContent}>
-          <Text style={styles.heroBadge}>VICTORY AGE</Text>
-          <Text style={styles.heroTitle}>Biological Age: {dashboard?.overview.biological_age || 'N/A'}</Text>
-          <Text style={styles.heroMeta}>
-            Trending {dashboard?.overview.trending_years_younger ?? 0} years younger · Chronological: {dashboard?.overview.chronological_age || 'N/A'}
-          </Text>
-        </View>
-      </View>
-
-      <View style={[styles.metricCard, { marginTop: 14 }]}>
-        <Text style={styles.metricLabel}>RECOVERY SCORE</Text>
-        <Text style={styles.metricPrimary}>{dashboard?.overview.recovery_score ?? 0}%</Text>
-        <Text style={styles.metricMeta}>HRV: {dashboard?.overview.hrv_ms ?? 0} ms · Sleep: {dashboard?.overview.sleep_score ?? 0}%</Text>
-      </View>
-
-      <SectionTitle>Latest Synced Data</SectionTitle>
       {overviewHealthCards.length > 0 ? (
         <View style={styles.summaryGrid}>
           {overviewHealthCards.map((item) => (
@@ -1370,8 +1445,10 @@ export default function LongevityOS() {
               <Text style={styles.summaryMetric}>{item.metric_type}</Text>
               <Text style={styles.summaryValue}>{item.value_label}</Text>
               <Text style={styles.summaryMeta}>{item.analysis}</Text>
-              {item.latest_end_time ? (
-                <Text style={styles.summaryTime}>{new Date(item.latest_end_time).toLocaleString()}</Text>
+              {(item.latest_synced_at || item.latest_end_time) ? (
+                <Text style={styles.summaryTime}>
+                  {new Date(item.latest_synced_at || item.latest_end_time || '').toLocaleString()}
+                </Text>
               ) : null}
             </View>
           ))}
@@ -1381,38 +1458,6 @@ export default function LongevityOS() {
           <Text style={styles.infoText}>Sync data to see your latest health metrics here.</Text>
         </View>
       )}
-
-      {Platform.OS === 'android' && nativeChecklistState ? (
-        <View style={[styles.infoCard, { marginTop: 14 }]}>
-          <Text style={styles.connectionInfoTitle}>
-            {nativeChecklistState.recordsFound > 0 ? 'Android source data detected' : 'Android source data not detected'}
-          </Text>
-          <Text style={styles.infoText}>
-            {nativeChecklistState.recordsFound > 0
-              ? `Health Connect can see ${nativeChecklistState.detectedSourceLabels.length > 0 ? nativeChecklistState.detectedSourceLabels.join(', ') : 'an Android health source'}.`
-              : 'Health Connect is connected, but no Android source app data was found in the last 7 days.'}
-          </Text>
-          {nativeChecklistState.recordsFound === 0 ? (
-            <Text style={styles.infoText}>
-              Open your Android health app and confirm it is syncing into Health Connect, then press Sync Data again.
-            </Text>
-          ) : null}
-        </View>
-      ) : null}
-
-      <SectionTitle>Quick Actions</SectionTitle>
-      <View style={styles.grid}>
-        {(dashboard?.quick_actions || []).map((item, index) => (
-          <View key={item.id} style={[styles.quickCard, { width: index === 4 ? width - 32 : (width - 44) / 2 }]}>
-            <Image source={{ uri: safeImageUri(item.image) }} style={styles.quickImage} />
-            <View style={[styles.quickOverlay, { backgroundColor: `${item.color}CC` }]} />
-            <View style={styles.quickTextWrap}>
-              <Text style={styles.quickText}>{item.label}</Text>
-              {item.subtitle ? <Text style={styles.quickSubtitle}>{item.subtitle}</Text> : null}
-            </View>
-          </View>
-        ))}
-      </View>
     </ScrollView>
   );
 
@@ -1465,6 +1510,9 @@ export default function LongevityOS() {
               <Ionicons name={syncingWearables ? 'hourglass-outline' : 'refresh'} size={18} color="#000" />
               <Text style={styles.primaryButtonText}>{syncingWearables ? 'SYNCING HEALTH DATA...' : 'SYNC DATA'}</Text>
             </TouchableOpacity>
+            {syncingWearables || syncProgressMessage ? (
+              <Text style={styles.syncStatusText}>{syncProgressMessage || 'Starting sync...'}</Text>
+            ) : null}
 
             <Modal visible={showWearablePicker} transparent animationType="fade" onRequestClose={() => {
               setNativeConnectionSuccessDeviceId(null);
@@ -1629,38 +1677,25 @@ export default function LongevityOS() {
       <SectionTitle>Health Food Library</SectionTitle>
       <View style={styles.grid}>
         {(dashboard?.heal_categories || []).map((item) => (
-          <View key={item.id} style={[styles.quickCard, { width: (width - 44) / 2 }]}>
+          <TouchableOpacity
+            key={item.id}
+            style={[styles.quickCard, { width: (width - 44) / 2 }]}
+            activeOpacity={0.9}
+            onPress={() => {
+              router.push({
+                pathname: '/profile/heal/[id]',
+                params: {
+                  id: item.id,
+                },
+              });
+            }}
+          >
             <Image source={{ uri: safeImageUri(item.image) }} style={styles.quickImage} />
             <View style={[styles.quickOverlay, { backgroundColor: `${item.color}CC` }]} />
             <Text style={styles.quickText}>{item.label}</Text>
-          </View>
+          </TouchableOpacity>
         ))}
       </View>
-      {dashboard?.weekly_plan ? (
-        <>
-          <SectionTitle>Your Weekly AI Plan</SectionTitle>
-          <View style={styles.listCard}>
-            <View style={styles.planHeaderCard}>
-              <Text style={styles.planSummaryText}>{dashboard.weekly_plan.message}</Text>
-              <Text style={styles.planGeneratedAt}>
-                Generated {new Date(dashboard.weekly_plan.generated_at).toLocaleDateString()}
-              </Text>
-            </View>
-            {dashboard.weekly_plan.plan_sections.map((section) => (
-              <View key={section.id} style={styles.planSectionCard}>
-                <Text style={styles.planSectionTitle}>{section.title}</Text>
-                <Text style={styles.planSectionSummary}>{section.summary}</Text>
-                {section.actions.map((action, index) => (
-                  <View key={`${section.id}-${index}`} style={styles.planActionRow}>
-                    <Ionicons name="sparkles" size={14} color={Colors.primary} />
-                    <Text style={styles.planActionText}>{action}</Text>
-                  </View>
-                ))}
-              </View>
-            ))}
-          </View>
-        </>
-      ) : null}
     </ScrollView>
   );
 
@@ -2036,6 +2071,9 @@ const styles = StyleSheet.create({
     lineHeight: 14,
     fontFamily: 'Inter_400Regular',
   },
+  planFeedWrap: {
+    marginTop: 18,
+  },
   listCard: {
     backgroundColor: '#12182B',
     borderRadius: 22,
@@ -2094,6 +2132,27 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 19,
     fontFamily: 'Inter_500Medium',
+  },
+  planJsonCard: {
+    marginTop: 14,
+    padding: 12,
+    borderRadius: 14,
+    backgroundColor: 'rgba(255,255,255,0.03)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.06)',
+  },
+  planJsonLabel: {
+    color: Colors.primary,
+    fontSize: 10,
+    letterSpacing: 1,
+    fontFamily: 'Inter_700Bold',
+    marginBottom: 8,
+  },
+  planJsonText: {
+    color: '#DCE7F5',
+    fontSize: 11,
+    lineHeight: 16,
+    fontFamily: 'Inter_400Regular',
   },
   listRow: {
     flexDirection: 'row',
@@ -2390,6 +2449,13 @@ const styles = StyleSheet.create({
     color: '#000',
     fontSize: 14,
     fontFamily: 'Inter_700Bold',
+  },
+  syncStatusText: {
+    marginTop: -4,
+    marginBottom: 16,
+    color: Colors.textMuted,
+    fontSize: 12,
+    fontFamily: 'Inter_400Regular',
   },
   selectionHintText: {
     marginTop: -4,
