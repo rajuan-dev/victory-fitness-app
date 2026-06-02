@@ -750,6 +750,10 @@ export default function LongevityOS() {
       for (const provider of nativeTargets) {
         const checklist = await inspectNativeHealthChecklist(provider);
         if (!checklist.isReady) {
+          if (checklist.recordsFound === 0 && checklist.missingPermissions.length === 0 && !checklist.action) {
+            setNativeChecklistState(checklist);
+            continue;
+          }
           if (checklist.action === 'open_data_management') {
             await authorizeNativeHealthSource(provider);
             const refreshedChecklist = await inspectNativeHealthChecklist(provider);
@@ -794,6 +798,20 @@ export default function LongevityOS() {
       if (tasks.length === 0 && backendProviderIds.length === 0 && preferredNativeTarget) {
         const checklist = await inspectNativeHealthChecklist(preferredNativeTarget);
         setNativeChecklistState(checklist);
+        if (checklist.recordsFound === 0 && checklist.missingPermissions.length === 0 && !checklist.action) {
+          await loadDashboard(false);
+          if (preferredNativeTarget) {
+            void inspectNativeHealthChecklist(preferredNativeTarget)
+              .then((refreshed) => setNativeChecklistState(refreshed))
+              .catch(() => undefined);
+          }
+          if (nativeSetupIssue) {
+            showScreenError(nativeSetupIssue.title, nativeSetupIssue.message);
+          } else {
+            dismissScreenError();
+          }
+          return;
+        }
         throw new Error(checklist.message);
       }
 

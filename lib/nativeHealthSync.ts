@@ -472,10 +472,6 @@ async function collectHealthConnectMetrics(): Promise<MobileHealthSyncPayload> {
     );
   });
 
-  if (metrics.length === 0) {
-    throw new Error('No Health Connect records were found for the last 7 days.');
-  }
-
   return {
     metrics,
     source_device: sourceDevice,
@@ -898,8 +894,30 @@ export async function syncNativeHealthSource(target: NativeSyncTarget): Promise<
   assertNativePlatform(effectiveTarget);
   if (effectiveTarget === 'apple-health') {
     const payload = await collectAppleHealthMetrics();
+    if (payload.metrics.length === 0) {
+      return {
+        provider: 'apple-health',
+        user_id: '',
+        synced_records: 0,
+        skipped_duplicates: 0,
+        connection_status: 'connected',
+        last_synced_at: null,
+        message: 'Apple Health is connected, but no records were found in the last 7 days yet.',
+      };
+    }
     return syncLongevityAppleHealth(payload);
   }
   const payload = await collectHealthConnectMetrics();
+  if (payload.metrics.length === 0) {
+    return {
+      provider: 'health-connect',
+      user_id: '',
+      synced_records: 0,
+      skipped_duplicates: 0,
+      connection_status: 'connected',
+      last_synced_at: null,
+      message: 'Health Connect is connected, but no source app has written data into it yet.',
+    };
+  }
   return syncLongevityHealthConnect(payload);
 }
