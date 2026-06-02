@@ -1692,7 +1692,9 @@ export default function LongevityOS() {
           >
             <Image source={{ uri: safeImageUri(item.image) }} style={styles.quickImage} />
             <View style={[styles.quickOverlay, { backgroundColor: `${item.color}CC` }]} />
-            <Text style={styles.quickText}>{item.label}</Text>
+            <View style={styles.quickTextWrap}>
+              <Text style={styles.quickText}>{item.label}</Text>
+            </View>
           </TouchableOpacity>
         ))}
       </View>
@@ -1701,40 +1703,101 @@ export default function LongevityOS() {
 
   const renderHabits = () => (
     <ScrollView style={styles.tabContent} contentContainerStyle={styles.contentContainer} showsVerticalScrollIndicator={false} refreshControl={refreshControl}>
-      <View style={styles.metricCard}>
-        <Text style={styles.metricLabel}>{dashboard?.habits.streak_days ?? 0} DAY STREAK</Text>
-        <Text style={styles.metricPrimary}>Longevity Habits</Text>
-        <Text style={styles.metricMeta}>Tap a habit to toggle completion.</Text>
-      </View>
-      <SectionTitle>Your Habits</SectionTitle>
-      <View style={styles.listCard}>
-        {(dashboard?.habits.habits || []).map((habit) => (
-          <TouchableOpacity key={habit.id} style={[styles.listRow, habit.done && styles.listRowActive]} activeOpacity={0.85} onPress={() => void handleToggleHabit(habit)}>
-            <Ionicons name={habit.icon as any} size={18} color={habit.done ? '#10B981' : 'rgba(255,255,255,0.5)'} />
-            <View style={styles.listTextWrap}>
-              <Text style={[styles.listText, habit.done && styles.listTextActive]}>{habit.title}</Text>
-              <Text style={styles.listSubtext}>{habit.subtitle}</Text>
+      {(() => {
+        const habits = [...(dashboard?.habits.habits || [])].sort((left, right) => {
+          if (left.done === right.done) {
+            return left.title.localeCompare(right.title);
+          }
+          return left.done ? 1 : -1;
+        });
+        const completedCount = habits.filter((habit) => habit.done).length;
+        const totalCount = habits.length;
+        const progress = totalCount > 0 ? completedCount / totalCount : 0;
+        return (
+          <>
+            <View style={styles.habitsHeroCard}>
+              <View style={styles.habitsHeroHeader}>
+                <View style={styles.habitsHeroCopy}>
+                  <Text style={styles.habitsHeroEyebrow}>Connected to dashboard</Text>
+                  <Text style={styles.habitsHeroTitle}>Habits</Text>
+                </View>
+                <View style={styles.habitsHeroBadge}>
+                  <Ionicons name="checkbox-outline" size={14} color={Colors.primary} />
+                  <Text style={styles.habitsHeroBadgeText}>{completedCount}/{totalCount || 0} done</Text>
+                </View>
+              </View>
+              <Text style={styles.habitsHeroMeta}>
+                These habits are generated from your sync history and adapt as your recovery profile changes.
+              </Text>
+              <View style={styles.habitsProgressTrack}>
+                <View style={[styles.habitsProgressFill, { width: `${Math.max(progress, 0.06) * 100}%` }]} />
+              </View>
+              <Text style={styles.habitsProgressLabel}>
+                {Math.round(progress * 100) || 0}% completed today
+              </Text>
             </View>
-            <Ionicons name={habit.done ? 'checkmark-circle' : 'ellipse-outline'} size={22} color={habit.done ? '#10B981' : 'rgba(255,255,255,0.28)'} />
-          </TouchableOpacity>
-        ))}
-      </View>
+
+            <SectionTitle>Dashboard Habits</SectionTitle>
+            <View style={styles.habitList}>
+              {habits.map((habit, index) => (
+                <TouchableOpacity key={habit.id} style={[styles.habitCard, habit.done && styles.habitCardDone]} activeOpacity={0.88} onPress={() => void handleToggleHabit(habit)}>
+                  <View style={styles.habitCardHeader}>
+                    <View style={[styles.habitIconWrap, habit.done && styles.habitIconWrapDone]}>
+                      <Ionicons name={habit.icon as any} size={18} color={habit.done ? '#10B981' : '#D8E8FF'} />
+                    </View>
+                    <View style={styles.habitCardCopy}>
+                      <View style={styles.habitCardTitleRow}>
+                        <Text style={[styles.habitTitle, habit.done && styles.habitTitleDone]}>{habit.title}</Text>
+                        <View style={[styles.habitStatusBadge, habit.done && styles.habitStatusBadgeDone]}>
+                          <Text style={[styles.habitStatusText, habit.done && styles.habitStatusTextDone]}>
+                            {habit.done ? 'Done' : 'To do'}
+                          </Text>
+                        </View>
+                      </View>
+                      <Text style={styles.habitSubtitle}>{habit.subtitle}</Text>
+                    </View>
+                    <Ionicons name={habit.done ? 'checkmark-circle' : 'ellipse-outline'} size={22} color={habit.done ? '#10B981' : 'rgba(255,255,255,0.28)'} />
+                  </View>
+                  <View style={styles.habitCardFooter}>
+                    <Text style={styles.habitCardIndex}>0{index + 1}</Text>
+                    <Text style={styles.habitCardHint}>{habit.done ? 'Keep the rhythm' : 'Tap to mark complete'}</Text>
+                  </View>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </>
+        );
+      })()}
     </ScrollView>
   );
 
   const renderLearn = (items: LongevityMasterclass[]) => (
     <ScrollView style={styles.tabContent} contentContainerStyle={styles.contentContainer} showsVerticalScrollIndicator={false} refreshControl={refreshControl}>
-      <SectionTitle>Masterclasses</SectionTitle>
+      <View style={styles.learnHeroCard}>
+        <Text style={styles.learnHeroEyebrow}>Connected to dashboard</Text>
+        <Text style={styles.learnHeroTitle}>Masterclasses</Text>
+        <Text style={styles.learnHeroMeta}>
+          These lessons are selected from your current dashboard profile and heal focus areas.
+        </Text>
+      </View>
+      <SectionTitle>Dashboard Learning</SectionTitle>
       {items.length === 0 ? (
         <EmptyState icon="book-outline" title="No Masterclasses Available" subtitle="Check back later for new longevity insights." />
       ) : (
-        <View style={styles.listCard}>
+        <View style={styles.learnList}>
           {items.map((item) => (
-            <View key={item.id} style={styles.listRow}>
-              <Ionicons name="book-outline" size={18} color={Colors.primary} />
-              <View style={styles.listTextWrap}>
-                <Text style={styles.listText}>{item.title}</Text>
-                <Text style={styles.listSubtext}>{item.description}</Text>
+            <View key={item.id} style={styles.learnCard}>
+              <View style={styles.learnCardThumb}>
+                <Image source={{ uri: safeImageUri(item.thumbnail) }} style={styles.learnCardImage} />
+                <View style={styles.learnCardOverlay} />
+                <View style={styles.learnCardBadge}>
+                  <Ionicons name="book-outline" size={12} color="#fff" />
+                  <Text style={styles.learnCardBadgeText}>Dashboard</Text>
+                </View>
+              </View>
+              <View style={styles.learnCardBody}>
+                <Text style={styles.learnCardTitle}>{item.title}</Text>
+                <Text style={styles.learnCardDescription}>{item.description}</Text>
               </View>
             </View>
           ))}
@@ -2041,8 +2104,8 @@ const styles = StyleSheet.create({
     marginBottom: 18,
   },
   quickCard: {
-    height: 134,
-    borderRadius: 20,
+    height: 146,
+    borderRadius: 22,
     overflow: 'hidden',
     backgroundColor: '#1A1F35',
   },
@@ -2054,14 +2117,20 @@ const styles = StyleSheet.create({
   },
   quickTextWrap: {
     position: 'absolute',
-    left: 14,
-    right: 14,
-    bottom: 14,
+    left: 12,
+    right: 12,
+    top: 12,
+    bottom: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   quickText: {
     color: '#fff',
-    fontSize: 14,
-    lineHeight: 18,
+    fontSize: 15,
+    lineHeight: 20,
+    textAlign: 'center',
     fontFamily: 'Inter_700Bold',
   },
   quickSubtitle: {
@@ -2073,6 +2142,254 @@ const styles = StyleSheet.create({
   },
   planFeedWrap: {
     marginTop: 18,
+  },
+  habitsHeroCard: {
+    padding: 18,
+    borderRadius: 24,
+    backgroundColor: '#12182B',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.06)',
+    gap: 12,
+  },
+  habitsHeroHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  habitsHeroCopy: {
+    flex: 1,
+    gap: 4,
+  },
+  habitsHeroEyebrow: {
+    color: 'rgba(216, 232, 255, 0.62)',
+    fontSize: 11,
+    letterSpacing: 1.2,
+    textTransform: 'uppercase',
+    fontFamily: 'Inter_700Bold',
+  },
+  habitsHeroTitle: {
+    color: '#fff',
+    fontSize: 24,
+    lineHeight: 29,
+    fontFamily: 'Inter_700Bold',
+  },
+  habitsHeroBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: 999,
+    backgroundColor: 'rgba(79, 142, 247, 0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(79, 142, 247, 0.16)',
+  },
+  habitsHeroBadgeText: {
+    color: '#D8E8FF',
+    fontSize: 11,
+    fontFamily: 'Inter_600SemiBold',
+  },
+  habitsHeroMeta: {
+    color: 'rgba(241, 246, 255, 0.75)',
+    fontSize: 13,
+    lineHeight: 19,
+    fontFamily: 'Inter_400Regular',
+  },
+  habitsProgressTrack: {
+    height: 8,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    overflow: 'hidden',
+  },
+  habitsProgressFill: {
+    height: '100%',
+    borderRadius: 999,
+    backgroundColor: Colors.primary,
+  },
+  habitsProgressLabel: {
+    color: 'rgba(216, 232, 255, 0.7)',
+    fontSize: 11,
+    fontFamily: 'Inter_500Medium',
+  },
+  habitList: {
+    gap: 12,
+  },
+  habitCard: {
+    padding: 16,
+    borderRadius: 22,
+    backgroundColor: '#12182B',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.05)',
+    gap: 10,
+  },
+  habitCardDone: {
+    borderColor: 'rgba(16, 185, 129, 0.18)',
+    backgroundColor: 'rgba(16, 185, 129, 0.06)',
+  },
+  habitCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+  },
+  habitIconWrap: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.06)',
+  },
+  habitIconWrapDone: {
+    backgroundColor: 'rgba(16,185,129,0.08)',
+    borderColor: 'rgba(16,185,129,0.14)',
+  },
+  habitCardCopy: {
+    flex: 1,
+    gap: 4,
+  },
+  habitCardTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+  },
+  habitTitle: {
+    flex: 1,
+    color: '#fff',
+    fontSize: 15,
+    lineHeight: 20,
+    fontFamily: 'Inter_700Bold',
+  },
+  habitTitleDone: {
+    color: '#DFF9EE',
+  },
+  habitSubtitle: {
+    color: 'rgba(216, 232, 255, 0.62)',
+    fontSize: 12,
+    lineHeight: 16,
+    fontFamily: 'Inter_400Regular',
+  },
+  habitStatusBadge: {
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+  },
+  habitStatusBadgeDone: {
+    backgroundColor: 'rgba(16,185,129,0.14)',
+  },
+  habitStatusText: {
+    color: 'rgba(255,255,255,0.72)',
+    fontSize: 10,
+    letterSpacing: 0.6,
+    fontFamily: 'Inter_700Bold',
+  },
+  habitStatusTextDone: {
+    color: '#A7F3D0',
+  },
+  habitCardFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  habitCardIndex: {
+    color: 'rgba(216, 232, 255, 0.45)',
+    fontSize: 11,
+    letterSpacing: 0.8,
+    fontFamily: 'Inter_700Bold',
+  },
+  habitCardHint: {
+    color: 'rgba(216, 232, 255, 0.55)',
+    fontSize: 11,
+    fontFamily: 'Inter_400Regular',
+  },
+  learnHeroCard: {
+    padding: 18,
+    borderRadius: 24,
+    backgroundColor: '#12182B',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.06)',
+    gap: 4,
+  },
+  learnHeroEyebrow: {
+    color: 'rgba(216, 232, 255, 0.62)',
+    fontSize: 11,
+    letterSpacing: 1.2,
+    textTransform: 'uppercase',
+    fontFamily: 'Inter_700Bold',
+  },
+  learnHeroTitle: {
+    color: '#fff',
+    fontSize: 24,
+    lineHeight: 29,
+    fontFamily: 'Inter_700Bold',
+  },
+  learnHeroMeta: {
+    color: 'rgba(241, 246, 255, 0.74)',
+    fontSize: 13,
+    lineHeight: 19,
+    fontFamily: 'Inter_400Regular',
+    marginTop: 4,
+  },
+  learnList: {
+    gap: 12,
+  },
+  learnCard: {
+    borderRadius: 22,
+    overflow: 'hidden',
+    backgroundColor: '#12182B',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.05)',
+  },
+  learnCardThumb: {
+    height: 132,
+    position: 'relative',
+  },
+  learnCardImage: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  learnCardOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(11,16,32,0.38)',
+  },
+  learnCardBadge: {
+    position: 'absolute',
+    left: 12,
+    top: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: 'rgba(0,0,0,0.26)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.12)',
+  },
+  learnCardBadgeText: {
+    color: '#fff',
+    fontSize: 10,
+    letterSpacing: 0.6,
+    fontFamily: 'Inter_700Bold',
+  },
+  learnCardBody: {
+    padding: 16,
+    gap: 6,
+  },
+  learnCardTitle: {
+    color: '#fff',
+    fontSize: 16,
+    lineHeight: 21,
+    fontFamily: 'Inter_700Bold',
+  },
+  learnCardDescription: {
+    color: 'rgba(216, 232, 255, 0.72)',
+    fontSize: 12,
+    lineHeight: 18,
+    fontFamily: 'Inter_400Regular',
   },
   listCard: {
     backgroundColor: '#12182B',

@@ -148,24 +148,6 @@ export default function HealPlanDetailScreen() {
     return dashboard.weekly_plan.plan_sections.find((section) => section.id === preferredSectionId) ?? dashboard.weekly_plan.plan_sections[0] ?? null;
   }, [dashboard?.weekly_plan, healCardId, healCategory?.label]);
 
-  const orderedSections = React.useMemo(() => {
-    const sections = dashboard?.weekly_plan?.plan_sections || [];
-    if (!sections.length) {
-      return [];
-    }
-    return sections
-      .slice()
-      .sort((left, right) => {
-        if (left.id === matchedSection?.id) {
-          return -1;
-        }
-        if (right.id === matchedSection?.id) {
-          return 1;
-        }
-        return left.title.localeCompare(right.title);
-      });
-  }, [dashboard?.weekly_plan?.plan_sections, matchedSection?.id]);
-
   const heroTheme = React.useMemo(
     () => getSectionVisualTheme(matchedSection?.id || healCardId || healCategory?.label || ''),
     [healCardId, healCategory?.label, matchedSection?.id],
@@ -202,9 +184,9 @@ export default function HealPlanDetailScreen() {
             <LinearGradient
               colors={
                 [
-                heroTheme.accentSoft,
-                'rgba(18, 24, 43, 0.92)',
-                'rgba(11, 16, 32, 0.96)',
+                'rgba(255,255,255,0.03)',
+                'rgba(18, 24, 43, 0.95)',
+                'rgba(11, 16, 32, 0.98)',
                 ] as [string, string, string]
               }
               start={{ x: 0, y: 0 }}
@@ -213,86 +195,74 @@ export default function HealPlanDetailScreen() {
             >
               <View style={styles.planHeroRow}>
                 <View style={styles.planHeroCopy}>
-                  <Text style={styles.planEyebrow}>Personalized weekly plan</Text>
+                  <Text style={styles.planEyebrow}>Weekly plan</Text>
                   <Text style={styles.planHeroTitle}>{healCategory?.label || 'Heal plan'}</Text>
                 </View>
                 <View style={styles.planHeroBadge}>
                   <Ionicons name="sparkles" size={14} color={heroTheme.accent} />
-                  <Text style={styles.planHeroBadgeText}>{orderedSections.length} sections</Text>
+                  <Text style={styles.planHeroBadgeText}>{matchedSection ? 'Matched' : 'Unavailable'}</Text>
                 </View>
               </View>
               <Text style={styles.planHeroDescription}>
-                Built from your latest syncs, recovery trends, and history so each section feels more specific.
+                Built from your latest syncs, recovery trends, and history for this card.
               </Text>
             </LinearGradient>
 
-            <View style={styles.sectionList}>
-            {orderedSections.map((section, index) => {
-              const isSelected = section.id === matchedSection?.id;
-              const theme = getSectionVisualTheme(section.id);
+            {matchedSection ? (() => {
+              const theme = getSectionVisualTheme(matchedSection.id);
               return (
                 <LinearGradient
-                  key={section.id}
-                  colors={
-                    (isSelected
-                      ? theme.gradient
-                      : ['rgba(255, 255, 255, 0.05)', 'rgba(18, 24, 43, 0.94)', 'rgba(12, 18, 35, 0.98)']) as [
-                      string,
-                      string,
-                      string,
-                    ]
-                  }
+                  colors={theme.gradient}
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 1 }}
-                  style={[styles.sectionCard, isSelected && styles.sectionCardActive]}
+                  style={styles.sectionCard}
                 >
-                  <View style={[styles.sectionAccent, { backgroundColor: isSelected ? theme.accent : 'rgba(255,255,255,0.08)' }]} />
+                  <View style={[styles.sectionAccent, { backgroundColor: theme.accent }]} />
                   <View style={styles.sectionHeader}>
                     <View style={styles.sectionHeaderCopy}>
                       <View style={styles.sectionLabelRow}>
-                        <Text style={styles.sectionIndex}>0{index + 1}</Text>
-                        <View
-                          style={[
-                            styles.sectionBadge,
-                            { backgroundColor: isSelected ? theme.badge : 'rgba(255,255,255,0.08)' },
-                            isSelected && styles.sectionBadgeActive,
-                          ]}
-                        >
-                          <Text style={styles.sectionBadgeText}>{isSelected ? 'Selected' : 'Plan'}</Text>
+                        <View style={[styles.sectionNumberPill, { borderColor: theme.accentStrong, backgroundColor: theme.badge }]}>
+                          <Text style={[styles.sectionIndex, { color: theme.accent }]}>01</Text>
+                        </View>
+                        <View style={[styles.sectionBadge, { backgroundColor: theme.badge }]}>
+                          <Text style={styles.sectionBadgeText}>Selected</Text>
                         </View>
                       </View>
-                      <Text style={styles.sectionTitle}>{section.title}</Text>
-                      <Text style={styles.sectionSubtitle}>
-                        {isSelected ? 'Best match for this card' : 'Supporting guidance'}
-                      </Text>
+                      <Text style={styles.sectionTitle}>{matchedSection.title}</Text>
+                      <Text style={styles.sectionSubtitle}>Recommended guidance for this category</Text>
                     </View>
-                    <View style={[styles.sectionArrow, { borderColor: isSelected ? theme.accentStrong : 'rgba(255,255,255,0.08)' }]}>
-                      <Ionicons name={isSelected ? 'star' : 'arrow-forward'} size={14} color={isSelected ? theme.accent : '#D8E8FF'} />
+                    <View style={[styles.sectionArrow, { borderColor: theme.accentStrong }]}>
+                      <Ionicons name="star" size={14} color={theme.accent} />
                     </View>
                   </View>
                   <View style={styles.sectionMetaRow}>
                     <View style={styles.sectionMetaPill}>
-                      <Ionicons name="pulse" size={12} color={isSelected ? theme.accent : 'rgba(216, 232, 255, 0.88)'} />
-                      <Text style={styles.sectionMetaText}>{isSelected ? 'Primary focus' : 'Secondary focus'}</Text>
+                      <Ionicons name="pulse" size={12} color={theme.accent} />
+                      <Text style={styles.sectionMetaText}>Primary focus</Text>
                     </View>
                     <View style={styles.sectionMetaPill}>
-                      <Ionicons name="document-text-outline" size={12} color={isSelected ? theme.accent : 'rgba(216, 232, 255, 0.88)'} />
-                      <Text style={styles.sectionMetaText}>{section.actions.length} actions</Text>
+                      <Ionicons name="document-text-outline" size={12} color={theme.accent} />
+                      <Text style={styles.sectionMetaText}>{matchedSection.actions.length} actions</Text>
                     </View>
                   </View>
-                  <Text style={styles.sectionSummary}>{section.summary}</Text>
+                  <Text style={styles.sectionSummary}>{matchedSection.summary}</Text>
+                  <View style={styles.sectionDivider} />
                   <View style={styles.sectionActions}>
-                    {section.actions.map((action) => (
-                      <View key={action} style={[styles.actionPill, isSelected && { borderColor: theme.accentStrong, backgroundColor: 'rgba(255,255,255,0.08)' }]}>
-                        <View style={[styles.actionDot, { backgroundColor: isSelected ? theme.accent : Colors.primary }]} />
+                    {matchedSection.actions.map((action) => (
+                      <View key={action} style={[styles.actionPill, { borderColor: theme.accentStrong, backgroundColor: 'rgba(255,255,255,0.08)' }]}>
+                        <View style={[styles.actionDot, { backgroundColor: theme.accent }]} />
                         <Text style={styles.actionText}>{action}</Text>
                       </View>
                     ))}
                   </View>
                 </LinearGradient>
               );
-            })}
-            </View>
+            })() : (
+              <View style={styles.emptyCard}>
+                <Ionicons name="restaurant-outline" size={40} color="rgba(255,255,255,0.32)" />
+                <Text style={styles.emptyTitle}>No matching section yet</Text>
+              </View>
+            )}
           </>
         ) : (
           <View style={styles.emptyCard}>
@@ -355,12 +325,12 @@ const styles = StyleSheet.create({
     width: 42,
   },
   content: {
-    paddingHorizontal: 16,
-    paddingBottom: 28,
-    gap: 16,
+    paddingHorizontal: 18,
+    paddingBottom: 36,
+    gap: 18,
   },
   sectionList: {
-    gap: 12,
+    gap: 14,
   },
   planHero: {
     borderRadius: 24,
@@ -369,10 +339,10 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.08)',
     shadowColor: '#000',
-    shadowOpacity: 0.26,
-    shadowRadius: 18,
-    shadowOffset: { width: 0, height: 10 },
-    elevation: 8,
+    shadowOpacity: 0.18,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 5,
   },
   planHeroRow: {
     flexDirection: 'row',
@@ -382,19 +352,19 @@ const styles = StyleSheet.create({
   },
   planHeroCopy: {
     flex: 1,
-    gap: 4,
+    gap: 5,
   },
   planEyebrow: {
-    color: 'rgba(216, 232, 255, 0.7)',
+    color: 'rgba(216, 232, 255, 0.6)',
     fontSize: 11,
-    letterSpacing: 1.1,
+    letterSpacing: 1.2,
     textTransform: 'uppercase',
     fontFamily: 'Inter_700Bold',
   },
   planHeroTitle: {
     color: '#fff',
-    fontSize: 23,
-    lineHeight: 28,
+    fontSize: 24,
+    lineHeight: 29,
     fontFamily: 'Inter_700Bold',
   },
   planHeroBadge: {
@@ -404,34 +374,35 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 7,
     borderRadius: 999,
-    backgroundColor: 'rgba(255,255,255,0.08)',
+    backgroundColor: 'rgba(255,255,255,0.05)',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.12)',
+    borderColor: 'rgba(255,255,255,0.08)',
   },
   planHeroBadgeText: {
     color: '#D8E8FF',
     fontSize: 11,
+    letterSpacing: 0.2,
     fontFamily: 'Inter_600SemiBold',
   },
   planHeroDescription: {
     marginTop: 12,
-    color: 'rgba(241, 246, 255, 0.82)',
-    fontSize: 13,
-    lineHeight: 19,
+    color: 'rgba(241, 246, 255, 0.72)',
+    fontSize: 14,
+    lineHeight: 20,
     fontFamily: 'Inter_400Regular',
   },
   sectionCard: {
-    borderRadius: 22,
+    borderRadius: 24,
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.07)',
-    paddingHorizontal: 16,
-    paddingTop: 12,
-    paddingBottom: 16,
+    paddingHorizontal: 18,
+    paddingTop: 16,
+    paddingBottom: 18,
     shadowColor: '#000',
     shadowOpacity: 0.18,
-    shadowRadius: 16,
+    shadowRadius: 14,
     shadowOffset: { width: 0, height: 8 },
-    elevation: 6,
+    elevation: 5,
   },
   sectionCardActive: {
     borderColor: 'rgba(255,255,255,0.12)',
@@ -458,19 +429,27 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter_700Bold',
   },
   sectionSubtitle: {
-    color: 'rgba(216, 232, 255, 0.68)',
-    fontSize: 11,
-    lineHeight: 15,
+    color: 'rgba(216, 232, 255, 0.58)',
+    fontSize: 12,
+    lineHeight: 16,
     fontFamily: 'Inter_400Regular',
   },
   sectionIndex: {
-    color: '#D8E8FF',
     fontSize: 11,
-    letterSpacing: 0.8,
+    letterSpacing: 1,
     fontFamily: 'Inter_700Bold',
   },
+  sectionNumberPill: {
+    minWidth: 28,
+    height: 28,
+    paddingHorizontal: 8,
+    borderRadius: 999,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   sectionBadge: {
-    paddingHorizontal: 10,
+    paddingHorizontal: 11,
     paddingVertical: 6,
     borderRadius: 999,
     backgroundColor: 'rgba(255,255,255,0.08)',
@@ -487,9 +466,9 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter_700Bold',
   },
   sectionArrow: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: 'rgba(255,255,255,0.08)',
@@ -497,7 +476,7 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255,255,255,0.08)',
   },
   sectionAccent: {
-    height: 3,
+    height: 2,
     borderRadius: 999,
     backgroundColor: 'rgba(255,255,255,0.08)',
     marginBottom: 14,
@@ -528,11 +507,17 @@ const styles = StyleSheet.create({
     marginTop: 12,
     color: '#DCE7F5',
     fontSize: 14,
-    lineHeight: 20,
+    lineHeight: 21,
     fontFamily: 'Inter_400Regular',
   },
+  sectionDivider: {
+    height: 1,
+    marginTop: 14,
+    marginBottom: 8,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+  },
   sectionActions: {
-    marginTop: 10,
+    marginTop: 8,
     gap: 8,
   },
   actionPill: {
@@ -540,11 +525,11 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     gap: 10,
     paddingHorizontal: 14,
-    paddingVertical: 11,
+    paddingVertical: 10,
     borderRadius: 16,
-    backgroundColor: 'rgba(255,255,255,0.06)',
+    backgroundColor: 'rgba(255,255,255,0.05)',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.06)',
+    borderColor: 'rgba(255,255,255,0.05)',
   },
   actionDot: {
     width: 8,
@@ -561,8 +546,8 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter_500Medium',
   },
   emptyCard: {
-    padding: 18,
-    borderRadius: 20,
+    padding: 20,
+    borderRadius: 22,
     backgroundColor: '#12182B',
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.05)',
