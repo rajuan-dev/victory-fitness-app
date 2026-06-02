@@ -29,10 +29,11 @@ import {
   connectWearableProvider,
   disconnectLongevityProvider,
   fetchCurrentUser,
-  fetchLongevityHealthSummary,
+  fetchLongevityHealthRecords,
   fetchLongevityDashboard,
   fetchIntegrationConnections,
   generateLongevityWeeklyPlan,
+  HealthMetricRecord,
   HealthMetricSummaryItem,
   IntegrationConnection,
   LongevityCircle,
@@ -42,6 +43,7 @@ import {
   LongevityWeeklyPlan,
   LongevityWearableDevice,
   markNativeIntegrationConnected,
+  type WearableSyncResponse,
   WearableProvider,
   syncLongevityQrImport,
   syncLongevityWearables,
@@ -98,13 +100,13 @@ function getPlatformHealthSources(deviceId: string) {
     return ['Apple Health', 'Apple Watch', 'Oura', 'Withings', 'Polar'];
   }
   if (deviceId === 'health-connect') {
-    return ['Samsung Health', 'Runmefit', 'Health Connect apps', 'Galaxy Watch', 'Pixel Watch', 'Amazfit'];
+    return ['Runmefit', 'Android health apps', 'Galaxy Watch', 'Pixel Watch', 'Amazfit'];
   }
   if (deviceId === 'this-phone') {
     return Platform.OS === 'ios'
       ? ['Apple Health', 'Apple Watch', 'Oura', 'Withings', 'Polar']
       : Platform.OS === 'android'
-        ? ['Samsung Health', 'Runmefit', 'Health Connect apps', 'Galaxy Watch', 'Pixel Watch', 'Amazfit']
+        ? ['Runmefit', 'Android health apps', 'Galaxy Watch', 'Pixel Watch', 'Amazfit']
         : ['Supported mobile health sources'];
   }
   return [];
@@ -132,7 +134,7 @@ function getRunmefitBridgeSummary(deviceId: string) {
     return 'Connect Apple Health once to read approved records from iPhone health apps and devices.';
   }
   if (deviceId === 'health-connect') {
-    return 'Connect Health Connect once to read approved records from Runmefit, Samsung Health, and other Android health apps.';
+    return 'Connect Health Connect once to read approved records from Android health apps and devices.';
   }
   if (deviceId === 'this-phone') {
     return Platform.OS === 'ios'
@@ -159,7 +161,7 @@ function getWearableSourceDescription(deviceId: string) {
     case 'apple-health':
       return 'Native Apple Health permission for Apple Health and other iPhone health sources';
     case 'health-connect':
-      return 'Native Health Connect permission for Android health data, including Runmefit, Samsung Health, and other apps that sync into Health Connect';
+      return 'Native Health Connect permission for Android health data from connected apps and devices';
     default:
       return 'Health data source';
   }
@@ -191,7 +193,7 @@ function getWearableCompatibleDevices(deviceId: string) {
     case 'apple-health':
       return ['Apple Watch', 'iPhone Health', 'Oura Ring', 'Withings', 'Polar', 'Health apps synced to Apple Health'];
     case 'health-connect':
-      return ['Samsung Health', 'Runmefit', 'Samsung Galaxy Watch', 'Pixel Watch', 'Amazfit', 'Health Connect apps'];
+      return ['Runmefit', 'Android health apps', 'Galaxy Watch', 'Pixel Watch', 'Amazfit'];
     case 'fitbit':
       return ['Fitbit Charge', 'Fitbit Sense', 'Fitbit Versa', 'Google Fitbit'];
     case 'google-fit':
@@ -202,7 +204,7 @@ function getWearableCompatibleDevices(deviceId: string) {
       return Platform.OS === 'ios'
         ? ['Apple Health', 'Apple Watch on this iPhone', 'Oura', 'Withings']
         : Platform.OS === 'android'
-          ? ['Samsung Health', 'Runmefit', 'Health Connect', 'Galaxy Watch', 'Pixel Watch']
+          ? ['Runmefit', 'Android health apps', 'Health Connect', 'Galaxy Watch', 'Pixel Watch']
           : ['Native mobile health source'];
     case 'qr-import':
       return ['Other wearable export', 'Partner QR bridge', 'Manual clinic data'];
@@ -222,12 +224,12 @@ function getWearableFlowSummary(deviceId: string) {
     case 'apple-health':
       return 'Approve Apple Health access on iPhone, then sync Apple Health records from connected iPhone health apps and devices.';
     case 'health-connect':
-      return 'Approve Health Connect access on Android, then sync Health Connect records from Runmefit, Samsung Health, and other connected Android apps.';
+      return 'Approve Health Connect access on Android, then sync records from connected Android apps.';
     case 'this-phone':
       return Platform.OS === 'ios'
         ? 'Uses Apple Health on this iPhone, then syncs approved health data from connected iPhone health apps.'
         : Platform.OS === 'android'
-          ? 'Uses Health Connect on this Android phone, then syncs approved health data from Runmefit, Samsung Health, and other Android apps.'
+          ? 'Uses Health Connect on this Android phone, then syncs approved health data from connected Android apps.'
           : 'Uses the native phone health connection, then syncs the approved health data.';
     case 'qr-import':
       return 'Connect the import option, then paste or scan a QR payload when syncing.';
@@ -320,6 +322,13 @@ function formatMetricNumber(value: number) {
   }
   const rounded = Math.round((value + Number.EPSILON) * 100) / 100;
   return Number.isInteger(rounded) ? `${rounded}` : `${rounded.toFixed(2).replace(/\.?0+$/, '')}`;
+}
+
+function formatLocalDate(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 }
 
 const DISPLAYABLE_HEALTH_METRICS = new Set([
@@ -495,6 +504,130 @@ function formatHealthMetricValue(item: Pick<HealthMetricSummaryItem, 'metric_typ
   return `${displayNumber} ${metricType || 'avg'}`;
 }
 
+function normalizeHealthLabel(value: string) {
+  const normalized = String(value || '').trim().replace(/[_-]+/g, ' ').replace(/\s+/g, ' ');
+  if (!normalized) {
+    return 'Health Metric';
+  }
+  return normalized
+    .toLowerCase()
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function formatHealthRecordValue(value: number | string, unit: string) {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    const displayNumber = formatMetricNumber(value);
+    return unit ? `${displayNumber} ${unit}` : displayNumber;
+  }
+
+  const text = String(value ?? '').trim();
+  return text || '—';
+}
+
+function formatRecordDisplayValue(metricType: string, value: number | string, unit: string) {
+  return formatHealthRecordValue(value, unit);
+}
+
+type DynamicHealthCard = {
+  key: string;
+  metric_type: string;
+  provider: string;
+  source_device: string;
+  unit: string;
+  value_label: string;
+  records: number;
+  latest_end_time?: string | null;
+  raw_json: string;
+  analysis: string;
+};
+
+function buildDynamicHealthCards(items: HealthMetricRecord[]): DynamicHealthCard[] {
+  const buckets = new Map<string, {
+    metric_type: string;
+    provider: string;
+    source_device: string;
+    unit: string;
+    records: number;
+    latest_end_time?: string | null;
+    latest_record: HealthMetricRecord | null;
+  }>();
+
+  for (const item of items) {
+    const metricType = String(item.metric_type || '').trim().toLowerCase();
+    if (!metricType) {
+      continue;
+    }
+
+    const provider = String(item.provider || '').trim().toLowerCase() || 'source';
+    const sourceDevice = String(item.source_device || '').trim();
+    const unit = String(item.unit || '').trim().toLowerCase();
+    const key = [metricType, provider, sourceDevice.toLowerCase(), unit].join('|');
+    const bucket = buckets.get(key) ?? {
+      metric_type: metricType,
+      provider,
+      source_device: sourceDevice,
+      unit,
+      records: 0,
+      latest_end_time: null,
+      latest_record: null,
+    };
+
+    bucket.records += 1;
+    const itemEndTime = item.end_time ? new Date(item.end_time) : null;
+    const bucketEndTime = bucket.latest_end_time ? new Date(bucket.latest_end_time) : null;
+    if (!bucket.latest_end_time || (itemEndTime && (!bucketEndTime || itemEndTime > bucketEndTime))) {
+      bucket.latest_end_time = item.end_time ?? bucket.latest_end_time ?? null;
+      bucket.latest_record = item;
+      bucket.unit = unit || bucket.unit;
+      bucket.source_device = sourceDevice || bucket.source_device;
+    }
+
+    buckets.set(key, bucket);
+  }
+
+  return Array.from(buckets.values())
+    .sort((left, right) => {
+      const leftTime = left.latest_end_time ? new Date(left.latest_end_time).getTime() : 0;
+      const rightTime = right.latest_end_time ? new Date(right.latest_end_time).getTime() : 0;
+      if (leftTime !== rightTime) {
+        return rightTime - leftTime;
+      }
+      return left.metric_type.localeCompare(right.metric_type) || left.provider.localeCompare(right.provider);
+    })
+    .map((bucket) => {
+      const latest = bucket.latest_record;
+      const valueLabel = latest ? formatRecordDisplayValue(bucket.metric_type, latest.value, bucket.unit) : '—';
+      const analysis = [
+        bucket.source_device || '',
+        bucket.provider,
+        `${bucket.records} record${bucket.records === 1 ? '' : 's'}`,
+      ].filter(Boolean).join(' • ');
+      return {
+        key: [bucket.metric_type, bucket.provider, bucket.source_device || 'source', bucket.unit || 'value'].join(':'),
+        metric_type: bucket.metric_type,
+        provider: bucket.provider,
+        source_device: bucket.source_device,
+        unit: bucket.unit,
+        value_label: valueLabel,
+        records: bucket.records,
+        latest_end_time: bucket.latest_end_time,
+        raw_json: latest
+          ? JSON.stringify({
+              metric_type: latest.metric_type,
+              provider: latest.provider,
+              value: latest.value,
+              unit: latest.unit,
+              start_time: latest.start_time,
+              end_time: latest.end_time,
+              source_device: latest.source_device,
+              metadata: latest.metadata,
+            }, null, 2)
+          : '',
+        analysis,
+      };
+    });
+}
+
 const TABS = [
   { id: 'overview', label: 'OVERVIEW', icon: 'pulse-outline' },
   { id: 'wearables', label: 'WEARABLES', icon: 'watch-outline' },
@@ -544,7 +677,7 @@ export default function LongevityOS() {
   const [showQrImportModal, setShowQrImportModal] = useState(false);
   const [qrPayload, setQrPayload] = useState('');
   const [importingPayload, setImportingPayload] = useState(false);
-  const [healthSummary, setHealthSummary] = useState<HealthMetricSummaryItem[]>([]);
+  const [healthSummary, setHealthSummary] = useState<HealthMetricRecord[]>([]);
   const [integrations, setIntegrations] = useState<IntegrationConnection[]>([]);
   const [syncingProviderIds, setSyncingProviderIds] = useState<string[]>([]);
   const [nativeChecklistState, setNativeChecklistState] = useState<NativeHealthChecklistState | null>(null);
@@ -580,7 +713,8 @@ export default function LongevityOS() {
     setScreenError(null);
   }, []);
 
-  const visibleHealthSummaryCards = buildHealthSummaryCards(healthSummary);
+  const visibleHealthSummaryCards = buildDynamicHealthCards(healthSummary);
+  const overviewHealthCards = visibleHealthSummaryCards.slice(0, 6);
 
   const loadIntegrationStatuses = React.useCallback(async () => {
     const response = await fetchIntegrationConnections();
@@ -592,10 +726,14 @@ export default function LongevityOS() {
       setLoading(true);
     }
     try {
-      const [response, user, summary, integrationResponse] = await Promise.all([
+      const today = formatLocalDate(new Date());
+      const [response, user, records, integrationResponse] = await Promise.all([
         fetchLongevityDashboard(),
         fetchCurrentUser(),
-        fetchLongevityHealthSummary().catch(() => null),
+        fetchLongevityHealthRecords({
+          start_date: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
+          end_date: today,
+        }).catch(() => null),
         fetchIntegrationConnections().catch(() => null),
       ]);
       setDashboard(response);
@@ -606,9 +744,9 @@ export default function LongevityOS() {
         if (activeDeviceIds.length > 0) {
           return [activeDeviceIds[0]];
         }
-        return current.length > 0 ? [current[0]] : [];
+        return [];
       });
-      setHealthSummary(Array.isArray(summary?.items) ? summary.items : []);
+      setHealthSummary(Array.isArray(records?.items) ? records.items : []);
       setIntegrations(Array.isArray(integrationResponse?.items) ? integrationResponse.items : []);
       setCanGenerateLongevityPlan(canAccessFeature('longevity_plan', user));
       dismissScreenError();
@@ -697,13 +835,13 @@ export default function LongevityOS() {
   const syncWearableTargets = React.useCallback(async (
     targetDeviceIds: string[],
     options: { showSuccessAlert?: boolean; showFailureAlert?: boolean } = {},
-  ) => {
+  ): Promise<WearableSyncResponse | null> => {
     const {
       showSuccessAlert = true,
       showFailureAlert = true,
     } = options;
     if (syncingWearables) {
-      return;
+      return null;
     }
     const connectedDeviceIds = (dashboard?.wearables.devices || [])
       .filter((device) => device.active && isVisibleWearableForPlatform(device.id))
@@ -711,36 +849,37 @@ export default function LongevityOS() {
 
     if (targetDeviceIds.length === 0) {
       showScreenError('Add device', 'Connect a device first, then press Sync Data Now.');
-      return;
+      return null;
     }
     if (targetDeviceIds.length === 1 && targetDeviceIds[0] === 'qr-import') {
       setShowQrImportModal(true);
-      return;
+      return null;
     }
     if (targetDeviceIds.includes('qr-import')) {
       showScreenError(
         'Sync separately',
         'QR Import needs a payload input, so sync it separately from Fitbit, Google Fit, Garmin, Apple Health, or Health Connect.',
       );
-      return;
+      return null;
     }
 
     const wantsAppleHealth = targetDeviceIds.includes('apple-health');
     const wantsHealthConnect = targetDeviceIds.includes('health-connect');
+    const wantsThisPhone = targetDeviceIds.includes('this-phone');
     const backendProviderIds = targetDeviceIds.filter((providerId) => !['apple-health', 'health-connect', 'this-phone'].includes(providerId));
     let nativeSetupIssue: { title: string; message: string } | null = null;
 
     setSyncingWearables(true);
     setSyncingProviderIds(targetDeviceIds);
     try {
-      const tasks: Promise<unknown>[] = [];
+      const tasks: Promise<WearableSyncResponse | void>[] = [];
       const nativeTargets = new Set<NativeSyncTarget>();
       const preferredNativeTarget = getPreferredNativeSyncTargetForPlatform();
 
-      if (Platform.OS === 'ios' && wantsAppleHealth) {
+      if (Platform.OS === 'ios' && (wantsAppleHealth || wantsThisPhone)) {
         nativeTargets.add('apple-health');
       }
-      if (Platform.OS === 'android' && wantsHealthConnect) {
+      if (Platform.OS === 'android' && (wantsHealthConnect || wantsThisPhone)) {
         nativeTargets.add('health-connect');
       }
       if (!nativeTargets.size && preferredNativeTarget && connectedDeviceIds.includes(preferredNativeTarget) && targetDeviceIds.length === 1) {
@@ -810,7 +949,7 @@ export default function LongevityOS() {
           } else {
             dismissScreenError();
           }
-          return;
+          return null;
         }
         throw new Error(checklist.message);
       }
@@ -820,14 +959,16 @@ export default function LongevityOS() {
       }
 
       if (backendProviderIds.length > 0) {
-        tasks.push(syncLongevityWearables(backendProviderIds as WearableProvider[]));
+        tasks.push(syncLongevityWearables(backendProviderIds as WearableProvider[]).then(() => undefined));
       }
 
+      let syncResponses: WearableSyncResponse[] = [];
       try {
-        await Promise.all(tasks);
+        const resolved = await Promise.all(tasks);
+        syncResponses = resolved.filter((item): item is WearableSyncResponse => Boolean(item && typeof item === 'object' && 'synced_records' in item));
       } catch (error) {
         if (error instanceof Error && error.message.includes('No Health Connect records were found for the last 7 days.')) {
-          throw new Error('Health Connect is connected, but no records were found in the last 7 days. Open Health Connect and confirm Runmefit, Samsung Health, or another source app is writing data.');
+          throw new Error('Health Connect is connected, but no records were found in the last 7 days. Open Health Connect and confirm your Android health app is writing data.');
         }
         if (error instanceof Error && error.message.includes('No Apple Health records were found for the last 7 days.')) {
           throw new Error('Apple Health is connected, but no records were found in the last 7 days. Confirm your health apps or devices are writing data into Apple Health.');
@@ -849,6 +990,7 @@ export default function LongevityOS() {
       } else {
         dismissScreenError();
       }
+      return syncResponses[0] || null;
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unable to sync wearables.';
       if (showFailureAlert) {
@@ -870,11 +1012,17 @@ export default function LongevityOS() {
       .map((device) => device.id);
     const targetDeviceIds = selectedWearableIds.length > 0 ? selectedWearableIds : connectedDeviceIds;
     try {
-      await syncWearableTargets(targetDeviceIds, { showSuccessAlert: true, showFailureAlert: true });
+      const syncResponse = await syncWearableTargets(targetDeviceIds, { showSuccessAlert: true, showFailureAlert: true });
+      const payloadPreview = syncResponse?.payload_preview ?? [];
+      const lastPayloadPreview = payloadPreview.length > 0 ? payloadPreview[payloadPreview.length - 1] : null;
       recordRunLog({
         level: 'success',
         title: 'Sync complete',
-        message: 'Longevity OS synced the selected health sources successfully.',
+        message: syncResponse
+          ? (lastPayloadPreview
+            ? JSON.stringify(lastPayloadPreview)
+            : '')
+          : 'Longevity OS synced the selected health sources successfully.',
       });
     } catch {
       // The sync path already surfaces a card-level error for the user.
@@ -1040,7 +1188,7 @@ export default function LongevityOS() {
                 ? 'Reads approved data from apps and devices that sync into Apple Health.'
                 : 'Reads approved data from apps and devices that sync into Health Connect.',
               accepted_sources: getPlatformHealthSources(device.id),
-              preferred_source_hints: ['Runmefit', 'Samsung Health', 'Apple Health'],
+              preferred_source_hints: ['Runmefit', 'Android health apps', 'Apple Health'],
             },
           });
           playNativeSuccessAnimation(device.id);
@@ -1051,6 +1199,10 @@ export default function LongevityOS() {
             message: `${getWearableDisplayName(device.id, device.name)} connected and permission was granted.`,
           });
           dismissScreenError();
+          await syncWearableTargets(
+            [device.id],
+            { showSuccessAlert: false, showFailureAlert: false },
+          );
         } catch (connectError) {
           const message = connectError instanceof Error ? connectError.message : `Unable to connect ${device.name}.`;
           await markNativeIntegrationConnected({
@@ -1065,7 +1217,7 @@ export default function LongevityOS() {
                 ? 'Reads approved data from apps and devices that sync into Apple Health.'
                 : 'Reads approved data from apps and devices that sync into Health Connect.',
               accepted_sources: getPlatformHealthSources(device.id),
-              preferred_source_hints: ['Runmefit', 'Samsung Health', 'Apple Health'],
+              preferred_source_hints: ['Runmefit', 'Android health apps', 'Apple Health'],
               connection_failed: true,
               failure_message: message,
             },
@@ -1096,7 +1248,7 @@ export default function LongevityOS() {
         if (device.id === 'qr-import') {
           Alert.alert(`${device.name} added`, 'QR import is ready. Press Sync Data, then scan or paste the QR payload to save real synced data.');
         } else if (device.id === 'this-phone') {
-          Alert.alert(`${device.name} added`, `This phone is ready. Press Sync Data to read live health data from ${Platform.OS === 'ios' ? 'Apple Health and connected iPhone health apps' : Platform.OS === 'android' ? 'Health Connect and connected Android health apps such as Runmefit or Samsung Health' : 'your supported mobile health source'}.`);
+          Alert.alert(`${device.name} added`, `This phone is ready. Press Sync Data to read live health data from ${Platform.OS === 'ios' ? 'Apple Health and connected iPhone health apps' : Platform.OS === 'android' ? 'Health Connect and connected Android health apps' : 'your supported mobile health source'}.`);
         } else if (device.id === 'apple-health' || device.id === 'health-connect') {
           Alert.alert(`${device.name} added`, `Press Sync Data to read real health records from ${device.name} and store them in Longevity OS. This path accepts any supported source that syncs into the OS health store.`);
         } else {
@@ -1210,24 +1362,54 @@ export default function LongevityOS() {
         <Text style={styles.metricMeta}>HRV: {dashboard?.overview.hrv_ms ?? 0} ms · Sleep: {dashboard?.overview.sleep_score ?? 0}%</Text>
       </View>
 
+      <SectionTitle>Latest Synced Data</SectionTitle>
+      {overviewHealthCards.length > 0 ? (
+        <View style={styles.summaryGrid}>
+          {overviewHealthCards.map((item) => (
+            <View key={item.key} style={styles.summaryCard}>
+              <Text style={styles.summaryMetric}>{item.metric_type}</Text>
+              <Text style={styles.summaryValue}>{item.value_label}</Text>
+              <Text style={styles.summaryMeta}>{item.analysis}</Text>
+              {item.latest_end_time ? (
+                <Text style={styles.summaryTime}>{new Date(item.latest_end_time).toLocaleString()}</Text>
+              ) : null}
+            </View>
+          ))}
+        </View>
+      ) : (
+        <View style={styles.infoCard}>
+          <Text style={styles.infoText}>Sync data to see your latest health metrics here.</Text>
+        </View>
+      )}
+
+      {Platform.OS === 'android' && nativeChecklistState ? (
+        <View style={[styles.infoCard, { marginTop: 14 }]}>
+          <Text style={styles.connectionInfoTitle}>
+            {nativeChecklistState.recordsFound > 0 ? 'Android source data detected' : 'Android source data not detected'}
+          </Text>
+          <Text style={styles.infoText}>
+            {nativeChecklistState.recordsFound > 0
+              ? `Health Connect can see ${nativeChecklistState.detectedSourceLabels.length > 0 ? nativeChecklistState.detectedSourceLabels.join(', ') : 'an Android health source'}.`
+              : 'Health Connect is connected, but no Android source app data was found in the last 7 days.'}
+          </Text>
+          {nativeChecklistState.recordsFound === 0 ? (
+            <Text style={styles.infoText}>
+              Open your Android health app and confirm it is syncing into Health Connect, then press Sync Data again.
+            </Text>
+          ) : null}
+        </View>
+      ) : null}
+
       <SectionTitle>Quick Actions</SectionTitle>
       <View style={styles.grid}>
         {(dashboard?.quick_actions || []).map((item, index) => (
           <View key={item.id} style={[styles.quickCard, { width: index === 4 ? width - 32 : (width - 44) / 2 }]}>
             <Image source={{ uri: safeImageUri(item.image) }} style={styles.quickImage} />
             <View style={[styles.quickOverlay, { backgroundColor: `${item.color}CC` }]} />
-            <Text style={styles.quickText}>{item.label}</Text>
-          </View>
-        ))}
-      </View>
-
-      <SectionTitle>Daily Habits</SectionTitle>
-      <View style={styles.listCard}>
-        {(dashboard?.habits.habits || []).slice(0, 3).map((habit) => (
-          <View key={habit.id} style={styles.listRow}>
-            <Ionicons name={habit.icon as any} size={18} color="rgba(255,255,255,0.5)" />
-            <Text style={styles.listText}>{habit.title}</Text>
-            <Ionicons name={habit.done ? 'checkmark-circle' : 'ellipse-outline'} size={20} color={habit.done ? '#10B981' : 'rgba(255,255,255,0.3)'} />
+            <View style={styles.quickTextWrap}>
+              <Text style={styles.quickText}>{item.label}</Text>
+              {item.subtitle ? <Text style={styles.quickSubtitle}>{item.subtitle}</Text> : null}
+            </View>
           </View>
         ))}
       </View>
@@ -1237,6 +1419,8 @@ export default function LongevityOS() {
   const renderWearables = () => (
     (() => {
       const devices = (dashboard?.wearables.devices || []).filter((device) => isVisibleWearableForPlatform(device.id));
+      const connectedDevices = devices.filter((device) => device.active);
+      const hasConnectedDevice = connectedDevices.length > 0;
       const integrationsByProvider = integrations.reduce<Record<string, IntegrationConnection>>((accumulator, item) => {
         accumulator[item.provider] = item;
         return accumulator;
@@ -1246,7 +1430,7 @@ export default function LongevityOS() {
       const nativeDeviceLabel = nativeDevice
         ? (nativeDevice.source_device?.trim() || getWearableDisplayName(nativeDevice.id, nativeDevice.name))
         : '';
-      const connectedDevice = devices.find((device) => device.active);
+      const connectedDevice = connectedDevices[0];
       const visibleAddDeviceLabel = connectedDevice
         ? (connectedDevice.source_device?.trim() || getWearableDisplayName(connectedDevice.id, connectedDevice.name))
         : 'Add Device';
@@ -1281,24 +1465,6 @@ export default function LongevityOS() {
               <Ionicons name={syncingWearables ? 'hourglass-outline' : 'refresh'} size={18} color="#000" />
               <Text style={styles.primaryButtonText}>{syncingWearables ? 'SYNCING HEALTH DATA...' : 'SYNC DATA'}</Text>
             </TouchableOpacity>
-            <SectionTitle>Synced Data</SectionTitle>
-            {visibleHealthSummaryCards.length > 0 ? (
-              <View style={styles.summaryGrid}>
-                {visibleHealthSummaryCards.slice(0, 6).map((item) => (
-                  <View key={item.metric_type} style={styles.summaryCard}>
-                    <Text style={styles.summaryMetric}>
-                      {item.metric_type.replace(/_/g, ' ').toUpperCase()}
-                      {item.metric_type === 'distance' && item.unit ? ` (${item.unit.toUpperCase()})` : ''}
-                    </Text>
-                    <Text style={styles.summaryValue}>{formatHealthMetricValue(item)}</Text>
-                  </View>
-                ))}
-              </View>
-            ) : (
-              <View style={styles.infoCard}>
-                <Text style={styles.infoText}>No synced health records yet.</Text>
-              </View>
-            )}
 
             <Modal visible={showWearablePicker} transparent animationType="fade" onRequestClose={() => {
               setNativeConnectionSuccessDeviceId(null);
@@ -1851,15 +2017,24 @@ const styles = StyleSheet.create({
   quickOverlay: {
     ...StyleSheet.absoluteFillObject,
   },
-  quickText: {
+  quickTextWrap: {
     position: 'absolute',
     left: 14,
     right: 14,
     bottom: 14,
+  },
+  quickText: {
     color: '#fff',
     fontSize: 14,
     lineHeight: 18,
     fontFamily: 'Inter_700Bold',
+  },
+  quickSubtitle: {
+    marginTop: 4,
+    color: 'rgba(255,255,255,0.84)',
+    fontSize: 11,
+    lineHeight: 14,
+    fontFamily: 'Inter_400Regular',
   },
   listCard: {
     backgroundColor: '#12182B',
@@ -2281,9 +2456,16 @@ const styles = StyleSheet.create({
   },
   summaryMeta: {
     color: Colors.textMuted,
-    fontSize: 12,
-    lineHeight: 18,
+    fontSize: 11,
+    lineHeight: 15,
     fontFamily: 'Inter_400Regular',
+    marginBottom: 4,
+  },
+  summaryTime: {
+    color: 'rgba(255,255,255,0.38)',
+    fontSize: 10,
+    fontFamily: 'Inter_400Regular',
+    letterSpacing: 0.2,
   },
   centerState: {
     flex: 1,

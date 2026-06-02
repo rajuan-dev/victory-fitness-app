@@ -90,6 +90,34 @@ function buildMetric(
   };
 }
 
+function chunkMetrics(metrics: NormalizedHealthMetricPayload[], size: number): NormalizedHealthMetricPayload[][] {
+  if (size <= 0) {
+    return [metrics];
+  }
+  const chunks: NormalizedHealthMetricPayload[][] = [];
+  for (let index = 0; index < metrics.length; index += size) {
+    chunks.push(metrics.slice(index, index + size));
+  }
+  return chunks;
+}
+
+function logSyncPayload(target: string, payload: MobileHealthSyncPayload) {
+  try {
+    const metricPreview = payload.metrics.map((metric) => ({
+      metric_type: metric.metric_type,
+      value: metric.value,
+      unit: metric.unit,
+      source_device: metric.source_device,
+    }));
+    console.log(
+      `[sync-data] ${target} | source=${payload.source_device || 'unknown'} | metrics=${payload.metrics.length}`,
+      JSON.stringify(metricPreview),
+    );
+  } catch {
+    console.log(`[sync-data] ${target} | source=${payload.source_device || 'unknown'} | metrics=${payload.metrics.length}`);
+  }
+}
+
 function toHours(startTime: string, endTime: string) {
   const start = new Date(startTime).getTime();
   const end = new Date(endTime).getTime();
@@ -102,7 +130,7 @@ function normalizeHealthSourceLabel(origin: string) {
     return 'Unknown source';
   }
   if (normalized.includes('samsung')) {
-    return 'Samsung Health';
+    return 'Android Health App';
   }
   if (normalized.includes('runmefit')) {
     return 'Runmefit';
@@ -126,7 +154,7 @@ function normalizeHealthSourceLabel(origin: string) {
 }
 
 function sortHealthSourceLabels(labels: string[]) {
-  const priority = ['Runmefit', 'Samsung Health', 'Apple Health'];
+  const priority = ['Runmefit', 'Android Health App', 'Apple Health'];
   return [...labels].sort((left, right) => {
     const leftIndex = priority.indexOf(left);
     const rightIndex = priority.indexOf(right);
@@ -382,36 +410,63 @@ async function collectHealthConnectMetrics(): Promise<MobileHealthSyncPayload> {
     endTime: endIso,
   };
 
+  const sourceDevice = 'Health Connect';
+  const metrics: NormalizedHealthMetricPayload[] = [];
+
+  // Fetch continuous and sample-based metrics in parallel
   const [
-    stepTotals,
-    calorieTotals,
-    distanceTotals,
     heartRateRecords,
     hrvRecords,
     sleepRecords,
     oxygenRecords,
   ] = await Promise.all([
-    HealthConnect.aggregateRecord({ recordType: 'Steps', timeRangeFilter }),
-    HealthConnect.aggregateRecord({ recordType: 'ActiveCaloriesBurned', timeRangeFilter }),
-    HealthConnect.aggregateRecord({ recordType: 'Distance', timeRangeFilter }),
     HealthConnect.readRecords('HeartRate', { timeRangeFilter, ascendingOrder: false, pageSize: 50 }),
     HealthConnect.readRecords('HeartRateVariabilityRmssd', { timeRangeFilter, ascendingOrder: false, pageSize: 50 }),
     HealthConnect.readRecords('SleepSession', { timeRangeFilter, ascendingOrder: false, pageSize: 30 }),
     HealthConnect.readRecords('OxygenSaturation', { timeRangeFilter, ascendingOrder: false, pageSize: 50 }),
   ]);
 
-  const sourceDevice = 'Health Connect';
-  const metrics: NormalizedHealthMetricPayload[] = [];
+  // Fetch daily aggregates for Steps, ActiveCaloriesBurned, and Distance for each of the last 7 days
+  const dailySyncPromises = Array.from({ length: HEALTH_SYNC_LOOKBACK_DAYS }).map(async (_, i) => {
+    const dayStart = new Date();
+    dayStart.setHours(0, 0, 0, 0);
+    dayStart.setDate(dayStart.getDate() - i);
 
-  if (typeof stepTotals.COUNT_TOTAL === 'number' && stepTotals.COUNT_TOTAL > 0) {
-    metrics.push(buildMetric('health-connect', 'steps', stepTotals.COUNT_TOTAL, 'count', startIso, endIso, sourceDevice));
-  }
-  if (distanceTotals.DISTANCE?.inMeters) {
-    metrics.push(buildMetric('health-connect', 'distance', distanceTotals.DISTANCE.inMeters, 'meter', startIso, endIso, sourceDevice));
-  }
-  if (calorieTotals.ACTIVE_CALORIES_TOTAL?.inKilocalories) {
-    metrics.push(buildMetric('health-connect', 'calories', calorieTotals.ACTIVE_CALORIES_TOTAL.inKilocalories, 'kcal', startIso, endIso, sourceDevice));
-  }
+    const dayEnd = new Date();
+    dayEnd.setHours(23, 59, 59, 999);
+    dayEnd.setDate(dayEnd.getDate() - i);
+
+    const dayStartIso = dayStart.toISOString();
+    const dayEndIso = dayEnd.toISOString();
+
+    const dailyFilter = {
+      operator: 'between' as const,
+      startTime: dayStartIso,
+      endTime: dayEndIso,
+    };
+
+    try {
+      const [stepsAgg, calorieAgg, distanceAgg] = await Promise.all([
+        HealthConnect.aggregateRecord({ recordType: 'Steps', timeRangeFilter: dailyFilter }).catch(() => null),
+        HealthConnect.aggregateRecord({ recordType: 'ActiveCaloriesBurned', timeRangeFilter: dailyFilter }).catch(() => null),
+        HealthConnect.aggregateRecord({ recordType: 'Distance', timeRangeFilter: dailyFilter }).catch(() => null),
+      ]);
+
+      if (stepsAgg && typeof stepsAgg.COUNT_TOTAL === 'number' && stepsAgg.COUNT_TOTAL > 0) {
+        metrics.push(buildMetric('health-connect', 'steps', stepsAgg.COUNT_TOTAL, 'count', dayStartIso, dayEndIso, sourceDevice));
+      }
+      if (distanceAgg && distanceAgg.DISTANCE?.inMeters) {
+        metrics.push(buildMetric('health-connect', 'distance', distanceAgg.DISTANCE.inMeters, 'meter', dayStartIso, dayEndIso, sourceDevice));
+      }
+      if (calorieAgg && calorieAgg.ACTIVE_CALORIES_TOTAL?.inKilocalories) {
+        metrics.push(buildMetric('health-connect', 'calories', calorieAgg.ACTIVE_CALORIES_TOTAL.inKilocalories, 'kcal', dayStartIso, dayEndIso, sourceDevice));
+      }
+    } catch (e) {
+      console.warn(`[nativeHealthSync] Failed to collect daily aggregates for day -${i}:`, e);
+    }
+  });
+
+  await Promise.all(dailySyncPromises);
 
   heartRateRecords.records.forEach((record: any) => {
     const samples = Array.isArray(record.samples) ? record.samples : [];
@@ -576,7 +631,7 @@ export async function getNativeHealthReadiness(target: NativeSyncTarget): Promis
       label,
       isReady: false,
       status: 'needs_setup',
-      message: 'Health Connect is not ready on this phone yet. Install it first, then connect Samsung Health, Runmefit, or other Android health apps.',
+      message: 'Health Connect is not ready on this phone yet. Install it first, then connect your Android health apps.',
       action: 'open_settings',
       actionLabel: 'Open Health Connect',
     };
@@ -605,8 +660,8 @@ export async function getNativeHealthReadiness(target: NativeSyncTarget): Promis
     isReady: true,
     status: 'ready',
     message: hasAnyReadPermission
-      ? 'Health Connect is ready. Sync approved records from Samsung Health, Runmefit, and other connected Android apps.'
-      : 'Health Connect is installed. Connect it in this app and allow read access to sync Samsung Health, Runmefit, and other Android apps.',
+      ? 'Health Connect is ready. Sync approved records from connected Android apps.'
+      : 'Health Connect is installed. Connect it in this app and allow read access to sync connected Android apps.',
     action: 'open_data_management',
     actionLabel: 'Manage Permissions',
   };
@@ -748,7 +803,7 @@ export async function inspectNativeHealthChecklist(target: NativeSyncTarget): Pr
       label,
       isReady: false,
       status: 'needs_setup',
-      message: 'Health Connect is not ready on this phone yet. Install it first, then connect Samsung Health, Runmefit, or other Android health apps.',
+      message: 'Health Connect is not ready on this phone yet. Install it first, then connect your Android health apps.',
       action: 'open_settings',
       actionLabel: 'Open Health Connect',
       items: buildNativeChecklistItems({
@@ -810,7 +865,7 @@ export async function inspectNativeHealthChecklist(target: NativeSyncTarget): Pr
   const hasSourceData = recordsFound > 0;
   const sourceMessage = hasSourceData
     ? `Detected data from ${detectedSourceLabels.join(', ')} in the last 7 days.`
-    : 'No source app data was found in the last 7 days. Open Runmefit, Samsung Health, or another source app and make sure it is writing into Health Connect.';
+    : 'No source app data was found in the last 7 days. Open your Android health app and make sure it is writing into Health Connect.';
   const isReady = hasPermission && hasSourceData;
 
   return {
@@ -892,6 +947,7 @@ export async function revokeNativeHealthPermissions(target: NativeSyncTarget) {
 export async function syncNativeHealthSource(target: NativeSyncTarget): Promise<WearableSyncResponse> {
   const effectiveTarget = normalizeNativeSyncTarget(target);
   assertNativePlatform(effectiveTarget);
+  const syncBatchSize = 20;
   if (effectiveTarget === 'apple-health') {
     const payload = await collectAppleHealthMetrics();
     if (payload.metrics.length === 0) {
@@ -903,9 +959,38 @@ export async function syncNativeHealthSource(target: NativeSyncTarget): Promise<
         connection_status: 'connected',
         last_synced_at: null,
         message: 'Apple Health is connected, but no records were found in the last 7 days yet.',
+        payload_preview: [],
       };
     }
-    return syncLongevityAppleHealth(payload);
+    logSyncPayload('apple-health', payload);
+    const chunks = chunkMetrics(payload.metrics, syncBatchSize);
+    const responses: WearableSyncResponse[] = [];
+    for (const metrics of chunks) {
+      const response = await syncLongevityAppleHealth({
+        ...payload,
+        metrics,
+      });
+      responses.push(response);
+    }
+    const finalResponse = responses[responses.length - 1];
+    const aggregate = responses.reduce(
+      (totals, item) => ({
+        synced_records: totals.synced_records + Number(item.synced_records || 0),
+        skipped_duplicates: totals.skipped_duplicates + Number(item.skipped_duplicates || 0),
+      }),
+      { synced_records: 0, skipped_duplicates: 0 },
+    );
+    return {
+      ...finalResponse,
+      synced_records: aggregate.synced_records,
+      skipped_duplicates: aggregate.skipped_duplicates,
+      payload_preview: payload.metrics.map((metric) => ({
+        metric_type: metric.metric_type,
+        value: metric.value,
+        unit: metric.unit,
+        source_device: metric.source_device,
+      })),
+    };
   }
   const payload = await collectHealthConnectMetrics();
   if (payload.metrics.length === 0) {
@@ -917,7 +1002,36 @@ export async function syncNativeHealthSource(target: NativeSyncTarget): Promise<
       connection_status: 'connected',
       last_synced_at: null,
       message: 'Health Connect is connected, but no source app has written data into it yet.',
+      payload_preview: [],
     };
   }
-  return syncLongevityHealthConnect(payload);
+  logSyncPayload('health-connect', payload);
+  const chunks = chunkMetrics(payload.metrics, syncBatchSize);
+  const responses: WearableSyncResponse[] = [];
+  for (const metrics of chunks) {
+    const response = await syncLongevityHealthConnect({
+      ...payload,
+      metrics,
+    });
+    responses.push(response);
+  }
+  const finalResponse = responses[responses.length - 1];
+  const aggregate = responses.reduce(
+    (totals, item) => ({
+      synced_records: totals.synced_records + Number(item.synced_records || 0),
+      skipped_duplicates: totals.skipped_duplicates + Number(item.skipped_duplicates || 0),
+    }),
+    { synced_records: 0, skipped_duplicates: 0 },
+  );
+  return {
+    ...finalResponse,
+    synced_records: aggregate.synced_records,
+    skipped_duplicates: aggregate.skipped_duplicates,
+    payload_preview: payload.metrics.map((metric) => ({
+      metric_type: metric.metric_type,
+      value: metric.value,
+      unit: metric.unit,
+      source_device: metric.source_device,
+    })),
+  };
 }
