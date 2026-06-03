@@ -924,7 +924,7 @@ export async function syncLongevityThisPhone(payload: MobileHealthSyncPayload) {
   });
 }
 
-export async function syncLongevityAppleHealth(payload: MobileHealthSyncPayload) {
+export async function syncLongevityAppleHealth(payload: MobileHealthSyncPayload, language?: string) {
   return apiRequest<WearableSyncResponse>('/integrations/native/samples', {
     method: 'POST',
     body: {
@@ -935,10 +935,11 @@ export async function syncLongevityAppleHealth(payload: MobileHealthSyncPayload)
       metrics: payload.metrics,
     },
     timeoutMs: 30_000,
+    language,
   });
 }
 
-export async function syncLongevityHealthConnect(payload: MobileHealthSyncPayload) {
+export async function syncLongevityHealthConnect(payload: MobileHealthSyncPayload, language?: string) {
   return apiRequest<WearableSyncResponse>('/integrations/native/samples', {
     method: 'POST',
     body: {
@@ -949,6 +950,7 @@ export async function syncLongevityHealthConnect(payload: MobileHealthSyncPayloa
       metrics: payload.metrics,
     },
     timeoutMs: 30_000,
+    language,
   });
 }
 
@@ -961,7 +963,7 @@ export async function fetchLongevityHealthRecords(params?: {
   metric_type?: string;
   start_date?: string;
   end_date?: string;
-}) {
+}, language?: string) {
   const query = new URLSearchParams();
   if (params?.provider) {
     query.set('provider', params.provider);
@@ -976,7 +978,7 @@ export async function fetchLongevityHealthRecords(params?: {
     query.set('end_date', params.end_date);
   }
   const path = query.toString() ? `/health-data/me?${query.toString()}` : '/health-data/me';
-  return apiRequest<HealthMetricListResponse>(path);
+  return apiRequest<HealthMetricListResponse>(path, { language });
 }
 
 export async function updateLongevityHabit(habitId: string, done: boolean, language?: string) {

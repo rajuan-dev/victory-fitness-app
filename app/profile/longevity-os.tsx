@@ -560,6 +560,55 @@ function formatRecordDisplayValue(metricType: string, value: number | string, un
   return formatHealthRecordValue(value, unit);
 }
 
+function getHealthRecordOrderValue(item: Pick<HealthMetricRecord, 'synced_at' | 'end_time' | 'id'>) {
+  const syncedAt = item.synced_at ? new Date(item.synced_at).getTime() : 0;
+  const endTime = item.end_time ? new Date(item.end_time).getTime() : 0;
+  return Number.isFinite(syncedAt) && syncedAt > 0
+    ? syncedAt
+    : Number.isFinite(endTime) && endTime > 0
+      ? endTime
+      : String(item.id || '').length > 0
+        ? 1
+        : 0;
+}
+
+function mergeLatestHealthRecords(items: HealthMetricRecord[]) {
+  const buckets = new Map<string, HealthMetricRecord>();
+
+  for (const item of items) {
+    const metricType = String(item.metric_type || '').trim().toLowerCase();
+    if (!metricType) {
+      continue;
+    }
+
+    const current = buckets.get(metricType);
+    if (!current) {
+      buckets.set(metricType, item);
+      continue;
+    }
+
+    const currentScore = getHealthRecordOrderValue(current);
+    const itemScore = getHealthRecordOrderValue(item);
+    if (itemScore > currentScore) {
+      buckets.set(metricType, item);
+      continue;
+    }
+
+    if (itemScore === currentScore && String(item.id || '') > String(current.id || '')) {
+      buckets.set(metricType, item);
+    }
+  }
+
+  return Array.from(buckets.values()).sort((left, right) => {
+    const leftScore = getHealthRecordOrderValue(left);
+    const rightScore = getHealthRecordOrderValue(right);
+    if (leftScore !== rightScore) {
+      return rightScore - leftScore;
+    }
+    return String(left.metric_type || '').localeCompare(String(right.metric_type || ''));
+  });
+}
+
 type DynamicHealthCard = {
   key: string;
   metric_type: string;
@@ -939,10 +988,7 @@ export default function LongevityOS() {
       const [response, user, records, integrationResponse] = await Promise.all([
         fetchLongevityDashboard(language),
         fetchCurrentUser(),
-        fetchLongevityHealthRecords({
-          start_date: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
-          end_date: today,
-        }).catch(() => null),
+        fetchLongevityHealthRecords({}, language).catch(() => null),
         fetchIntegrationConnections().catch(() => null),
       ]);
       setDashboard(localizeDashboard(response));
@@ -955,7 +1001,7 @@ export default function LongevityOS() {
         }
         return [];
       });
-      setHealthSummary(Array.isArray(records?.items) ? records.items : []);
+      setHealthSummary(mergeLatestHealthRecords(Array.isArray(records?.items) ? records.items : []));
       setIntegrations(Array.isArray(integrationResponse?.items) ? integrationResponse.items : []);
       setCanGenerateLongevityPlan(canAccessFeature('longevity_plan', user));
       dismissScreenError();
@@ -986,6 +1032,15 @@ export default function LongevityOS() {
       console.warn('[LongevityOS] Dashboard refresh after sync failed:', error);
     }
   }, [language, localizeDashboard]);
+
+  const refreshHealthSummaryAfterSync = React.useCallback(async () => {
+    try {
+      const response = await fetchLongevityHealthRecords({}, language);
+      setHealthSummary(mergeLatestHealthRecords(Array.isArray(response?.items) ? response.items : []));
+    } catch (error) {
+      console.warn('[LongevityOS] Health summary refresh after sync failed:', error);
+    }
+  }, [language]);
 
   useFocusEffect(
     React.useCallback(() => {
@@ -1143,6 +1198,7 @@ export default function LongevityOS() {
 
       setSyncProgressMessage(t('Updating dashboard...'));
       void refreshDashboardAfterSync();
+      void refreshHealthSummaryAfterSync();
       if (showSuccessAlert) {
         Alert.alert(t('Data sync successful'), t('All available synced health records are now flowing into Longevity OS.'));
       }
@@ -1160,7 +1216,7 @@ export default function LongevityOS() {
       setSyncingProviderIds([]);
       setSyncProgressMessage('');
     }
-  }, [dashboard?.wearables.devices, dismissScreenError, language, loadDashboard, showScreenError, syncingWearables, t]);
+  }, [dashboard?.wearables.devices, dismissScreenError, language, loadDashboard, refreshHealthSummaryAfterSync, refreshDashboardAfterSync, showScreenError, syncingWearables, t]);
 
   const handleSyncWearables = async () => {
     if (syncingWearables) {
@@ -1760,38 +1816,38 @@ export default function LongevityOS() {
               <Ionicons name={generatingPlan ? 'hourglass-outline' : 'sparkles'} size={16} color="#000" />
               <Text style={styles.secondaryButtonText}>{generatingPlan ? t('Generating...') : t('Generate My Weekly Plan')}</Text>
             </TouchableOpacity>
-          ) : (
-            <View style={styles.infoCard}>
-              <Text style={styles.infoText}>{t('Weekly Longevity plan generation is available on Inner Circle only.')}</Text>
-            </View>
-          )}
+          ) : null}
         </View>
       </View>
 
-      <SectionTitle>{t('Health Food Library')}</SectionTitle>
-      <View style={styles.grid}>
-        {(dashboard?.heal_categories || []).map((item) => (
-          <TouchableOpacity
-            key={item.id}
-            style={[styles.quickCard, { width: (width - 44) / 2 }]}
-            activeOpacity={0.9}
-            onPress={() => {
-              router.push({
-                pathname: '/profile/heal/[id]',
-                params: {
-                  id: item.id,
-                },
-              });
-            }}
-          >
-            <Image source={{ uri: safeImageUri(item.image) }} style={styles.quickImage} />
-            <View style={[styles.quickOverlay, { backgroundColor: `${item.color}CC` }]} />
-            <View style={styles.quickTextWrap}>
-              <Text style={styles.quickText}>{item.label}</Text>
-            </View>
-          </TouchableOpacity>
-        ))}
-      </View>
+      {canGenerateLongevityPlan ? (
+        <>
+          <SectionTitle>{t('Health Food Library')}</SectionTitle>
+          <View style={styles.grid}>
+            {(dashboard?.heal_categories || []).map((item) => (
+              <TouchableOpacity
+                key={item.id}
+                style={[styles.quickCard, { width: (width - 44) / 2 }]}
+                activeOpacity={0.9}
+                onPress={() => {
+                  router.push({
+                    pathname: '/profile/heal/[id]',
+                    params: {
+                      id: item.id,
+                    },
+                  });
+                }}
+              >
+                <Image source={{ uri: safeImageUri(item.image) }} style={styles.quickImage} />
+                <View style={[styles.quickOverlay, { backgroundColor: `${item.color}CC` }]} />
+                <View style={styles.quickTextWrap}>
+                  <Text style={styles.quickText}>{item.label}</Text>
+                </View>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </>
+      ) : null}
     </ScrollView>
   );
 
@@ -2897,6 +2953,50 @@ const styles = StyleSheet.create({
     padding: 16,
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.05)',
+  },
+  lockCard: {
+    backgroundColor: '#12182B',
+    borderRadius: 18,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.05)',
+    alignItems: 'flex-start',
+    gap: 10,
+  },
+  lockBadge: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(250,204,21,0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(250,204,21,0.28)',
+  },
+  lockTitle: {
+    color: '#fff',
+    fontSize: 17,
+    lineHeight: 22,
+    fontFamily: 'Inter_700Bold',
+  },
+  lockText: {
+    color: Colors.textMuted,
+    fontSize: 13,
+    lineHeight: 19,
+    fontFamily: 'Inter_400Regular',
+  },
+  lockPrimaryButton: {
+    marginTop: 4,
+    alignSelf: 'flex-start',
+    backgroundColor: Colors.primary,
+    borderRadius: 14,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  lockPrimaryButtonText: {
+    color: '#000',
+    fontSize: 13,
+    fontFamily: 'Inter_700Bold',
   },
   infoText: {
     color: Colors.textMuted,

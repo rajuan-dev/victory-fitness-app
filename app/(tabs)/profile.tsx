@@ -107,6 +107,40 @@ function getDynamicRankIcon(rank: string) {
   }
 }
 
+function getSubscriptionTierLabel(tier: string) {
+  const normalized = tier.trim().toUpperCase().replace(/\s+/g, '_');
+  switch (normalized) {
+    case 'SILVER':
+      return 'Silver';
+    case 'GOLD':
+      return 'Gold';
+    case 'PLATINUM':
+      return 'Platinum';
+    case 'INNER_CIRCLE':
+      return 'Inner Circle';
+    case 'NONE':
+    default:
+      return 'Free';
+  }
+}
+
+function getSubscriptionTierBadgeStyle(tier: string) {
+  const normalized = tier.trim().toUpperCase().replace(/\s+/g, '_');
+  switch (normalized) {
+    case 'SILVER':
+      return { backgroundColor: 'rgba(148,163,184,0.16)', borderColor: 'rgba(148,163,184,0.34)' };
+    case 'GOLD':
+      return { backgroundColor: 'rgba(245,158,11,0.16)', borderColor: 'rgba(245,158,11,0.34)' };
+    case 'PLATINUM':
+      return { backgroundColor: 'rgba(168,85,247,0.16)', borderColor: 'rgba(168,85,247,0.34)' };
+    case 'INNER_CIRCLE':
+      return { backgroundColor: 'rgba(14,165,233,0.16)', borderColor: 'rgba(14,165,233,0.34)' };
+    case 'NONE':
+    default:
+      return { backgroundColor: 'rgba(255,255,255,0.08)', borderColor: 'rgba(255,255,255,0.14)' };
+  }
+}
+
 export default function ProfileScreen() {
   useModuleAccessGuard('/profile');
   const router = useRouter();
@@ -128,6 +162,8 @@ export default function ProfileScreen() {
     next_rank?: string;
     points_to_next_rank?: number;
     rank_progress_fraction?: number;
+    subscription_tier?: string;
+    subscription_role?: string;
   } | null>(null);
   const [loadingMe, setLoadingMe] = React.useState(true);
   const [bodyMetrics, setBodyMetrics] = React.useState<BodyMetrics>({
@@ -271,6 +307,8 @@ export default function ProfileScreen() {
   const progressFraction = Math.min(Math.max(me?.rank_progress_fraction ?? 0, 0), 1);
   const pointsToNextRank = Math.max(me?.points_to_next_rank ?? 0, 0);
   const rankIcon = getDynamicRankIcon(rank);
+  const currentPlanLabel = getSubscriptionTierLabel(String(me?.subscription_role ?? me?.subscription_tier ?? 'NONE'));
+  const currentPlanBadgeStyle = getSubscriptionTierBadgeStyle(String(me?.subscription_role ?? me?.subscription_tier ?? 'NONE'));
   const profileStats = [
     { label: t('Exercises completed'), value: workoutsTotal > 0 ? `${workoutsCompleted}/${workoutsTotal}` : String(workoutsCompleted), icon: '\u{1F3CB}\uFE0F' },
     { label: t('Streak'), value: `${streakDays}d`, icon: '\u{1F525}' },
@@ -451,9 +489,12 @@ export default function ProfileScreen() {
             <View style={[styles.coachIconWrap, { backgroundColor: Colors.accentGold }]}>
               <Ionicons name="card-outline" size={22} color="#fff" />
             </View>
-            <View style={{ flex: 1 }}>
+            <View style={{ flex: 1, paddingRight: 10 }}>
               <Text style={styles.coachName}>{t('Update Plan').toUpperCase()}</Text>
-              <Text style={styles.coachStatus}>{t('Review or change your subscription tier')}</Text>
+              <Text style={styles.coachStatus}>{t('Current plan: {plan}', { plan: currentPlanLabel })}</Text>
+            </View>
+            <View style={[styles.planBadge, currentPlanBadgeStyle]}>
+              <Text style={styles.planBadgeText}>{currentPlanLabel}</Text>
             </View>
             <Ionicons name="chevron-forward" size={18} color="rgba(255,255,255,0.4)" />
           </TouchableOpacity>
@@ -1038,6 +1079,22 @@ const styles = StyleSheet.create({
   planCard: {
     borderColor: 'rgba(245,158,11,0.24)',
     backgroundColor: 'rgba(245,158,11,0.08)',
+  },
+  planBadge: {
+    alignSelf: 'center',
+    marginRight: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.14)',
+    backgroundColor: 'rgba(255,255,255,0.08)',
+  },
+  planBadgeText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 0.2,
   },
   coachIconWrap: { width: 50, height: 50, borderRadius: 14, justifyContent: 'center', alignItems: 'center' },
   coachName: { fontSize: 14, fontWeight: '800', color: '#fff', fontFamily: 'Inter_700Bold', letterSpacing: 0.5 },

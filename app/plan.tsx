@@ -21,6 +21,22 @@ import { useLanguage } from '../lib/i18n';
 const { width } = Dimensions.get('window');
 const CARD_WIDTH = Math.min(width - 92, 320);
 
+function getPlanTierAccentStyle(tier: SubscriptionTier) {
+  switch (tier) {
+    case 'SILVER':
+      return { backgroundColor: 'rgba(148,163,184,0.16)', borderColor: 'rgba(148,163,184,0.34)' };
+    case 'GOLD':
+      return { backgroundColor: 'rgba(245,158,11,0.16)', borderColor: 'rgba(245,158,11,0.34)' };
+    case 'PLATINUM':
+      return { backgroundColor: 'rgba(168,85,247,0.16)', borderColor: 'rgba(168,85,247,0.34)' };
+    case 'INNER_CIRCLE':
+      return { backgroundColor: 'rgba(14,165,233,0.16)', borderColor: 'rgba(14,165,233,0.34)' };
+    case 'NONE':
+    default:
+      return { backgroundColor: 'rgba(15,23,42,0.06)', borderColor: 'rgba(15,23,42,0.12)' };
+  }
+}
+
 export default function PlanSelectionScreen() {
   const router = useRouter();
   const { t } = useLanguage();
@@ -65,6 +81,7 @@ export default function PlanSelectionScreen() {
   }, [router]);
 
   const selectedPlan = useMemo(() => getSubscriptionCard(selectedTier), [selectedTier]);
+  const selectedPlanAccentStyle = useMemo(() => getPlanTierAccentStyle(selectedTier), [selectedTier]);
 
   const handleConfirm = async () => {
     if (saving) {
@@ -146,6 +163,7 @@ export default function PlanSelectionScreen() {
             renderItem={({ item: card }) => {
               const active = selectedTier === card.tier;
               const current = currentTier === card.tier;
+              const tierAccentStyle = getPlanTierAccentStyle(card.tier);
               const actionLabel = current
                 ? t('Current Plan').toUpperCase()
                 : card.tier === 'INNER_CIRCLE'
@@ -159,7 +177,8 @@ export default function PlanSelectionScreen() {
                     styles.card,
                     { width: CARD_WIDTH },
                     active && styles.cardActive,
-                    active && { borderColor: card.accent, shadowColor: card.accent },
+                    active && tierAccentStyle,
+                    active && { shadowColor: card.accent },
                   ]}
                   onPress={() => setSelectedTier(card.tier)}
                 >
@@ -170,14 +189,14 @@ export default function PlanSelectionScreen() {
                   ) : null}
 
                   <View style={styles.cardTopRow}>
-                    <View style={[styles.badge, { backgroundColor: card.tier === 'PLATINUM' ? 'transparent' : current ? card.accent : '#E5E7EB' }]}>
+                    <View style={[styles.badge, tierAccentStyle, current && { borderColor: card.accent, shadowColor: card.accent }]}>
                       <Ionicons
                         name={card.tier === 'PLATINUM' ? 'diamond-outline' : card.tier === 'INNER_CIRCLE' ? 'ellipse-outline' : 'medal-outline'}
-                        color={card.tier === 'PLATINUM' ? card.accent : '#111827'}
+                        color={card.tier === 'NONE' ? '#111827' : '#fff'}
                         size={18}
                       />
                     </View>
-                    <View style={styles.stepBubble}>
+                    <View style={[styles.stepBubble, tierAccentStyle, current && { borderColor: card.accent, shadowColor: card.accent }]}>
                       <Text style={styles.stepBubbleText}>{PLAN_CARDS.findIndex((item) => item.tier === card.tier) + 1}</Text>
                     </View>
                   </View>
@@ -215,7 +234,7 @@ export default function PlanSelectionScreen() {
             }}
           />
 
-          <View style={styles.summaryCard}>
+          <View style={[styles.summaryCard, selectedPlanAccentStyle]}>
             <Text style={styles.summaryLabel}>{t('Selected plan')}</Text>
             <Text style={styles.summaryTitle}>{selectedPlan.title}</Text>
             <Text style={styles.summaryText}>
@@ -238,7 +257,7 @@ export default function PlanSelectionScreen() {
 
         <Modal visible={confirmVisible} transparent animationType="fade" onRequestClose={() => setConfirmVisible(false)}>
           <View style={styles.modalBackdrop}>
-            <View style={styles.modalCard}>
+            <View style={[styles.modalCard, selectedPlanAccentStyle]}>
               <Text style={styles.modalTitle}>{t('Confirm payment')}</Text>
               <Text style={styles.modalText}>
                 {`Activate ${selectedPlan.title} now. This will update the user profile subscription immediately and unlock the allowed sections.`}
@@ -361,6 +380,7 @@ const styles = StyleSheet.create({
     borderRadius: 17,
     alignItems: 'center',
     justifyContent: 'center',
+    borderWidth: 1,
   },
   stepBubble: {
     minWidth: 18,
@@ -369,6 +389,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#24314F',
     alignItems: 'center',
     justifyContent: 'center',
+    borderWidth: 1,
     paddingHorizontal: 5,
   },
   stepBubbleText: {
