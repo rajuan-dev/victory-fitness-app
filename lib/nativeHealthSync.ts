@@ -32,7 +32,7 @@ export type NativeHealthChecklistState = NativeHealthReadiness & {
 };
 
 const HEALTH_SYNC_LOOKBACK_DAYS = 7;
-const INITIAL_HEALTH_SYNC_LOOKBACK_DAYS = 3;
+const INITIAL_HEALTH_SYNC_LOOKBACK_DAYS = 1;
 const HEALTH_SYNC_UPLOAD_CONCURRENCY = 4;
 const HEALTH_CONNECT_READ_PERMISSIONS = [
   { accessType: 'read' as const, recordType: 'Steps' as const },
@@ -94,6 +94,41 @@ function buildMetric(
       ...metadata,
     },
   };
+}
+
+function getMetricTimestamp(metric: NormalizedHealthMetricPayload) {
+  const timestamp = new Date(metric.end_time || metric.start_time || '').getTime();
+  return Number.isFinite(timestamp) ? timestamp : 0;
+}
+
+function getMetricDayKey(metric: NormalizedHealthMetricPayload) {
+  const timestamp = getMetricTimestamp(metric);
+  const day = timestamp > 0 ? new Date(timestamp).toISOString().slice(0, 10) : 'unknown-day';
+  return `${metric.source_device || 'unknown'}:${metric.metric_type}:${day}`;
+}
+
+function dedupeLatestMetricsByDay(metrics: NormalizedHealthMetricPayload[]) {
+  const latestByKey = new Map<string, NormalizedHealthMetricPayload>();
+
+  metrics.forEach((metric) => {
+    const key = getMetricDayKey(metric);
+    const current = latestByKey.get(key);
+    if (!current || getMetricTimestamp(metric) >= getMetricTimestamp(current)) {
+      latestByKey.set(key, metric);
+    }
+  });
+
+  return Array.from(latestByKey.values()).sort((left, right) => {
+    const leftTime = getMetricTimestamp(left);
+    const rightTime = getMetricTimestamp(right);
+    if (leftTime !== rightTime) {
+      return leftTime - rightTime;
+    }
+    if (left.metric_type !== right.metric_type) {
+      return left.metric_type.localeCompare(right.metric_type);
+    }
+    return String(left.source_device || '').localeCompare(String(right.source_device || ''));
+  });
 }
 
 function chunkMetrics(metrics: NormalizedHealthMetricPayload[], size: number): NormalizedHealthMetricPayload[][] {
@@ -412,8 +447,10 @@ async function collectAppleHealthMetrics(startFrom?: string | Date | null, lookb
     throw new Error(`No Apple Health records were found for the last ${lookbackDays} days.`);
   }
 
+  const normalizedMetrics = dedupeLatestMetricsByDay(metrics);
+
   return {
-    metrics,
+    metrics: normalizedMetrics,
     source_device: sourceDevice,
     batch_id: `apple-health-${new Date().toISOString()}`,
   };
@@ -547,8 +584,10 @@ async function collectHealthConnectMetrics(startFrom?: string | Date | null, loo
     );
   });
 
+  const normalizedMetrics = dedupeLatestMetricsByDay(metrics);
+
   return {
-    metrics,
+    metrics: normalizedMetrics,
     source_device: sourceDevice,
     batch_id: `health-connect-${new Date().toISOString()}`,
   };

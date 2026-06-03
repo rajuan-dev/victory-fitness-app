@@ -560,6 +560,55 @@ function formatRecordDisplayValue(metricType: string, value: number | string, un
   return formatHealthRecordValue(value, unit);
 }
 
+function getHealthRecordOrderValue(item: Pick<HealthMetricRecord, 'synced_at' | 'end_time' | 'id'>) {
+  const syncedAt = item.synced_at ? new Date(item.synced_at).getTime() : 0;
+  const endTime = item.end_time ? new Date(item.end_time).getTime() : 0;
+  return Number.isFinite(syncedAt) && syncedAt > 0
+    ? syncedAt
+    : Number.isFinite(endTime) && endTime > 0
+      ? endTime
+      : String(item.id || '').length > 0
+        ? 1
+        : 0;
+}
+
+function mergeLatestHealthRecords(items: HealthMetricRecord[]) {
+  const buckets = new Map<string, HealthMetricRecord>();
+
+  for (const item of items) {
+    const metricType = String(item.metric_type || '').trim().toLowerCase();
+    if (!metricType) {
+      continue;
+    }
+
+    const current = buckets.get(metricType);
+    if (!current) {
+      buckets.set(metricType, item);
+      continue;
+    }
+
+    const currentScore = getHealthRecordOrderValue(current);
+    const itemScore = getHealthRecordOrderValue(item);
+    if (itemScore > currentScore) {
+      buckets.set(metricType, item);
+      continue;
+    }
+
+    if (itemScore === currentScore && String(item.id || '') > String(current.id || '')) {
+      buckets.set(metricType, item);
+    }
+  }
+
+  return Array.from(buckets.values()).sort((left, right) => {
+    const leftScore = getHealthRecordOrderValue(left);
+    const rightScore = getHealthRecordOrderValue(right);
+    if (leftScore !== rightScore) {
+      return rightScore - leftScore;
+    }
+    return String(left.metric_type || '').localeCompare(String(right.metric_type || ''));
+  });
+}
+
 type DynamicHealthCard = {
   key: string;
   metric_type: string;
@@ -940,9 +989,9 @@ export default function LongevityOS() {
         fetchLongevityDashboard(language),
         fetchCurrentUser(),
         fetchLongevityHealthRecords({
-          start_date: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
+          start_date: today,
           end_date: today,
-        }).catch(() => null),
+        }, language).catch(() => null),
         fetchIntegrationConnections().catch(() => null),
       ]);
       setDashboard(localizeDashboard(response));
@@ -955,7 +1004,7 @@ export default function LongevityOS() {
         }
         return [];
       });
-      setHealthSummary(Array.isArray(records?.items) ? records.items : []);
+      setHealthSummary(mergeLatestHealthRecords(Array.isArray(records?.items) ? records.items : []));
       setIntegrations(Array.isArray(integrationResponse?.items) ? integrationResponse.items : []);
       setCanGenerateLongevityPlan(canAccessFeature('longevity_plan', user));
       dismissScreenError();
@@ -986,6 +1035,19 @@ export default function LongevityOS() {
       console.warn('[LongevityOS] Dashboard refresh after sync failed:', error);
     }
   }, [language, localizeDashboard]);
+
+  const refreshHealthSummaryAfterSync = React.useCallback(async () => {
+    try {
+      const today = formatLocalDate(new Date());
+      const response = await fetchLongevityHealthRecords({
+        start_date: today,
+        end_date: today,
+      }, language);
+      setHealthSummary(mergeLatestHealthRecords(Array.isArray(response?.items) ? response.items : []));
+    } catch (error) {
+      console.warn('[LongevityOS] Health summary refresh after sync failed:', error);
+    }
+  }, [language]);
 
   useFocusEffect(
     React.useCallback(() => {
@@ -1143,6 +1205,7 @@ export default function LongevityOS() {
 
       setSyncProgressMessage(t('Updating dashboard...'));
       void refreshDashboardAfterSync();
+      void refreshHealthSummaryAfterSync();
       if (showSuccessAlert) {
         Alert.alert(t('Data sync successful'), t('All available synced health records are now flowing into Longevity OS.'));
       }
@@ -1160,7 +1223,7 @@ export default function LongevityOS() {
       setSyncingProviderIds([]);
       setSyncProgressMessage('');
     }
-  }, [dashboard?.wearables.devices, dismissScreenError, language, loadDashboard, showScreenError, syncingWearables, t]);
+  }, [dashboard?.wearables.devices, dismissScreenError, language, loadDashboard, refreshHealthSummaryAfterSync, refreshDashboardAfterSync, showScreenError, syncingWearables, t]);
 
   const handleSyncWearables = async () => {
     if (syncingWearables) {
