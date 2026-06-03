@@ -12,6 +12,7 @@ import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { WebView } from 'react-native-webview';
 import { Colors } from '../../constants/Colors';
+import { useLanguage } from '../../lib/i18n';
 
 const DEFAULT_THUMBNAIL =
   'https://images.unsplash.com/photo-1517836357463-d25dfeac3438?q=80&w=300&auto=format&fit=crop';
@@ -89,6 +90,7 @@ function isAllowedWorkoutPlayerRequest(url: string): boolean {
 
 export default function WorkoutPlayerScreen() {
   const router = useRouter();
+  const { t } = useLanguage();
   const params = useLocalSearchParams<{
     id?: string;
     title?: string;
@@ -97,9 +99,9 @@ export default function WorkoutPlayerScreen() {
     thumbnail?: string;
   }>();
 
-  const title = typeof params.title === 'string' ? params.title : 'Workout';
+  const title = typeof params.title === 'string' ? params.title : t('Workout');
   const vimeoId = typeof params.vimeoId === 'string' ? params.vimeoId : '';
-  const tag = typeof params.tag === 'string' ? params.tag : 'Workout';
+  const tag = typeof params.tag === 'string' ? params.tag : t('Workout');
   const thumbnail = typeof params.thumbnail === 'string' ? params.thumbnail : DEFAULT_THUMBNAIL;
 
   const embedUrl = useMemo(() => {
@@ -124,12 +126,12 @@ export default function WorkoutPlayerScreen() {
           <Ionicons name="arrow-back" size={22} color="#fff" />
         </TouchableOpacity>
         <View style={styles.headerCopy}>
-          <Text style={styles.headerEyebrow}>VICTORY FITNESS SECURE PLAYER</Text>
+          <Text style={styles.headerEyebrow}>{t('VICTORY FITNESS SECURE PLAYER')}</Text>
           <Text style={styles.headerTitle} numberOfLines={1}>
             {title}
           </Text>
           <Text style={styles.headerMeta} numberOfLines={1}>
-            {tag.toUpperCase()} · IN-APP STREAM
+            {tag.toUpperCase()} · {t('IN-APP STREAM')}
           </Text>
         </View>
         <View style={styles.headerSpacer} />
@@ -152,7 +154,7 @@ export default function WorkoutPlayerScreen() {
             renderLoading={() => (
               <View style={styles.loadingWrap}>
                 <ActivityIndicator size="large" color={Colors.primary} />
-                <Text style={styles.loadingText}>Preparing secure workout stream...</Text>
+                <Text style={styles.loadingText}>{t('Preparing secure workout stream...')}</Text>
               </View>
             )}
           />
@@ -160,10 +162,8 @@ export default function WorkoutPlayerScreen() {
       ) : (
         <View style={styles.emptyState}>
           <Image source={{ uri: thumbnail }} style={styles.emptyImage} />
-          <Text style={styles.emptyTitle}>Workout unavailable</Text>
-          <Text style={styles.emptyText}>
-            This workout does not have an active in-app stream right now.
-          </Text>
+          <Text style={styles.emptyTitle}>{t('Workout unavailable')}</Text>
+          <Text style={styles.emptyText}>{t('This workout does not have an active in-app stream right now.')}</Text>
         </View>
       )}
     </SafeAreaView>

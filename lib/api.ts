@@ -21,6 +21,11 @@ function resolveApiUrl(url: string): string {
 
 const API_URL = resolveApiUrl(RAW_API_URL);
 const REQUEST_TIMEOUT_MS = 8_000;
+let apiLanguage: string | undefined;
+
+export function setApiLanguage(language?: string) {
+  apiLanguage = language?.trim() || undefined;
+}
 
 export function resolveRemoteAssetUrl(url: string | null | undefined): string {
   const normalizedUrl = String(url || '').trim();
@@ -43,6 +48,7 @@ type RequestOptions = {
   method?: string;
   body?: unknown;
   timeoutMs?: number;
+  language?: string;
 };
 
 export class ApiError extends Error {
@@ -785,8 +791,11 @@ export async function submitSupportMessage(payload: SupportMessagePayload) {
   });
 }
 
-export async function fetchLongevityDashboard() {
-  const response = await apiRequest<LongevityDashboard>('/longevity-os/dashboard');
+export async function fetchLongevityDashboard(language?: string) {
+  const response = await apiRequest<LongevityDashboard>('/longevity-os/dashboard', {
+    timeoutMs: 30_000,
+    language,
+  });
   const overview = response?.overview && typeof response.overview === 'object' ? response.overview : {} as LongevityOverview;
   const wearables = response?.wearables && typeof response.wearables === 'object' ? response.wearables : {} as LongevityWearables;
   const habits = response?.habits && typeof response.habits === 'object' ? response.habits : {} as LongevityHabits;
@@ -831,7 +840,7 @@ export async function fetchLongevityDashboard() {
   };
 }
 
-export async function syncLongevityWearables(provider?: WearableProvider | WearableProvider[] | null) {
+export async function syncLongevityWearables(provider?: WearableProvider | WearableProvider[] | null, language?: string) {
   const body = Array.isArray(provider)
     ? { providers: provider }
     : provider
@@ -841,6 +850,7 @@ export async function syncLongevityWearables(provider?: WearableProvider | Weara
     method: 'POST',
     body,
     timeoutMs: 20_000,
+    language,
   });
 }
 
@@ -896,13 +906,14 @@ export async function markNativeIntegrationConnected(payload: {
   });
 }
 
-export async function syncLongevityQrImport(qrPayload: string, sourceDevice?: string) {
+export async function syncLongevityQrImport(qrPayload: string, sourceDevice?: string, language?: string) {
   return apiRequest<WearableSyncResponse>('/integrations/import/qr', {
     method: 'POST',
     body: {
       qr_payload: qrPayload,
       source_device: sourceDevice || '',
     },
+    language,
   });
 }
 
@@ -968,17 +979,19 @@ export async function fetchLongevityHealthRecords(params?: {
   return apiRequest<HealthMetricListResponse>(path);
 }
 
-export async function updateLongevityHabit(habitId: string, done: boolean) {
+export async function updateLongevityHabit(habitId: string, done: boolean, language?: string) {
   return apiRequest<LongevityHabits>(`/longevity-os/habits/${encodeURIComponent(habitId)}`, {
     method: 'PATCH',
     body: { done },
+    language,
   });
 }
 
-export async function generateLongevityWeeklyPlan() {
+export async function generateLongevityWeeklyPlan(language?: string) {
   return apiRequest<LongevityWeeklyPlan>('/longevity-os/heal/weekly-plan', {
     method: 'POST',
     timeoutMs: 120_000,
+    language,
   });
 }
 
@@ -1091,6 +1104,11 @@ export async function apiRequest<T>(
 
   if (authTokens?.access_token) {
     headers.Authorization = `Bearer ${authTokens.access_token}`;
+  }
+
+  const requestLanguage = options.language ?? apiLanguage;
+  if (requestLanguage) {
+    headers['Accept-Language'] = requestLanguage;
   }
 
   const response = await fetchWithTimeout(`${API_URL}${path}`, {

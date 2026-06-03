@@ -17,6 +17,7 @@ import { Colors } from '../../constants/Colors';
 import { ErrorPopupModal } from '../../components/ErrorPopupModal';
 import { apiRequest } from '../../lib/api';
 import { formatAppError } from '../../lib/error';
+import { useLanguage } from '../../lib/i18n';
 
 type JournalEntry = {
   id: string;
@@ -120,6 +121,7 @@ function formatJournalContent(content: string): FormattedJournalBlock[] {
 
 export default function JournalHistoryScreen() {
   const router = useRouter();
+  const { t } = useLanguage();
   const [entries, setEntries] = useState<JournalEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [errorDialog, setErrorDialog] = useState<{ title: string; message: string } | null>(null);
@@ -133,7 +135,7 @@ export default function JournalHistoryScreen() {
       setEntries(response.entries);
     } catch (error) {
       setEntries([]);
-      setErrorDialog(formatAppError(error, 'Unable to load journal history right now.'));
+      setErrorDialog(formatAppError(error, t('Unable to load journal history right now.')));
     } finally {
       setLoading(false);
     }
@@ -186,7 +188,7 @@ export default function JournalHistoryScreen() {
           )}
         </View>
         <View style={styles.cardFooter}>
-          <Text style={styles.viewMoreText}>View entry</Text>
+          <Text style={styles.viewMoreText}>{t('View entry')}</Text>
           <Ionicons name="chevron-forward" size={14} color={Colors.accentBlue} />
         </View>
       </TouchableOpacity>
@@ -197,7 +199,7 @@ export default function JournalHistoryScreen() {
     <SafeAreaView style={styles.container}>
       <ErrorPopupModal
         visible={Boolean(errorDialog)}
-        title={errorDialog?.title ?? 'Error'}
+        title={errorDialog?.title ?? t('Error')}
         message={errorDialog?.message ?? ''}
         onClose={() => setErrorDialog(null)}
       />
@@ -255,7 +257,7 @@ export default function JournalHistoryScreen() {
       <Stack.Screen
         options={{
           headerShown: true,
-          title: 'JOURNAL HISTORY',
+          title: t('JOURNAL HISTORY'),
           headerTransparent: true,
           headerTintColor: '#fff',
           headerTitleStyle: { fontFamily: 'Inter_700Bold', fontSize: 16, letterSpacing: 2 } as any,
@@ -270,7 +272,7 @@ export default function JournalHistoryScreen() {
       {loading ? (
         <View style={styles.loadingWrap}>
           <ActivityIndicator size="large" color={Colors.accentBlue} />
-          <Text style={styles.loadingText}>Loading saved journal entries...</Text>
+          <Text style={styles.loadingText}>{t('Loading saved journal entries...')}</Text>
         </View>
       ) : (
         <FlatList
@@ -282,8 +284,8 @@ export default function JournalHistoryScreen() {
           ListEmptyComponent={
             <View style={styles.emptyState}>
               <Ionicons name="document-text-outline" size={34} color="rgba(255,255,255,0.25)" />
-              <Text style={styles.emptyTitle}>No journal entries yet</Text>
-              <Text style={styles.emptyText}>Save a journal entry to see it here.</Text>
+               <Text style={styles.emptyTitle}>{t('No journal entries yet')}</Text>
+               <Text style={styles.emptyText}>{t('Save a journal entry to see it here.')}</Text>
             </View>
           }
           showsVerticalScrollIndicator={false}

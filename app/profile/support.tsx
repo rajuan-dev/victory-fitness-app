@@ -15,9 +15,11 @@ import { Stack, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../constants/Colors';
 import { submitSupportMessage } from '../../lib/api';
+import { useLanguage } from '../../lib/i18n';
 
 export default function ContactUsScreen() {
   const router = useRouter();
+  const { t } = useLanguage();
   const [subject, setSubject] = React.useState('');
   const [message, setMessage] = React.useState('');
   const [submitting, setSubmitting] = React.useState(false);
@@ -31,7 +33,7 @@ export default function ContactUsScreen() {
       return;
     }
     if (!subject.trim() || !message.trim()) {
-      Alert.alert('Missing details', 'Please enter both a subject and a message.');
+      Alert.alert(t('Missing details'), t('Please enter both a subject and a message.'));
       return;
     }
 
@@ -43,10 +45,10 @@ export default function ContactUsScreen() {
       });
       setSubject('');
       setMessage('');
-      Alert.alert('Message sent', 'Your support message has been sent successfully.');
+      Alert.alert(t('Message sent'), t('Your support message has been sent successfully.'));
     } catch (error) {
-      const details = error instanceof Error ? error.message : 'Unable to send your support message right now.';
-      Alert.alert('Send failed', details);
+      const details = error instanceof Error ? error.message : t('Unable to send your support message right now.');
+      Alert.alert(t('Send failed'), details);
     } finally {
       setSubmitting(false);
     }
@@ -56,7 +58,7 @@ export default function ContactUsScreen() {
     <SafeAreaView style={styles.container}>
       <Stack.Screen options={{
         headerShown: true,
-        title: 'CONTACT US',
+        title: t('CONTACT US'),
         headerTransparent: true,
         headerTintColor: '#fff',
         headerTitleStyle: { fontFamily: 'Inter_700Bold', fontSize: 16, letterSpacing: 2 } as any,
@@ -69,9 +71,9 @@ export default function ContactUsScreen() {
 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         <View style={styles.header}>
-          <Text style={styles.title}>GET IN TOUCH</Text>
+          <Text style={styles.title}>{t('GET IN TOUCH')}</Text>
           <Text style={styles.subtitle}>
-            Have a question or feedback? We'd love to hear from you. Our team and AI coach are ready to help.
+            {t("Have a question or feedback? We'd love to hear from you. Our team and AI coach are ready to help.")}
           </Text>
         </View>
 
@@ -80,7 +82,7 @@ export default function ContactUsScreen() {
             <View style={[styles.iconBox, { backgroundColor: 'rgba(6,182,212,0.1)' }]}>
               <Ionicons name="mail-outline" size={28} color={Colors.accentBlue} />
             </View>
-            <Text style={styles.cardTitle}>EMAIL US</Text>
+            <Text style={styles.cardTitle}>{t('EMAIL US')}</Text>
             <Text style={styles.cardValue}>office@victorakko.com</Text>
           </TouchableOpacity>
 
@@ -92,19 +94,19 @@ export default function ContactUsScreen() {
             <View style={[styles.iconBox, { backgroundColor: 'rgba(168,85,247,0.1)' }]}>
               <Ionicons name="chatbubbles-outline" size={28} color={Colors.accentPurple} />
             </View>
-            <Text style={styles.cardTitle}>AI COACH</Text>
-            <Text style={styles.cardValue}>Chat with Victor</Text>
+            <Text style={styles.cardTitle}>{t('AI COACH')}</Text>
+            <Text style={styles.cardValue}>{t('Chat with Victor')}</Text>
           </TouchableOpacity>
         </View>
 
         <View style={styles.formSection}>
-          <Text style={styles.sectionTitle}>SEND US A MESSAGE</Text>
+          <Text style={styles.sectionTitle}>{t('SEND US A MESSAGE')}</Text>
 
           <View style={styles.inputGroup}>
-            <Text style={styles.label}>SUBJECT</Text>
+            <Text style={styles.label}>{t('SUBJECT')}</Text>
             <TextInput
               style={styles.input}
-              placeholder="What can we help you with?"
+              placeholder={t('What can we help you with?')}
               placeholderTextColor="rgba(255,255,255,0.2)"
               value={subject}
               onChangeText={setSubject}
@@ -113,10 +115,10 @@ export default function ContactUsScreen() {
           </View>
 
           <View style={styles.inputGroup}>
-            <Text style={styles.label}>MESSAGE</Text>
+            <Text style={styles.label}>{t('MESSAGE')}</Text>
             <TextInput
               style={[styles.input, styles.textArea]}
-              placeholder="Write your message here..."
+              placeholder={t('Write your message here...')}
               placeholderTextColor="rgba(255,255,255,0.2)"
               multiline
               numberOfLines={4}
@@ -127,7 +129,7 @@ export default function ContactUsScreen() {
           </View>
 
           <TouchableOpacity style={[styles.sendBtn, submitting && styles.sendBtnDisabled]} activeOpacity={0.8} onPress={handleSubmit} disabled={submitting}>
-            {submitting ? <ActivityIndicator color="#000" size="small" /> : <Text style={styles.sendBtnText}>SEND MESSAGE</Text>}
+            {submitting ? <ActivityIndicator color="#000" size="small" /> : <Text style={styles.sendBtnText}>{t('SEND MESSAGE')}</Text>}
           </TouchableOpacity>
         </View>
         <View style={{ height: 40 }} />

@@ -21,6 +21,7 @@ import { Colors } from '../../../constants/Colors';
 import { apiRequest, fetchCurrentUser, getValidAuthTokens } from '../../../lib/api';
 import { ErrorPopupModal } from '../../../components/ErrorPopupModal';
 import { formatAppError } from '../../../lib/error';
+import { useLanguage } from '../../../lib/i18n';
 
 type ChallengeReaction = {
   emoji: string;
@@ -173,9 +174,11 @@ function mergeMessage(current: ChallengeChatMessage[], next: ChallengeChatMessag
 function ThreadPreview({
   item,
   repliedMessage,
+  t,
 }: {
   item: ChallengeChatMessage;
   repliedMessage?: ChallengeChatMessage | undefined;
+  t: (key: string, params?: Record<string, string | number>) => string;
 }) {
   if (!item.reply_to_message_id || !repliedMessage) {
     return null;
@@ -185,7 +188,7 @@ function ThreadPreview({
     <View style={styles.replyPreview}>
       <Text style={styles.replyPreviewAuthor}>{repliedMessage.author_name}</Text>
       <Text style={styles.replyPreviewText} numberOfLines={1}>
-        {repliedMessage.is_deleted ? 'Message deleted' : repliedMessage.content || (repliedMessage.image_url ? 'Image' : '')}
+        {repliedMessage.is_deleted ? t('Message deleted') : repliedMessage.content || (repliedMessage.image_url ? t('Image') : '')}
       </Text>
     </View>
   );
@@ -198,6 +201,7 @@ function MessageBubble({
   onEdit,
   onDelete,
   onReact,
+  t,
 }: {
   item: ChallengeChatMessage;
   repliedMessage?: ChallengeChatMessage;
@@ -205,6 +209,7 @@ function MessageBubble({
   onEdit: (item: ChallengeChatMessage) => void;
   onDelete: (item: ChallengeChatMessage) => void;
   onReact: (item: ChallengeChatMessage, emoji: string) => void;
+  t: (key: string, params?: Record<string, string | number>) => string;
 }) {
   const isCoach = item.author_role === 'coach' || item.author_id === 'coach_bot';
   const isSystem = item.message_type === 'system_event' || item.author_id === 'system';
@@ -230,16 +235,16 @@ function MessageBubble({
       <View style={styles.messageContent}>
         <View style={styles.messageMetaRow}>
           <Text style={styles.authorName}>{item.author_name}</Text>
-          {isCoach ? <Text style={styles.coachBadge}>COACH</Text> : null}
-          {isProgress ? <Text style={styles.progressBadge}>PROGRESS</Text> : null}
-          {item.is_edited ? <Text style={styles.editedBadge}>EDITED</Text> : null}
-          {item.is_deleted ? <Text style={styles.deletedBadge}>DELETED</Text> : null}
+          {isCoach ? <Text style={styles.coachBadge}>{t('COACH')}</Text> : null}
+          {isProgress ? <Text style={styles.progressBadge}>{t('PROGRESS')}</Text> : null}
+          {item.is_edited ? <Text style={styles.editedBadge}>{t('EDITED')}</Text> : null}
+          {item.is_deleted ? <Text style={styles.deletedBadge}>{t('DELETED')}</Text> : null}
           <Text style={styles.messageTime}>{formatMessageTime(item.created_at)}</Text>
         </View>
         <View style={[styles.bubble, isCoach ? styles.coachBubble : styles.userBubble, isProgress && styles.progressBubble]}>
-          <ThreadPreview item={item} repliedMessage={repliedMessage} />
+            <ThreadPreview item={item} repliedMessage={repliedMessage} t={t} />
           {item.is_deleted ? (
-            <Text style={styles.deletedText}>Message deleted</Text>
+            <Text style={styles.deletedText}>{t('Message deleted')}</Text>
           ) : (
             <>
               {item.content ? <Text style={styles.messageText}>{item.content}</Text> : null}
@@ -285,6 +290,7 @@ function MessageBubble({
 
 export default function ChallengeChatScreen() {
   const router = useRouter();
+  const { t } = useLanguage();
   const params = useLocalSearchParams<{ challengeId?: string }>();
   const challengeId = Array.isArray(params.challengeId) ? params.challengeId[0] : params.challengeId;
   const socketRef = useRef<WebSocket | null>(null);
@@ -352,7 +358,7 @@ export default function ChallengeChatScreen() {
       const response = await apiRequest<ChallengeChatThread>(`/challenges/${encodeURIComponent(challengeId)}/chat`);
       setThread(response);
     } catch (error) {
-      setErrorDialog(formatAppError(error, 'Failed to load challenge chat.'));
+      setErrorDialog(formatAppError(error, t('Failed to load challenge chat.')));
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -448,7 +454,7 @@ export default function ChallengeChatScreen() {
   const pickImage = async () => {
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!permission.granted) {
-      Alert.alert('Permission needed', 'Please allow photo library access to add an image.');
+      Alert.alert(t('Permission needed'), t('Please allow photo library access to add an image.'));
       return;
     }
 
@@ -503,7 +509,7 @@ export default function ChallengeChatScreen() {
 
       resetComposer();
     } catch (error) {
-      setErrorDialog(formatAppError(error, editingMessage ? 'Failed to update message.' : 'Failed to send message.'));
+      setErrorDialog(formatAppError(error, editingMessage ? t('Failed to update message.') : t('Failed to send message.')));
     } finally {
       setSending(false);
     }
@@ -513,10 +519,10 @@ export default function ChallengeChatScreen() {
     if (!challengeId) {
       return;
     }
-    Alert.alert('Delete message', 'Delete this message?', [
-      { text: 'Cancel', style: 'cancel' },
+    Alert.alert(t('Delete message'), t('Delete this message?'), [
+      { text: t('Cancel'), style: 'cancel' },
       {
-        text: 'Delete',
+        text: t('Delete'),
         style: 'destructive',
         onPress: async () => {
           try {
@@ -524,7 +530,7 @@ export default function ChallengeChatScreen() {
               method: 'DELETE',
             });
           } catch (error) {
-            setErrorDialog(formatAppError(error, 'Failed to delete message.'));
+            setErrorDialog(formatAppError(error, t('Failed to delete message.')));
           }
         },
       },
@@ -541,7 +547,7 @@ export default function ChallengeChatScreen() {
         body: { emoji },
       });
     } catch (error) {
-      setErrorDialog(formatAppError(error, 'Failed to update reaction.'));
+      setErrorDialog(formatAppError(error, t('Failed to update reaction.')));
     }
   };
 
@@ -558,12 +564,12 @@ export default function ChallengeChatScreen() {
       <View style={styles.statusNotice}>
         <Text style={styles.statusNoticeText}>
           {thread.status === 'UPCOMING'
-            ? 'This challenge is upcoming. You can view the details, but posting is locked until it becomes active.'
+            ? t('This challenge is upcoming. You can view the details, but posting is locked until it becomes active.')
             : thread.status === 'ARCHIVED'
-              ? 'This challenge has been archived. Chat is read-only.'
+              ? t('This challenge has been archived. Chat is read-only.')
               : !['ACTIVE', 'COMPLETED'].includes(thread.viewer_membership_status)
-                ? 'Your membership is no longer active. Chat is read-only.'
-                : 'This challenge is read-only right now.'}
+                ? t('Your membership is no longer active. Chat is read-only.')
+                : t('This challenge is read-only right now.')}
         </Text>
       </View>
     );
@@ -585,7 +591,7 @@ export default function ChallengeChatScreen() {
       <Stack.Screen options={{ headerShown: false }} />
       <ErrorPopupModal
         visible={Boolean(errorDialog)}
-        title={errorDialog?.title ?? 'Error'}
+          title={errorDialog?.title ?? t('Error')}
         message={errorDialog?.message ?? ''}
         onClose={() => setErrorDialog(null)}
       />
@@ -593,7 +599,7 @@ export default function ChallengeChatScreen() {
         <View style={styles.membersModalBackdrop}>
           <View style={styles.membersModalCard}>
             <View style={styles.membersModalHeader}>
-              <Text style={styles.membersModalTitle}>Challenge Members</Text>
+              <Text style={styles.membersModalTitle}>{t('Challenge Members')}</Text>
               <TouchableOpacity onPress={() => setShowMembers(false)} style={styles.membersModalClose}>
                 <Ionicons name="close" size={18} color="#fff" />
               </TouchableOpacity>
@@ -602,7 +608,7 @@ export default function ChallengeChatScreen() {
               data={visibleParticipants}
               keyExtractor={(item) => item.user_id}
               showsVerticalScrollIndicator={false}
-              ListEmptyComponent={<Text style={styles.membersEmptyText}>No participants yet.</Text>}
+              ListEmptyComponent={<Text style={styles.membersEmptyText}>{t('No participants yet.')}</Text>}
               renderItem={({ item }) => (
                 <View style={styles.memberRow}>
                   {item.profile_image ? (
@@ -625,20 +631,20 @@ export default function ChallengeChatScreen() {
           <Ionicons name="chevron-back" size={24} color="#fff" />
         </TouchableOpacity>
         <View style={styles.headerBody}>
-          <Text style={styles.headerTitle}>{thread?.title || 'Challenge Chat'}</Text>
+          <Text style={styles.headerTitle}>{thread?.title || t('Challenge Chat')}</Text>
           <Text style={styles.headerMeta}>
-            {(thread?.participant_count ?? 0)} {(thread?.participant_count ?? 0) === 1 ? 'member' : 'members'} · {thread?.category || 'Challenge'}
+            {(thread?.participant_count ?? 0)} {(thread?.participant_count ?? 0) === 1 ? t('member') : t('members')} · {thread?.category || t('Challenge')}
           </Text>
         </View>
         <TouchableOpacity
           onPress={() => thread?.challenge_id && router.push(`/challenges/${thread.challenge_id}` as any)}
           style={styles.headerProgressButton}
         >
-          <Text style={styles.headerProgressButtonText}>Progress</Text>
+          <Text style={styles.headerProgressButtonText}>{t('Progress')}</Text>
         </TouchableOpacity>
         <TouchableOpacity onPress={() => setShowMembers(true)} style={styles.membersButton}>
           <Ionicons name="people-outline" size={16} color="#fff" />
-          <Text style={styles.membersButtonText}>Members</Text>
+          <Text style={styles.membersButtonText}>{t('Members')}</Text>
         </TouchableOpacity>
         <TouchableOpacity onPress={() => void loadThread(false)} style={styles.headerIcon}>
           {refreshing ? <ActivityIndicator color={Colors.primary} size="small" /> : <Ionicons name="refresh" size={20} color="#fff" />}
@@ -662,6 +668,7 @@ export default function ChallengeChatScreen() {
               }}
               onDelete={handleDelete}
               onReact={handleReact}
+              t={t}
             />
           )}
           contentContainerStyle={styles.listContent}
@@ -671,9 +678,9 @@ export default function ChallengeChatScreen() {
         {replyingTo || editingMessage ? (
           <View style={styles.composerBanner}>
             <View style={styles.composerBannerTextWrap}>
-              <Text style={styles.composerBannerTitle}>{editingMessage ? 'Editing message' : `Replying to ${replyingTo?.author_name}`}</Text>
+              <Text style={styles.composerBannerTitle}>{editingMessage ? t('Editing message') : t('Replying to {name}', { name: replyingTo?.author_name || '' })}</Text>
               <Text style={styles.composerBannerText} numberOfLines={1}>
-                {editingMessage?.content || replyingTo?.content || (replyingTo?.image_url ? 'Image' : '')}
+                {editingMessage?.content || replyingTo?.content || (replyingTo?.image_url ? t('Image') : '')}
               </Text>
             </View>
             <TouchableOpacity onPress={() => { setReplyingTo(null); setEditingMessage(null); }} style={styles.composerBannerClose}>
@@ -698,7 +705,7 @@ export default function ChallengeChatScreen() {
           <View style={styles.inputWrapper}>
             <TextInput
               style={styles.input}
-              placeholder='Message the challenge or type "@Coach ..."'
+              placeholder={t('Message the challenge or type "@Coach ..."')}
               placeholderTextColor="rgba(255,255,255,0.38)"
               value={inputText}
               onChangeText={setInputText}

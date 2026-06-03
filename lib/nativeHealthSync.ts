@@ -32,6 +32,8 @@ export type NativeHealthChecklistState = NativeHealthReadiness & {
 };
 
 const HEALTH_SYNC_LOOKBACK_DAYS = 7;
+const INITIAL_HEALTH_SYNC_LOOKBACK_DAYS = 3;
+const HEALTH_SYNC_UPLOAD_CONCURRENCY = 4;
 const HEALTH_CONNECT_READ_PERMISSIONS = [
   { accessType: 'read' as const, recordType: 'Steps' as const },
   { accessType: 'read' as const, recordType: 'Distance' as const },
@@ -51,9 +53,9 @@ const HEALTH_CONNECT_SOURCE_CHECK_RECORD_TYPES = [
   'OxygenSaturation',
 ] as const;
 
-function getSyncWindow(startFrom?: string | Date | null) {
+function getSyncWindow(startFrom?: string | Date | null, lookbackDays = HEALTH_SYNC_LOOKBACK_DAYS) {
   const end = new Date();
-  const defaultStart = new Date(end.getTime() - HEALTH_SYNC_LOOKBACK_DAYS * 24 * 60 * 60 * 1000);
+  const defaultStart = new Date(end.getTime() - lookbackDays * 24 * 60 * 60 * 1000);
   const requestedStart = startFrom ? new Date(startFrom) : null;
   const start = requestedStart && !Number.isNaN(requestedStart.getTime())
     ? new Date(Math.max(requestedStart.getTime() - 24 * 60 * 60 * 1000, defaultStart.getTime()))
@@ -103,6 +105,20 @@ function chunkMetrics(metrics: NormalizedHealthMetricPayload[], size: number): N
     chunks.push(metrics.slice(index, index + size));
   }
   return chunks;
+}
+
+async function runConcurrentBatches<T, R>(items: T[], concurrency: number, worker: (item: T) => Promise<R>): Promise<R[]> {
+  if (items.length === 0) {
+    return [];
+  }
+
+  const results: R[] = [];
+  for (let index = 0; index < items.length; index += concurrency) {
+    const batch = items.slice(index, index + concurrency);
+    const batchResults = await Promise.all(batch.map((item) => worker(item)));
+    results.push(...batchResults);
+  }
+  return results;
 }
 
 function logSyncPayload(target: string, payload: MobileHealthSyncPayload) {
@@ -260,11 +276,11 @@ function callbackToPromise<T>(register: (callback: (error: string | null, result
   });
 }
 
-async function collectAppleHealthMetrics(startFrom?: string | Date | null): Promise<MobileHealthSyncPayload> {
+async function collectAppleHealthMetrics(startFrom?: string | Date | null, lookbackDays = HEALTH_SYNC_LOOKBACK_DAYS): Promise<MobileHealthSyncPayload> {
   const AppleHealthKit = require('react-native-health').default;
   await authorizeAppleHealth(AppleHealthKit);
 
-  const { startIso, endIso } = getSyncWindow(startFrom);
+  const { startIso, endIso } = getSyncWindow(startFrom, lookbackDays);
   const baseOptions = {
     startDate: startIso,
     endDate: endIso,
@@ -393,7 +409,7 @@ async function collectAppleHealthMetrics(startFrom?: string | Date | null): Prom
   });
 
   if (metrics.length === 0) {
-    throw new Error('No Apple Health records were found for the last 7 days.');
+    throw new Error(`No Apple Health records were found for the last ${lookbackDays} days.`);
   }
 
   return {
@@ -403,11 +419,11 @@ async function collectAppleHealthMetrics(startFrom?: string | Date | null): Prom
   };
 }
 
-async function collectHealthConnectMetrics(startFrom?: string | Date | null): Promise<MobileHealthSyncPayload> {
+async function collectHealthConnectMetrics(startFrom?: string | Date | null, lookbackDays = HEALTH_SYNC_LOOKBACK_DAYS): Promise<MobileHealthSyncPayload> {
   const HealthConnect = require('react-native-health-connect') as typeof import('react-native-health-connect');
   await authorizeHealthConnect(HealthConnect);
 
-  const { startIso, endIso } = getSyncWindow(startFrom);
+  const { startIso, endIso } = getSyncWindow(startFrom, lookbackDays);
   const timeRangeFilter = {
     operator: 'between' as const,
     startTime: startIso,
@@ -431,7 +447,7 @@ async function collectHealthConnectMetrics(startFrom?: string | Date | null): Pr
   ]);
 
   // Fetch daily aggregates for Steps, ActiveCaloriesBurned, and Distance for each of the last 7 days
-  const dailySyncPromises = Array.from({ length: HEALTH_SYNC_LOOKBACK_DAYS }).map(async (_, i) => {
+  const dailySyncPromises = Array.from({ length: lookbackDays }).map(async (_, i) => {
     const dayStart = new Date();
     dayStart.setHours(0, 0, 0, 0);
     dayStart.setDate(dayStart.getDate() - i);
@@ -954,9 +970,10 @@ export async function syncNativeHealthSource(
 ): Promise<WearableSyncResponse> {
   const effectiveTarget = normalizeNativeSyncTarget(target);
   assertNativePlatform(effectiveTarget);
-  const syncBatchSize = 20;
+  const syncBatchSize = 40;
+  const lookbackDays = options.startFrom ? HEALTH_SYNC_LOOKBACK_DAYS : INITIAL_HEALTH_SYNC_LOOKBACK_DAYS;
   if (effectiveTarget === 'apple-health') {
-    const payload = await collectAppleHealthMetrics(options.startFrom);
+    const payload = await collectAppleHealthMetrics(options.startFrom, lookbackDays);
     if (payload.metrics.length === 0) {
       return {
         provider: 'apple-health',
@@ -965,20 +982,16 @@ export async function syncNativeHealthSource(
         skipped_duplicates: 0,
         connection_status: 'connected',
         last_synced_at: null,
-        message: 'Apple Health is connected, but no records were found in the last 7 days yet.',
+        message: `Apple Health is connected, but no records were found in the last ${lookbackDays} days yet.`,
         payload_preview: [],
       };
     }
     logSyncPayload('apple-health', payload);
     const chunks = chunkMetrics(payload.metrics, syncBatchSize);
-    const responses: WearableSyncResponse[] = [];
-    for (const metrics of chunks) {
-      const response = await syncLongevityAppleHealth({
-        ...payload,
-        metrics,
-      });
-      responses.push(response);
-    }
+    const responses = await runConcurrentBatches(chunks, HEALTH_SYNC_UPLOAD_CONCURRENCY, (metrics) => syncLongevityAppleHealth({
+      ...payload,
+      metrics,
+    }));
     const finalResponse = responses[responses.length - 1];
     const aggregate = responses.reduce(
       (totals, item) => ({
@@ -999,7 +1012,7 @@ export async function syncNativeHealthSource(
       })),
     };
   }
-  const payload = await collectHealthConnectMetrics(options.startFrom);
+  const payload = await collectHealthConnectMetrics(options.startFrom, lookbackDays);
   if (payload.metrics.length === 0) {
     return {
       provider: 'health-connect',
@@ -1014,14 +1027,10 @@ export async function syncNativeHealthSource(
   }
   logSyncPayload('health-connect', payload);
   const chunks = chunkMetrics(payload.metrics, syncBatchSize);
-  const responses: WearableSyncResponse[] = [];
-  for (const metrics of chunks) {
-    const response = await syncLongevityHealthConnect({
-      ...payload,
-      metrics,
-    });
-    responses.push(response);
-  }
+  const responses = await runConcurrentBatches(chunks, HEALTH_SYNC_UPLOAD_CONCURRENCY, (metrics) => syncLongevityHealthConnect({
+    ...payload,
+    metrics,
+  }));
   const finalResponse = responses[responses.length - 1];
   const aggregate = responses.reduce(
     (totals, item) => ({

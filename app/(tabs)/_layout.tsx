@@ -7,9 +7,11 @@ import { useRouter } from 'expo-router';
 import AccessRestrictionModal from '../../components/AccessRestrictionModal';
 import { fetchCurrentUser, getValidAuthTokens } from '../../lib/api';
 import { getAllowedTabNames, isSubscriptionActive } from '../../lib/access';
+import { useLanguage } from '../../lib/i18n';
 
 export default function TabsLayout() {
   const router = useRouter();
+  const { t } = useLanguage();
   const [checkingAuth, setCheckingAuth] = useState(true);
   const [profileImage, setProfileImage] = useState('');
   const [allowedTabs, setAllowedTabs] = useState<string[] | null>(null);
@@ -118,7 +120,7 @@ export default function TabsLayout() {
               return;
             }
             event.preventDefault();
-            setRestrictedSection('Workout');
+            setRestrictedSection(t('Workout'));
           },
         }}
       />
@@ -137,7 +139,7 @@ export default function TabsLayout() {
               return;
             }
             event.preventDefault();
-            setRestrictedSection('Challenges');
+            setRestrictedSection(t('Challenges'));
           },
         }}
       />
@@ -156,7 +158,7 @@ export default function TabsLayout() {
               return;
             }
             event.preventDefault();
-            setRestrictedSection('Meal Plan');
+            setRestrictedSection(t('Meal Plan'));
           },
         }}
       />

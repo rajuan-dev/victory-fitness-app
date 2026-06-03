@@ -14,6 +14,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../constants/Colors';
 import { formatAppError } from '../../lib/error';
 import { fetchWorkoutLibrary, WorkoutLibraryCategory } from '../../lib/workouts';
+import { useLanguage } from '../../lib/i18n';
 
 const FALLBACK_WORKOUT_IMAGE = 'https://images.unsplash.com/photo-1517836357463-d25dfeac3438?w=600&q=80';
 
@@ -32,6 +33,7 @@ function pairCategories(categories: WorkoutLibraryCategory[]) {
 
 export default function WorkoutCategoriesScreen() {
   const router = useRouter();
+  const { t } = useLanguage();
   const [categories, setCategories] = useState<WorkoutLibraryCategory[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -92,8 +94,8 @@ export default function WorkoutCategoriesScreen() {
           <Ionicons name="arrow-back" size={22} color="#fff" />
         </TouchableOpacity>
         <View style={styles.headerCopy}>
-          <Text style={styles.headerEyebrow}>WORKOUT LIBRARY</Text>
-          <Text style={styles.headerTitle}>CATEGORIES</Text>
+          <Text style={styles.headerEyebrow}>{t('WORKOUT LIBRARY')}</Text>
+          <Text style={styles.headerTitle}>{t('CATEGORIES')}</Text>
         </View>
         <View style={styles.headerSpacer} />
       </View>
@@ -101,7 +103,7 @@ export default function WorkoutCategoriesScreen() {
       {loading ? (
         <View style={styles.centerState}>
           <ActivityIndicator size="large" color={Colors.primary} />
-          <Text style={styles.stateText}>Loading categories...</Text>
+          <Text style={styles.stateText}>{t('Loading categories...')}</Text>
         </View>
       ) : error ? (
         <View style={styles.centerState}>
@@ -123,7 +125,7 @@ export default function WorkoutCategoriesScreen() {
                   <View style={styles.categoryOverlay} />
                   <View style={styles.categoryContent}>
                     <Text style={styles.categoryName}>{category.name}</Text>
-                    <Text style={styles.categoryCount}>{category.count} Workouts</Text>
+                    <Text style={styles.categoryCount}>{category.count} {t('Workouts')}</Text>
                   </View>
                 </TouchableOpacity>
               ))}

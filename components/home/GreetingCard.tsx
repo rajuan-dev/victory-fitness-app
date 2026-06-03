@@ -2,17 +2,19 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { Colors } from '../../constants/Colors';
 import { fetchCurrentUser, getAuthUser } from '../../lib/api';
+import { useLanguage } from '../../lib/i18n';
 
 const QUOTES = [
-  { text: 'WISDOM LISTENS BEFORE IT LEADS.', author: 'Victor Akko' },
-  { text: 'YOUR ONLY LIMIT IS YOUR MIND.', author: 'Focus' },
-  { text: 'VICTORY BELONGS TO THE MOST PERSEVERING.', author: 'Napoleon' },
-  { text: 'STRENGTH DOES NOT COME FROM WINNING.', author: 'Arnold' },
+  { textKey: 'WISDOM LISTENS BEFORE IT LEADS.', authorKey: 'Victor Akko' },
+  { textKey: 'YOUR ONLY LIMIT IS YOUR MIND.', authorKey: 'Focus' },
+  { textKey: 'VICTORY BELONGS TO THE MOST PERSEVERING.', authorKey: 'Napoleon' },
+  { textKey: 'STRENGTH DOES NOT COME FROM WINNING.', authorKey: 'Arnold' },
 ];
 
 export default function GreetingCard() {
   const [quoteIndex, setQuoteIndex] = useState(0);
   const [userName, setUserName] = useState('User');
+  const { t } = useLanguage();
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -57,7 +59,7 @@ export default function GreetingCard() {
   return (
     <View style={styles.greetingSection}>
       <View style={styles.greetingRow}>
-        <Text style={styles.greetingPrefix}>Good morning, </Text>
+        <Text style={styles.greetingPrefix}>{t('Good morning, ')}</Text>
         <Text
           style={styles.greetingName}
           numberOfLines={1}
@@ -69,9 +71,9 @@ export default function GreetingCard() {
       </View>
       <View style={styles.quoteBox}>
         <Text style={styles.quoteText}>
-          {QUOTES[quoteIndex].text}
+          {t(QUOTES[quoteIndex].textKey)}
         </Text>
-        <Text style={styles.quoteAuthor}>- {QUOTES[quoteIndex].author}</Text>
+        <Text style={styles.quoteAuthor}>- {t(QUOTES[quoteIndex].authorKey)}</Text>
       </View>
     </View>
   );

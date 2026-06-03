@@ -30,6 +30,7 @@ import {
   VideoPlanResponse,
 } from '../../lib/workout-plans';
 import { useModuleAccessGuard } from '../../lib/useModuleAccessGuard';
+import { useLanguage } from '../../lib/i18n';
 
 const { width } = Dimensions.get('window');
 const FALLBACK_WORKOUT_IMAGE = 'https://images.unsplash.com/photo-1517836357463-d25dfeac3438?w=600&q=80';
@@ -50,6 +51,7 @@ function pairCategories(categories: WorkoutLibraryCategory[]) {
 export default function WorkoutScreen() {
   useModuleAccessGuard('/workout');
   const router = useRouter();
+  const { t } = useLanguage();
   const hasLoadedLibraryRef = React.useRef(false);
   const [searchQuery, setSearchQuery] = useState('');
   const debouncedSearchQuery = useDebouncedValue(searchQuery, 350);
@@ -213,10 +215,10 @@ export default function WorkoutScreen() {
   };
 
   const handleRemoveStrengthPlan = () => {
-    Alert.alert('Remove Plan', 'Delete your saved custom strength plan?', [
-      { text: 'Cancel', style: 'cancel' },
+    Alert.alert(t('Remove Plan'), t('Delete your saved custom strength plan?'), [
+      { text: t('Cancel'), style: 'cancel' },
       {
-        text: 'Delete',
+        text: t('Delete'),
         style: 'destructive',
         onPress: async () => {
           try {
@@ -231,10 +233,10 @@ export default function WorkoutScreen() {
   };
 
   const handleRemoveVideoPlan = () => {
-    Alert.alert('Remove Plan', 'Delete your saved 7-day video plan from this device?', [
-      { text: 'Cancel', style: 'cancel' },
+    Alert.alert(t('Remove Plan'), t('Delete your saved 7-day video plan from this device?'), [
+      { text: t('Cancel'), style: 'cancel' },
       {
-        text: 'Delete',
+        text: t('Delete'),
         style: 'destructive',
         onPress: async () => {
           try {
@@ -256,13 +258,13 @@ export default function WorkoutScreen() {
       >
         <VictoryHeader />
 
-        <Text style={styles.pageTitle}>WORKOUTS</Text>
+        <Text style={styles.pageTitle}>{t('WORKOUTS')}</Text>
 
         <View style={styles.searchBar}>
           <Ionicons name="search-outline" size={18} color={Colors.textMuted} style={styles.searchIcon} />
           <TextInput
             style={styles.searchInput}
-            placeholder="Search workouts..."
+            placeholder={t('Search workouts...')}
             placeholderTextColor={Colors.textMuted}
             value={searchQuery}
             onChangeText={setSearchQuery}
@@ -296,7 +298,7 @@ export default function WorkoutScreen() {
         {loading ? (
           <View style={styles.loadingWrap}>
             <ActivityIndicator size="large" color={Colors.primary} />
-            <Text style={styles.loadingText}>Loading workout library...</Text>
+            <Text style={styles.loadingText}>{t('Loading workout library...')}</Text>
           </View>
         ) : (
           <>
@@ -306,20 +308,20 @@ export default function WorkoutScreen() {
                 <View style={styles.heroOverlay} />
                 <View style={styles.heroContent}>
                   <View style={styles.heroBadge}>
-                    <Text style={styles.heroBadgeText}>FEATURED WORKOUT</Text>
+                    <Text style={styles.heroBadgeText}>{t('FEATURED WORKOUT')}</Text>
                   </View>
                   <Text style={styles.heroTitle}>{featuredWorkout.title}</Text>
-                  <Text style={styles.heroMeta}>{featuredWorkout.tag} · Video ready</Text>
+                  <Text style={styles.heroMeta}>{featuredWorkout.tag} · {t('Video ready')}</Text>
                 </View>
               </TouchableOpacity>
             ) : (
               <View style={styles.emptyHero}>
-                <Text style={styles.emptyHeroTitle}>No published workouts yet</Text>
-                <Text style={styles.emptyHeroText}>Add and publish workouts from the dashboard to show them here.</Text>
+                <Text style={styles.emptyHeroTitle}>{t('No published workouts yet')}</Text>
+                <Text style={styles.emptyHeroText}>{t('Add and publish workouts from the dashboard to show them here.')}</Text>
               </View>
             )}
 
-            <Text style={[styles.sectionTitle, styles.popularSectionTitle]}>NEW &amp; POPULAR</Text>
+            <Text style={[styles.sectionTitle, styles.popularSectionTitle]}>{t('NEW & POPULAR')}</Text>
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
@@ -336,7 +338,7 @@ export default function WorkoutScreen() {
                   <View style={styles.popularOverlay} />
                   <View style={styles.popularContent}>
                     <Text style={styles.popularTitle} numberOfLines={2}>{workout.title}</Text>
-                    <Text style={styles.popularMeta}>{workout.tag} · Video ready</Text>
+                    <Text style={styles.popularMeta}>{workout.tag} · {t('Video ready')}</Text>
                   </View>
                 </TouchableOpacity>
               ))}
@@ -344,12 +346,12 @@ export default function WorkoutScreen() {
 
             {!searching && newAndPopular.length === 0 && !featuredWorkout ? (
               <View style={styles.inlineEmptyState}>
-                <Text style={styles.inlineEmptyStateText}>No workouts match your current search.</Text>
+                <Text style={styles.inlineEmptyStateText}>{t('No workouts match your current search.')}</Text>
               </View>
             ) : null}
 
             <Pressable onPress={openAllCategories} style={styles.sectionHeader}>
-              <Text style={[styles.sectionTitle, { marginTop: 28 }]}>CATEGORIES</Text>
+              <Text style={[styles.sectionTitle, { marginTop: 28 }]}>{t('CATEGORIES')}</Text>
               <Ionicons name="chevron-forward" size={18} color={Colors.textMuted} />
             </Pressable>
             <View style={styles.categoryGrid}>
@@ -366,7 +368,7 @@ export default function WorkoutScreen() {
                       <View style={styles.categoryOverlay} />
                       <View style={styles.categoryContent}>
                         <Text style={styles.categoryName}>{category.name}</Text>
-                        <Text style={styles.categoryCount}>{category.count} Workouts</Text>
+                        <Text style={styles.categoryCount}>{category.count} {t('Workouts')}</Text>
                       </View>
                     </TouchableOpacity>
                   ))}
@@ -377,7 +379,7 @@ export default function WorkoutScreen() {
 
             {canAccessWorkoutPlans && (strengthPlan || videoPlan) ? (
               <View style={styles.savedPlansSection}>
-                <Text style={styles.sectionTitle}>YOUR SAVED PLAN</Text>
+                <Text style={styles.sectionTitle}>{t('YOUR SAVED PLAN')}</Text>
                 {strengthPlan ? (
                   <TouchableOpacity
                     style={styles.savedPlanCard}
@@ -385,14 +387,14 @@ export default function WorkoutScreen() {
                     onPress={() => router.push('/workoutplan/strength-plan')}
                   >
                     <View style={styles.savedPlanTopRow}>
-                      <Text style={styles.savedPlanEyebrow}>CUSTOM STRENGTH PLAN</Text>
+                      <Text style={styles.savedPlanEyebrow}>{t('CUSTOM STRENGTH PLAN')}</Text>
                       <TouchableOpacity style={styles.savedPlanRemoveBtn} onPress={handleRemoveStrengthPlan}>
                         <Ionicons name="trash-outline" size={16} color="#FCA5A5" />
                       </TouchableOpacity>
                     </View>
                     <Text style={styles.savedPlanTitle} numberOfLines={2}>{strengthPlan.summary}</Text>
                     <Text style={styles.savedPlanMeta}>
-                      {strengthPlan.days.length} training day{strengthPlan.days.length === 1 ? '' : 's'}
+                      {strengthPlan.days.length} {strengthPlan.days.length === 1 ? t('training day') : t('training days')}
                     </Text>
                   </TouchableOpacity>
                 ) : null}
@@ -403,14 +405,14 @@ export default function WorkoutScreen() {
                     onPress={() => router.push('/workoutplan/video-plan')}
                   >
                     <View style={styles.savedPlanTopRow}>
-                      <Text style={styles.savedPlanEyebrow}>7-DAY VIDEO PLAN</Text>
+                      <Text style={styles.savedPlanEyebrow}>{t('7-DAY VIDEO PLAN')}</Text>
                       <TouchableOpacity style={styles.savedPlanRemoveBtn} onPress={handleRemoveVideoPlan}>
                         <Ionicons name="trash-outline" size={16} color="#FCA5A5" />
                       </TouchableOpacity>
                     </View>
                     <Text style={styles.savedPlanTitle} numberOfLines={2}>{videoPlan.summary}</Text>
                     <Text style={styles.savedPlanMeta}>
-                      {videoPlan.days.filter((day) => day.workouts_count > 0).length} active day
+                      {videoPlan.days.filter((day) => day.workouts_count > 0).length} {t('active')} day
                       {videoPlan.days.filter((day) => day.workouts_count > 0).length === 1 ? '' : 's'}
                     </Text>
                   </TouchableOpacity>

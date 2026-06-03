@@ -2,6 +2,7 @@ import { View, Text, StyleSheet, TouchableOpacity, Dimensions } from 'react-nati
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { Colors } from '../../constants/Colors';
+import { useLanguage } from '../../lib/i18n';
 
 const { width } = Dimensions.get('window');
 
@@ -17,6 +18,7 @@ export default function FeatureCards({
   onRestrictedPress,
 }: FeatureCardsProps) {
   const router = useRouter();
+  const { t } = useLanguage();
 
   return (
     <View style={styles.featureContainer}>
@@ -26,9 +28,9 @@ export default function FeatureCards({
           <Ionicons name="add" size={24} color="#fff" />
         </View>
         <View style={{ flex: 1 }}>
-          <Text style={styles.featureTitle}>COACH VICTOR</Text>
+          <Text style={styles.featureTitle}>{t('COACH VICTOR')}</Text>
           <Text style={styles.featureDesc}>
-            Your AI companion for motivation, advice, and feedback.
+            {t('Your AI companion for motivation, advice, and feedback.')}
           </Text>
           <TouchableOpacity 
             style={styles.featureAction}
@@ -40,7 +42,7 @@ export default function FeatureCards({
               router.push('/chat');
             }}
           >
-            <Text style={styles.featureLink}>{canAccessCoachVictor ? 'Start Chat +' : 'Unlock Access +'}</Text>
+            <Text style={styles.featureLink}>{canAccessCoachVictor ? t('Start Chat +') : t('Unlock Access +')}</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -50,9 +52,9 @@ export default function FeatureCards({
             <MaterialCommunityIcons name="silverware-fork-knife" size={20} color="#fff" />
           </View>
           <View style={{ flex: 1 }}>
-            <Text style={styles.featureTitle}>NUTRITION</Text>
+            <Text style={styles.featureTitle}>{t('NUTRITION')}</Text>
             <Text style={styles.featureDesc}>
-              Personalized nutrition plans and recipes for your goals.
+              {t('Personalized nutrition plans and recipes for your goals.')}
             </Text>
             <TouchableOpacity
               style={styles.featureAction}
@@ -64,7 +66,7 @@ export default function FeatureCards({
                 router.push('/mealPlan');
               }}
             >
-              <Text style={styles.featureLink}>{canAccessNutrition ? 'View Plan +' : 'Unlock Access +'}</Text>
+              <Text style={styles.featureLink}>{canAccessNutrition ? t('View Plan +') : t('Unlock Access +')}</Text>
             </TouchableOpacity>
           </View>
         </View>

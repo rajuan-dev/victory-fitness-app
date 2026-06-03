@@ -28,17 +28,20 @@ import { canAccessFeature } from '../../lib/access';
 import { formatAppError } from '../../lib/error';
 import { useModuleAccessGuard } from '../../lib/useModuleAccessGuard';
 import {
-  createNutritionPlan,
   NutritionPlanApiResponse,
   analyzeMealImage,
   getMealAnalysisHistory,
   MealImageAnalysisResponse,
+  getNutritionPlanJob,
+  startNutritionPlanJob,
   updateNutritionMealCompletion,
 } from '../../lib/nutrition';
 
 const TOTAL_STEPS = 8;
 const PLAN_SUCCESS_SOUND = require('../../assets/sounds/plan-saved.wav');
 const PLAN_SUCCESS_HOLD_MS = 2500;
+const NUTRITION_PLAN_POLL_INTERVAL_MS = 3000;
+const NUTRITION_PLAN_POLL_MAX_ATTEMPTS = 60;
 
 const PLAN_LOADING_MESSAGES = [
   'Reviewing your goal, food preferences, and activity profile.',
@@ -1209,6 +1212,55 @@ export default function JournalScreen() {
   const [weight, setWeight] = useState('');
   const [healthConditions, setHealthConditions] = useState<Set<string>>(new Set());
 
+  const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+  const loadLatestNutritionPlan = async () => {
+    const latestPlan = await apiRequest<NutritionPlanApiResponse>('/ai/nutrition/plan/latest');
+    setGeneratedPlan(latestPlan);
+    setHasSavedPlan(true);
+    const mappedProfile = mapPlanProfile(latestPlan);
+    if (mappedProfile) {
+      setSelectedGoal(mappedProfile.goal);
+      setCuisine(mappedProfile.cuisine);
+      setFavoriteMeal(mappedProfile.favoriteMeal);
+      setSelectedDiet(mappedProfile.selectedDiet);
+      setAllergies(mappedProfile.allergies);
+      setSelectedActivity(mappedProfile.selectedActivity);
+      setAge(mappedProfile.age);
+      setGender(mappedProfile.gender);
+      setHeight(mappedProfile.height);
+      setWeight(mappedProfile.weight);
+      setHealthConditions(new Set(mappedProfile.healthConditions));
+    }
+    setDone(true);
+    return latestPlan;
+  };
+
+  const waitForNutritionPlanJob = async (jobId: string) => {
+    for (let attempt = 0; attempt < NUTRITION_PLAN_POLL_MAX_ATTEMPTS; attempt += 1) {
+      const job = await getNutritionPlanJob(jobId);
+      const status = String(job.status || '').toLowerCase();
+
+      setGenerationStage(status === 'queued' ? 'queued' : 'processing');
+
+      if (job.plan) {
+        return job.plan;
+      }
+
+      if (status === 'completed') {
+        return await loadLatestNutritionPlan();
+      }
+
+      if (status === 'failed') {
+        throw new Error(job.error || 'Nutrition plan generation failed.');
+      }
+
+      await sleep(NUTRITION_PLAN_POLL_INTERVAL_MS);
+    }
+
+    throw new Error('Nutrition plan generation timed out while waiting for the saved plan.');
+  };
+
 
   useEffect(() => {
     let cancelled = false;
@@ -1216,28 +1268,10 @@ export default function JournalScreen() {
     const loadLatestPlan = async () => {
       setLoadingSavedPlan(true);
       try {
-        const latestPlan = await apiRequest<NutritionPlanApiResponse>('/ai/nutrition/plan/latest');
+        await loadLatestNutritionPlan();
         if (cancelled) {
           return;
         }
-
-        setGeneratedPlan(latestPlan);
-        setHasSavedPlan(true);
-        const mappedProfile = mapPlanProfile(latestPlan);
-        if (mappedProfile) {
-          setSelectedGoal(mappedProfile.goal);
-          setCuisine(mappedProfile.cuisine);
-          setFavoriteMeal(mappedProfile.favoriteMeal);
-          setSelectedDiet(mappedProfile.selectedDiet);
-          setAllergies(mappedProfile.allergies);
-          setSelectedActivity(mappedProfile.selectedActivity);
-          setAge(mappedProfile.age);
-          setGender(mappedProfile.gender);
-          setHeight(mappedProfile.height);
-          setWeight(mappedProfile.weight);
-          setHealthConditions(new Set(mappedProfile.healthConditions));
-        }
-        setDone(true);
       } catch {
         if (!cancelled) {
           setDone(false);
@@ -1356,7 +1390,7 @@ export default function JournalScreen() {
     setErrorDialog(null);
 
     try {
-      const response = await createNutritionPlan({
+      const response = await startNutritionPlanJob({
         goal: selectedGoal,
         cuisine,
         favorite_meal: favoriteMeal,
@@ -1369,7 +1403,9 @@ export default function JournalScreen() {
         weight,
         health_conditions: Array.from(healthConditions),
       });
-      const savedPlan = response.plan ?? null;
+      setGenerationStage(String(response.status || '').toLowerCase() === 'queued' ? 'queued' : 'processing');
+
+      const savedPlan = response.plan ?? (response.job_id ? await waitForNutritionPlanJob(response.job_id) : null);
 
       if (!savedPlan) {
         throw new Error('Nutrition plan generation did not return a plan');
@@ -1412,6 +1448,12 @@ export default function JournalScreen() {
       return {
         title: 'Plan Limit Reached',
         message: formatted.message,
+      };
+    }
+    if (formatted.message.toLowerCase().includes('waiting for the saved plan')) {
+      return {
+        title: 'Plan Still Generating',
+        message: 'Your plan is still being generated on the server. Open the plan page again in a moment to load it.',
       };
     }
     return formatted;

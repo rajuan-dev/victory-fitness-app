@@ -7,8 +7,9 @@ import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 
 import { Colors } from '../../../constants/Colors';
-import { fetchLongevityDashboard, type LongevityDashboard, type LongevityWeeklyPlanSection } from '../../../lib/api';
-import { useModuleAccessGuard } from '../../../lib/useModuleAccessGuard';
+import { fetchCurrentUser, fetchLongevityDashboard, type LongevityDashboard, type LongevityWeeklyPlanSection } from '../../../lib/api';
+import { canAccessFeature } from '../../../lib/access';
+import { useLanguage } from '../../../lib/i18n';
 
 const FALLBACK_CARD_IMAGE = 'https://images.unsplash.com/photo-1490645935967-10de6ba17061?w=900&q=80';
 
@@ -98,22 +99,70 @@ function getSectionVisualTheme(value: string): SectionVisualTheme {
 }
 
 function LoadingState() {
+  const { t } = useLanguage();
   return (
     <View style={styles.centerState}>
       <ActivityIndicator size="large" color={Colors.primary} />
-      <Text style={styles.loadingText}>Loading plan...</Text>
+      <Text style={styles.loadingText}>{t('Loading plan...')}</Text>
+    </View>
+  );
+}
+
+function LockedState({ onUpdatePlan, onBackHome }: { onUpdatePlan: () => void; onBackHome: () => void }) {
+  const { t } = useLanguage();
+  return (
+    <View style={styles.centerState}>
+      <View style={styles.lockCard}>
+        <View style={styles.lockBadge}>
+          <Ionicons name="lock-closed" size={26} color={Colors.accentGold} />
+        </View>
+        <Text style={styles.lockTitle}>{t('Access Restricted')}</Text>
+        <Text style={styles.lockText}>{t('Heal lock message')}</Text>
+        <View style={styles.lockActions}>
+          <TouchableOpacity style={styles.lockPrimaryButton} activeOpacity={0.88} onPress={onUpdatePlan}>
+            <Text style={styles.lockPrimaryButtonText}>{t('Update Plan')}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.lockSecondaryButton} activeOpacity={0.88} onPress={onBackHome}>
+            <Text style={styles.lockSecondaryButtonText}>{t('Back Home')}</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
     </View>
   );
 }
 
 export default function HealPlanDetailScreen() {
-  useModuleAccessGuard('/profile/longevity-os');
   const router = useRouter();
+  const { t } = useLanguage();
   const params = useLocalSearchParams<{ id?: string }>();
   const healCardId = String(params.id || '').trim();
+  const [canAccessHeal, setCanAccessHeal] = React.useState<boolean | null>(null);
   const [loading, setLoading] = React.useState(true);
   const [dashboard, setDashboard] = React.useState<LongevityDashboard | null>(null);
   const [error, setError] = React.useState<string>('');
+
+  React.useEffect(() => {
+    let cancelled = false;
+
+    const loadAccess = async () => {
+      try {
+        const user = await fetchCurrentUser();
+        if (!cancelled) {
+          setCanAccessHeal(canAccessFeature('longevity_plan', user));
+        }
+      } catch {
+        if (!cancelled) {
+          setCanAccessHeal(false);
+        }
+      }
+    };
+
+    void loadAccess();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const loadDashboard = React.useCallback(async () => {
     setLoading(true);
@@ -122,7 +171,7 @@ export default function HealPlanDetailScreen() {
       setDashboard(response);
       setError('');
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : 'Unable to load weekly plan.');
+      setError(loadError instanceof Error ? loadError.message : t('Unable to load weekly plan.'));
       setDashboard(null);
     } finally {
       setLoading(false);
@@ -131,8 +180,15 @@ export default function HealPlanDetailScreen() {
 
   useFocusEffect(
     React.useCallback(() => {
+      if (canAccessHeal === false) {
+        setLoading(false);
+        return;
+      }
+      if (canAccessHeal === null) {
+        return;
+      }
       void loadDashboard();
-    }, [loadDashboard]),
+    }, [canAccessHeal, loadDashboard]),
   );
 
   const healCategory = React.useMemo(
@@ -153,11 +209,34 @@ export default function HealPlanDetailScreen() {
     [healCardId, healCategory?.label, matchedSection?.id],
   );
 
-  if (loading) {
+  if (canAccessHeal === null || loading) {
     return (
       <SafeAreaView style={styles.container}>
         <Stack.Screen options={{ headerShown: false }} />
         <LoadingState />
+      </SafeAreaView>
+    );
+  }
+
+  if (!canAccessHeal) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <Stack.Screen options={{ headerShown: false }} />
+        <View style={styles.header}>
+          <TouchableOpacity onPress={() => router.back()} style={styles.backButton} activeOpacity={0.86}>
+            <Ionicons name="arrow-back" size={22} color="#fff" />
+          </TouchableOpacity>
+          <View style={styles.headerCopy}>
+            <Text style={styles.headerTitle} numberOfLines={1}>
+              {healCategory?.label || t('Health Card')}
+            </Text>
+          </View>
+          <View style={styles.headerSpacer} />
+        </View>
+        <LockedState
+          onUpdatePlan={() => router.push('/plan')}
+          onBackHome={() => router.replace('/(tabs)')}
+        />
       </SafeAreaView>
     );
   }
@@ -172,7 +251,7 @@ export default function HealPlanDetailScreen() {
         </TouchableOpacity>
         <View style={styles.headerCopy}>
           <Text style={styles.headerTitle} numberOfLines={1}>
-            {healCategory?.label || 'Health Card'}
+            {healCategory?.label || t('Health Card')}
           </Text>
         </View>
         <View style={styles.headerSpacer} />
@@ -195,8 +274,8 @@ export default function HealPlanDetailScreen() {
             >
               <View style={styles.planHeroRow}>
                 <View style={styles.planHeroCopy}>
-                  <Text style={styles.planEyebrow}>Weekly plan</Text>
-                  <Text style={styles.planHeroTitle}>{healCategory?.label || 'Heal plan'}</Text>
+                  <Text style={styles.planEyebrow}>{t('Weekly plan')}</Text>
+                  <Text style={styles.planHeroTitle}>{healCategory?.label || t('Heal plan')}</Text>
                 </View>
                 <View style={styles.planHeroBadge}>
                   <Ionicons name="sparkles" size={14} color={heroTheme.accent} />
@@ -225,7 +304,7 @@ export default function HealPlanDetailScreen() {
                           <Text style={[styles.sectionIndex, { color: theme.accent }]}>01</Text>
                         </View>
                         <View style={[styles.sectionBadge, { backgroundColor: theme.badge }]}>
-                          <Text style={styles.sectionBadgeText}>Selected</Text>
+                          <Text style={styles.sectionBadgeText}>{t('Selected')}</Text>
                         </View>
                       </View>
                       <Text style={styles.sectionTitle}>{matchedSection.title}</Text>
@@ -267,7 +346,7 @@ export default function HealPlanDetailScreen() {
         ) : (
           <View style={styles.emptyCard}>
             <Ionicons name="restaurant-outline" size={40} color="rgba(255,255,255,0.32)" />
-            <Text style={styles.emptyTitle}>No weekly plan yet</Text>
+            <Text style={styles.emptyTitle}>{t('No weekly plan yet')}</Text>
           </View>
         )}
 
@@ -558,6 +637,70 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 16,
     fontFamily: 'Inter_700Bold',
+  },
+  lockCard: {
+    width: '100%',
+    maxWidth: 420,
+    padding: 22,
+    borderRadius: 26,
+    backgroundColor: '#12182B',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+    alignItems: 'center',
+    gap: 14,
+  },
+  lockBadge: {
+    width: 58,
+    height: 58,
+    borderRadius: 29,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(245, 158, 11, 0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(245, 158, 11, 0.26)',
+  },
+  lockTitle: {
+    color: '#fff',
+    fontSize: 24,
+    lineHeight: 30,
+    fontFamily: 'Inter_700Bold',
+    textAlign: 'center',
+  },
+  lockText: {
+    color: Colors.textSecondary,
+    fontSize: 14,
+    lineHeight: 22,
+    fontFamily: 'Inter_400Regular',
+    textAlign: 'center',
+  },
+  lockActions: {
+    width: '100%',
+    gap: 12,
+    marginTop: 8,
+  },
+  lockPrimaryButton: {
+    backgroundColor: Colors.primary,
+    borderRadius: 16,
+    paddingVertical: 15,
+    alignItems: 'center',
+  },
+  lockPrimaryButtonText: {
+    color: '#031417',
+    fontSize: 14,
+    fontFamily: 'Inter_700Bold',
+  },
+  lockSecondaryButton: {
+    borderRadius: 16,
+    paddingVertical: 15,
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+  },
+  lockSecondaryButtonText: {
+    color: '#fff',
+    fontSize: 14,
+    fontFamily: 'Inter_600SemiBold',
   },
   errorCard: {
     padding: 14,

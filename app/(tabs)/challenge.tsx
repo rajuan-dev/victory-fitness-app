@@ -22,6 +22,7 @@ import { Colors } from '../../constants/Colors';
 import AccessRestrictionModal from '../../components/AccessRestrictionModal';
 import { apiRequest, fetchCurrentUser, getAuthUser, resolveRemoteAssetUrl } from '../../lib/api';
 import { canAccessFeature, normalizeSubscriptionTier } from '../../lib/access';
+import { useLanguage } from '../../lib/i18n';
 import { useModuleAccessGuard } from '../../lib/useModuleAccessGuard';
 
 const { width } = Dimensions.get('window');
@@ -139,7 +140,7 @@ type CommunityReactionUser = {
   user_profile_image: string;
   created_at: string;
 };
-function formatCommunityPostTime(value: string) {
+function formatCommunityPostTime(value: string, t: (key: string, params?: Record<string, string | number>) => string) {
   const createdAt = new Date(value);
   if (Number.isNaN(createdAt.getTime())) {
     return '';
@@ -148,20 +149,20 @@ function formatCommunityPostTime(value: string) {
   const diffMs = Date.now() - createdAt.getTime();
   const diffMinutes = Math.max(Math.floor(diffMs / 60000), 0);
   if (diffMinutes < 1) {
-    return 'Just now';
+    return t('Just now');
   }
   if (diffMinutes < 60) {
-    return `${diffMinutes}m ago`;
+    return t('{count}m ago', { count: diffMinutes });
   }
 
   const diffHours = Math.floor(diffMinutes / 60);
   if (diffHours < 24) {
-    return `${diffHours}h ago`;
+    return t('{count}h ago', { count: diffHours });
   }
 
   const diffDays = Math.floor(diffHours / 24);
   if (diffDays < 7) {
-    return `${diffDays}d ago`;
+    return t('{count}d ago', { count: diffDays });
   }
 
   return createdAt.toLocaleDateString();
@@ -184,7 +185,7 @@ function SkeletonBlock({
   return <View style={[styles.skeletonBlock, { width, height }, style]} />;
 }
 
-function formatChallengeTime(value: string | null) {
+function formatChallengeTime(value: string | null, t: (key: string, params?: Record<string, string | number>) => string) {
   if (!value) {
     return '';
   }
@@ -197,20 +198,20 @@ function formatChallengeTime(value: string | null) {
   const diffMs = Date.now() - createdAt.getTime();
   const diffMinutes = Math.max(Math.floor(diffMs / 60000), 0);
   if (diffMinutes < 1) {
-    return 'Now';
+    return t('Now');
   }
   if (diffMinutes < 60) {
-    return `${diffMinutes}m ago`;
+    return t('{count}m ago', { count: diffMinutes });
   }
 
   const diffHours = Math.floor(diffMinutes / 60);
   if (diffHours < 24) {
-    return `${diffHours}h ago`;
+    return t('{count}h ago', { count: diffHours });
   }
 
   const diffDays = Math.floor(diffHours / 24);
   if (diffDays < 7) {
-    return `${diffDays}d ago`;
+    return t('{count}d ago', { count: diffDays });
   }
 
   return createdAt.toLocaleDateString();
@@ -225,17 +226,18 @@ function formatCompletedDate(value: string) {
   return completedAt.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 }
 
-function formatDurationLabel(days: number) {
-  return `${days} Day${days === 1 ? '' : 's'}`;
+function formatDurationLabel(days: number, t: (key: string) => string) {
+  return `${days} ${days === 1 ? t('Day') : t('Days')}`;
 }
 
-function formatChallengeFilterLabel(value: number | typeof CHALLENGE_FILTER_ALL) {
-  return value === CHALLENGE_FILTER_ALL ? 'All' : formatDurationLabel(value);
+function formatChallengeFilterLabel(value: number | typeof CHALLENGE_FILTER_ALL, t: (key: string) => string) {
+  return value === CHALLENGE_FILTER_ALL ? t('All') : formatDurationLabel(value, t);
 }
 
 export default function ChallengesScreen() {
   useModuleAccessGuard('/challenge');
   const router = useRouter();
+  const { t } = useLanguage();
   const params = useLocalSearchParams<{
     tab?: string | string[];
     prefillSource?: string | string[];
@@ -395,7 +397,7 @@ export default function ChallengesScreen() {
         ready_to_start: Array.isArray(response.ready_to_start) ? response.ready_to_start : [],
       });
     } catch (error) {
-      setChallengeError(error instanceof Error ? error.message : 'Failed to load challenges');
+      setChallengeError(error instanceof Error ? error.message : t('Failed to load challenges'));
     } finally {
       if (showLoading) {
         setChallengeLoading(false);
@@ -418,7 +420,7 @@ export default function ChallengesScreen() {
       const response = await apiRequest<{ posts: CommunityPost[] }>('/community/posts');
       setCommunityPosts(Array.isArray(response.posts) ? response.posts : []);
     } catch (error) {
-      setCommunityError(error instanceof Error ? error.message : 'Failed to load community posts');
+      setCommunityError(error instanceof Error ? error.message : t('Failed to load community posts'));
     } finally {
       if (showLoading) {
         setCommunityLoading(false);
@@ -505,7 +507,7 @@ export default function ChallengesScreen() {
           return;
         }
         consumedCommunityPrefillKeyRef.current = '';
-        setCommunityError(error instanceof Error ? error.message : 'Failed to attach the shared report image.');
+        setCommunityError(error instanceof Error ? error.message : t('Failed to attach the shared report image.'));
       }
     };
 
@@ -629,7 +631,7 @@ export default function ChallengesScreen() {
   const handleCommunityPost = async () => {
     const content = communityDraft.trim();
     if (!content && !communityImage?.base64) {
-      setCommunityError('Add a status or choose an image before posting.');
+      setCommunityError(t('Add a status or choose an image before posting.'));
       return;
     }
 
@@ -649,7 +651,7 @@ export default function ChallengesScreen() {
       setCommunityImage(null);
       setCommunityPosts((current) => [response, ...current]);
     } catch (error) {
-      setCommunityError(error instanceof Error ? error.message : 'Failed to publish post');
+      setCommunityError(error instanceof Error ? error.message : t('Failed to publish post'));
     } finally {
       setCommunityPosting(false);
     }
@@ -659,7 +661,7 @@ export default function ChallengesScreen() {
     try {
       const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (!permission.granted) {
-        Alert.alert('Permission needed', 'Please allow photo library access to add an image.');
+        Alert.alert(t('Permission needed'), t('Please allow photo library access to add an image.'));
         return;
       }
 
@@ -682,8 +684,8 @@ export default function ChallengesScreen() {
       setCommunityImage(asset);
       setCommunityError('');
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unable to choose an image right now.';
-      Alert.alert('Image unavailable', message);
+      const message = error instanceof Error ? error.message : t('Unable to choose an image right now.');
+      Alert.alert(t('Image unavailable'), message);
     }
   };
 
@@ -732,7 +734,7 @@ export default function ChallengesScreen() {
         like_count: previousLikeCount,
         viewer_has_liked: previousViewerHasLiked,
       }));
-      setCommunityError(error instanceof Error ? error.message : 'Failed to update reaction');
+      setCommunityError(error instanceof Error ? error.message : t('Failed to update reaction'));
     } finally {
       setReactionSubmitting((current) => ({ ...current, [postId]: false }));
     }
@@ -782,7 +784,7 @@ export default function ChallengesScreen() {
         comment_count: Math.max(0, post.comment_count - 1),
         comments: (post.comments || []).filter((comment) => comment.id !== optimisticComment.id),
       }));
-      setCommunityError(error instanceof Error ? error.message : 'Failed to add comment');
+      setCommunityError(error instanceof Error ? error.message : t('Failed to add comment'));
     } finally {
       setCommentSubmitting((current) => ({ ...current, [postId]: false }));
     }
@@ -801,7 +803,7 @@ export default function ChallengesScreen() {
       });
       await loadChallengeOverview(false);
     } catch (error) {
-      setChallengeError(error instanceof Error ? error.message : 'Failed to start challenge');
+      setChallengeError(error instanceof Error ? error.message : t('Failed to start challenge'));
     } finally {
       setChallengeStarting((current) => ({ ...current, [challenge.id]: false }));
     }
@@ -827,7 +829,7 @@ export default function ChallengesScreen() {
       });
       await loadChallengeOverview(false);
     } catch (error) {
-      setChallengeError(error instanceof Error ? error.message : 'Failed to complete the current day.');
+      setChallengeError(error instanceof Error ? error.message : t('Failed to complete the current day.'));
     } finally {
       setChallengeDayCompleting((current) => ({ ...current, [challenge.id]: false }));
     }
@@ -859,7 +861,7 @@ export default function ChallengesScreen() {
       setCommunityPosts((current) => current.filter((post) => post.id !== postId));
       setSelectedCommunityPost((current) => (current?.id === postId ? null : current));
     } catch (error) {
-      setCommunityError(error instanceof Error ? error.message : 'Failed to delete post');
+      setCommunityError(error instanceof Error ? error.message : t('Failed to delete post'));
     } finally {
       setDeleteSubmitting((current) => ({ ...current, [postId]: false }));
     }
@@ -870,13 +872,13 @@ export default function ChallengesScreen() {
       return;
     }
 
-    Alert.alert('Delete post', 'Are you sure you want to delete this post?', [
+    Alert.alert(t('Delete post'), t('Are you sure you want to delete this post?'), [
       {
-        text: 'Cancel',
+        text: t('Cancel'),
         style: 'cancel',
       },
       {
-        text: 'Delete',
+        text: t('Delete'),
         style: 'destructive',
         onPress: () => {
           void performDeleteCommunityPost(postId);
@@ -918,11 +920,11 @@ export default function ChallengesScreen() {
                 style={[styles.tabBtn, activeTab === tab && styles.tabBtnActive]}
                 onPress={() => {
                   if (tab === 'CHALLENGES' && !canAccessChallenges) {
-                    setRestrictedSection('Challenges');
+                    setRestrictedSection(t('Challenges'));
                     return;
                   }
                   if (tab === 'COMMUNITY' && !canAccessCommunity) {
-                    setRestrictedSection('Community');
+                    setRestrictedSection(t('Community'));
                     return;
                   }
                   setActiveTab(tab);
@@ -935,7 +937,7 @@ export default function ChallengesScreen() {
                     ((tab === 'CHALLENGES' && !canAccessChallenges) || (tab === 'COMMUNITY' && !canAccessCommunity)) && styles.tabTextLocked,
                   ]}
                 >
-                  {tab}
+                  {t(tab)}
                 </Text>
               </TouchableOpacity>
             ))}
@@ -948,11 +950,11 @@ export default function ChallengesScreen() {
             {isSilverUser ? (
               <View style={styles.challengeLimitCard}>
                 <View style={styles.challengeLimitHeader}>
-                  <Text style={styles.challengeLimitTitle}>Silver Challenge Access</Text>
+                  <Text style={styles.challengeLimitTitle}>{t('Silver Challenge Access')}</Text>
                   <Text style={styles.challengeLimitCount}>{silverChallengesUsed} / {silverChallengeLimit}</Text>
                 </View>
                 <Text style={styles.challengeLimitText}>
-                  Your current plan allows up to 5 active challenges at the same time.
+                  {t('Your current plan allows up to 5 active challenges at the same time.')}
                 </Text>
                 <View style={styles.challengeLimitBarTrack}>
                   <View
@@ -976,7 +978,7 @@ export default function ChallengesScreen() {
               <>
                 <View style={styles.subSectionHeader}>
                   <Ionicons name="chatbubbles" size={16} color={Colors.primary} />
-                  <Text style={styles.subSectionTitle}>Challenge Chats</Text>
+                  <Text style={styles.subSectionTitle}>{t('Challenge Chats')}</Text>
                 </View>
                 {challengeOverview.active_chats.map((chat) => (
                   <TouchableOpacity
@@ -997,7 +999,7 @@ export default function ChallengesScreen() {
                       <Text style={styles.chatLastMsg} numberOfLines={1}>{chat.last_message}</Text>
                     </View>
                     <View style={styles.chatRight}>
-                      <Text style={styles.chatTime}>{formatChallengeTime(chat.last_message_at)}</Text>
+                  <Text style={styles.chatTime}>{formatChallengeTime(chat.last_message_at, t)}</Text>
                       {chat.unread_count > 0 && (
                         <View style={styles.unreadBadge}>
                           <Text style={styles.unreadText}>{chat.unread_count}</Text>
@@ -1019,7 +1021,7 @@ export default function ChallengesScreen() {
                   ]}
                 >
                   <Ionicons name="flash" size={16} color={Colors.primary} />
-                  <Text style={styles.subSectionTitle}>Your Active Challenges</Text>
+                  <Text style={styles.subSectionTitle}>{t('Your Active Challenges')}</Text>
                 </View>
                 {challengeOverview.active_challenges.map((ch) => (
                   <TouchableOpacity
@@ -1033,7 +1035,7 @@ export default function ChallengesScreen() {
                       <Text style={styles.activeCardTitle}>{ch.title}</Text>
                       <View style={styles.activePointsBadge}>
                         <Ionicons name="star" size={11} color="#F59E0B" />
-                        <Text style={styles.activePointsText}>+{ch.points}</Text>
+                          <Text style={styles.activePointsText}>+{ch.points} {t('Points')}</Text>
                       </View>
                     </View>
                     <View style={styles.activeProgressRow}>
@@ -1047,7 +1049,7 @@ export default function ChallengesScreen() {
                     <View style={styles.activeCardMeta}>
                       <Text style={styles.activeMetaText}>{ch.type}</Text>
                       <Text style={[styles.daysLeftText, { color: ch.days_left <= 2 ? '#EF4444' : Colors.textMuted }]}>
-                        {ch.days_left} days left
+                        {ch.days_left} {t('days left')}
                       </Text>
                     </View>
                   </TouchableOpacity>
@@ -1060,7 +1062,7 @@ export default function ChallengesScreen() {
               <>
                 <View style={[styles.subSectionHeader, { marginTop: 24 }]}>
                   <Ionicons name="checkmark-circle" size={16} color="#22C55E" />
-                  <Text style={[styles.subSectionTitle, { color: '#22C55E' }]}>Completed</Text>
+                  <Text style={[styles.subSectionTitle, { color: '#22C55E' }]}>{t('Completed')}</Text>
                 </View>
                 {challengeOverview.completed_challenges.map((ch) => (
               <View key={ch.id} style={styles.completedCard}>
@@ -1084,9 +1086,9 @@ export default function ChallengesScreen() {
               <>
                 <View style={[styles.subSectionHeader, { marginTop: 24 }]}>
                   <Ionicons name="rocket" size={16} color="#4F8EF7" />
-                  <Text style={[styles.subSectionTitle, { color: '#4F8EF7' }]}>Challenge Library</Text>
+                  <Text style={[styles.subSectionTitle, { color: '#4F8EF7' }]}>{t('Challenge Library')}</Text>
                 </View>
-                <Text style={styles.challengeLibraryLead}>Grow through out of the Comfort zone</Text>
+                <Text style={styles.challengeLibraryLead}>{t('Grow through out of the Comfort zone')}</Text>
                 <ScrollView
                   horizontal
                   showsHorizontalScrollIndicator={false}
@@ -1100,7 +1102,7 @@ export default function ChallengesScreen() {
                       onPress={() => setSelectedDurationDays(days)}
                     >
                       <Text style={[styles.durationTabText, selectedDurationDays === days && styles.durationTabTextActive]}>
-                        {formatChallengeFilterLabel(days)}
+                        {formatChallengeFilterLabel(days, t)}
                       </Text>
                     </TouchableOpacity>
                   ))}
@@ -1117,9 +1119,9 @@ export default function ChallengesScreen() {
                         <Text style={styles.challengeLibraryCategory}>{ch.type}</Text>
                       </View>
                       <View style={styles.challengeLibraryPointsBadge}>
-                        <Text style={styles.challengeLibraryPointsText}>
-                          +{ch.state === 'COMPLETED' ? ch.earned_points : ch.points} Points
-                        </Text>
+                      <Text style={styles.challengeLibraryPointsText}>
+                        +{ch.state === 'COMPLETED' ? ch.earned_points : ch.points} {t('Points')}
+                      </Text>
                       </View>
                     </View>
                     <Text style={styles.challengeLibraryDescription}>{ch.description}</Text>
@@ -1164,12 +1166,12 @@ export default function ChallengesScreen() {
                           />
                           <Text style={styles.challengeLibraryMetaText}>
                             {ch.state === 'ACTIVE'
-                              ? 'Chat'
+                              ? t('Chat')
                               : ch.state === 'READY'
-                                ? 'Chat'
+                                ? t('Chat')
                                 : ch.state === 'COMPLETED'
-                                  ? `Completed ${formatCompletedDate(ch.completed_at)}`
-                                  : 'Chat'}
+                                  ? `${t('Completed')} ${formatCompletedDate(ch.completed_at)}`
+                                  : t('Chat')}
                           </Text>
                         </View>
                       </View>
@@ -1195,11 +1197,11 @@ export default function ChallengesScreen() {
                               })}
                             >
                               <Ionicons name="person-add-outline" size={15} color="#D9EEFF" />
-                              <Text style={styles.challengeInviteBtnText}>Invite</Text>
+                              <Text style={styles.challengeInviteBtnText}>{t('Invite')}</Text>
                             </TouchableOpacity>
                             <View style={[styles.challengeStatusBtn, styles.challengeStatusBtnActive]}>
                               <Ionicons name="checkmark" size={15} color="#052E16" />
-                              <Text style={styles.challengeStatusBtnText}>In Progress</Text>
+                              <Text style={styles.challengeStatusBtnText}>{t('In Progress')}</Text>
                             </View>
                           </>
                         ) : ch.state === 'COMPLETED' ? (
@@ -1209,7 +1211,7 @@ export default function ChallengesScreen() {
                             onPress={() => router.push(`/challenges/${ch.challenge_id}` as any)}
                           >
                             <Ionicons name="checkmark-circle" size={15} color="#052E16" />
-                            <Text style={styles.challengeStatusBtnText}>Completed</Text>
+                            <Text style={styles.challengeStatusBtnText}>{t('Completed')}</Text>
                           </TouchableOpacity>
                         ) : (
                           <>
@@ -1219,7 +1221,7 @@ export default function ChallengesScreen() {
                               onPress={() => handleInviteChallenge(ch)}
                             >
                               <Ionicons name="person-add-outline" size={15} color="#D9EEFF" />
-                              <Text style={styles.challengeInviteBtnText}>Invite</Text>
+                              <Text style={styles.challengeInviteBtnText}>{t('Invite')}</Text>
                             </TouchableOpacity>
                             <TouchableOpacity
                               style={[
@@ -1250,7 +1252,7 @@ export default function ChallengesScreen() {
                                       ch.state !== 'READY' && styles.challengeStatusBtnTextLocked,
                                     ]}
                                   >
-                                    {ch.state === 'READY' ? 'Start' : 'Coming Soon'}
+                                    {ch.state === 'READY' ? t('Start') : t('Coming Soon')}
                                   </Text>
                                 </>
                               )}
@@ -1264,8 +1266,8 @@ export default function ChallengesScreen() {
                   <View style={styles.challengeEmptyCard}>
                     <Text style={styles.challengeEmptyText}>
                       {selectedDurationDays === CHALLENGE_FILTER_ALL
-                        ? 'No challenges available right now.'
-                        : `No ${formatDurationLabel(selectedDurationDays).toLowerCase()} challenges available right now.`}
+                        ? t('No challenges available right now.')
+                        : t('No duration challenges available right now.', { duration: formatDurationLabel(selectedDurationDays, t).toLowerCase() })}
                     </Text>
                   </View>
                 )}
@@ -1273,7 +1275,7 @@ export default function ChallengesScreen() {
             ) : null}
             {!challengeLoading && !hasVisibleChallengeSections ? (
               <View style={styles.challengeEmptyCard}>
-                <Text style={styles.challengeEmptyText}>No challenges available right now.</Text>
+                <Text style={styles.challengeEmptyText}>{t('No challenges available right now.')}</Text>
               </View>
             ) : null}
 
@@ -1289,7 +1291,7 @@ export default function ChallengesScreen() {
             <View style={styles.composerCard}>
               <TextInput
                 style={styles.composerInput}
-                placeholder="What's on your mind?"
+                placeholder={t("What's on your mind?")}
                 placeholderTextColor="rgba(255,255,255,0.35)"
                 multiline
                 value={communityDraft}
@@ -1349,7 +1351,7 @@ export default function ChallengesScreen() {
                   onPress={handleCommunityPost}
                   disabled={communityPosting}
                 >
-                  {communityPosting ? <ActivityIndicator size="small" color="#0A0A14" /> : <Text style={styles.postBtnText}>Post</Text>}
+                  {communityPosting ? <ActivityIndicator size="small" color="#0A0A14" /> : <Text style={styles.postBtnText}>{t('Post')}</Text>}
                 </TouchableOpacity>
               </View>
             </View>
@@ -1358,7 +1360,7 @@ export default function ChallengesScreen() {
               <View style={styles.communityPreviewCard}>
                 <Image source={{ uri: communityImage.uri }} style={styles.communityPreviewImage} />
                 <TouchableOpacity onPress={() => setCommunityImage(null)} style={styles.communityPreviewRemove}>
-                  <Text style={styles.communityPreviewRemoveText}>Remove image</Text>
+                  <Text style={styles.communityPreviewRemoveText}>{t('Remove image')}</Text>
                 </TouchableOpacity>
               </View>
             ) : null}
@@ -1385,7 +1387,7 @@ export default function ChallengesScreen() {
                     <View style={styles.postMeta}>
                       <View style={styles.postMetaRow}>
                         <Text style={styles.postAuthor}>{post.author_name}</Text>
-                        <Text style={styles.postTime}>{formatCommunityPostTime(post.created_at)}</Text>
+                        <Text style={styles.postTime}>{formatCommunityPostTime(post.created_at, t)}</Text>
                         <View style={[styles.tierBadge, { backgroundColor: post.audience === 'ALL' ? '#22C55E' : '#A855F7' }]}>
                           <Text style={styles.tierBadgeText}>{post.audience}</Text>
                         </View>
@@ -1430,7 +1432,7 @@ export default function ChallengesScreen() {
                       style={styles.postDeleteAction}
                       onPress={() => handleDeleteCommunityPost(post.id)}
                       disabled={deleteSubmitting[post.id]}
-                      accessibilityLabel={deleteSubmitting[post.id] ? 'Deleting post' : 'Delete post'}
+                      accessibilityLabel={deleteSubmitting[post.id] ? t('Deleting post') : t('Delete post')}
                     >
                       {deleteSubmitting[post.id] ? (
                         <ActivityIndicator size="small" color="#F87171" />
@@ -1455,7 +1457,7 @@ export default function ChallengesScreen() {
                         <View style={styles.commentBubble}>
                           <View style={styles.commentMetaRow}>
                             <Text style={styles.commentAuthor}>{comment.author_name}</Text>
-                            <Text style={styles.commentTime}>{formatCommunityPostTime(comment.created_at)}</Text>
+                            <Text style={styles.commentTime}>{formatCommunityPostTime(comment.created_at, t)}</Text>
                           </View>
                           <Text style={styles.commentContent}>{comment.content}</Text>
                         </View>
@@ -1465,7 +1467,7 @@ export default function ChallengesScreen() {
                     <View style={styles.commentComposer}>
                       <TextInput
                         style={styles.commentInput}
-                        placeholder="Write a comment..."
+                        placeholder={t('Write a comment...')}
                         placeholderTextColor="rgba(255,255,255,0.35)"
                         value={commentDrafts[post.id] || ''}
                         onChangeText={(text) => setCommentDrafts((current) => ({ ...current, [post.id]: text }))}
@@ -1478,7 +1480,7 @@ export default function ChallengesScreen() {
                         {commentSubmitting[post.id] ? (
                           <ActivityIndicator size="small" color="#0A0A14" />
                         ) : (
-                          <Text style={styles.commentSendText}>Send</Text>
+                          <Text style={styles.commentSendText}>{t('Send')}</Text>
                         )}
                       </TouchableOpacity>
                     </View>
@@ -1530,7 +1532,7 @@ export default function ChallengesScreen() {
                   <View style={styles.postMeta}>
                     <View style={styles.postMetaRow}>
                       <Text style={styles.postAuthor}>{selectedCommunityPost.author_name}</Text>
-                      <Text style={styles.postTime}>{formatCommunityPostTime(selectedCommunityPost.created_at)}</Text>
+                      <Text style={styles.postTime}>{formatCommunityPostTime(selectedCommunityPost.created_at, t)}</Text>
                     </View>
                     <View style={[styles.modalTierBadge, { backgroundColor: selectedCommunityPost.audience === 'ALL' ? '#22C55E' : '#A855F7' }]}>
                       <Text style={styles.tierBadgeText}>{selectedCommunityPost.audience}</Text>

@@ -19,6 +19,7 @@ import {
   StrengthPlanResponse,
   VideoPlanResponse,
 } from '../../lib/workout-plans';
+import { useLanguage } from '../../lib/i18n';
 import { useModuleAccessGuard } from '../../lib/useModuleAccessGuard';
 
 const { width } = Dimensions.get('window');
@@ -26,6 +27,7 @@ const { width } = Dimensions.get('window');
 export default function WorkoutPlanScreen() {
   const checkingAccess = useModuleAccessGuard('/workoutplan');
   const router = useRouter();
+  const { t } = useLanguage();
   const [isModalVisible, setIsModalVisible] = useState(false);
   const [loading, setLoading] = useState(true);
   const [strengthPlan, setStrengthPlan] = useState<StrengthPlanResponse | null>(null);
@@ -68,7 +70,7 @@ export default function WorkoutPlanScreen() {
     <SafeAreaView style={styles.container}>
       <Stack.Screen options={{ 
         headerShown: true, 
-        title: 'WORKOUT PLAN',
+        title: t('WORKOUT PLAN'),
         headerTransparent: true,
         headerTintColor: '#fff',
         headerTitleStyle: { fontFamily: 'Inter_700Bold', fontSize: 16, letterSpacing: 2 } as any,
@@ -82,11 +84,11 @@ export default function WorkoutPlanScreen() {
       {loading ? (
         <View style={styles.centerContent}>
           <ActivityIndicator size="large" color={Colors.accentBlue} />
-          <Text style={styles.loadingText}>Loading saved workout plans...</Text>
+          <Text style={styles.loadingText}>{t('Loading saved workout plans...')}</Text>
         </View>
       ) : hasSavedPlan ? (
         <ScrollView contentContainerStyle={styles.savedContent} showsVerticalScrollIndicator={false}>
-          <Text style={styles.savedHeading}>Saved Workout Plans</Text>
+          <Text style={styles.savedHeading}>{t('Saved Workout Plans')}</Text>
 
           {strengthPlan ? (
             <TouchableOpacity
@@ -94,9 +96,11 @@ export default function WorkoutPlanScreen() {
               activeOpacity={0.85}
               onPress={() => router.push('/workoutplan/strength-plan')}
             >
-              <Text style={styles.savedPlanEyebrow}>CUSTOM STRENGTH PLAN</Text>
+              <Text style={styles.savedPlanEyebrow}>{t('CUSTOM STRENGTH PLAN')}</Text>
               <Text style={styles.savedPlanTitle}>{strengthPlan.summary}</Text>
-              <Text style={styles.savedPlanMeta}>{strengthPlan.days.length} training day{strengthPlan.days.length === 1 ? '' : 's'}</Text>
+              <Text style={styles.savedPlanMeta}>
+                {strengthPlan.days.length} {t('training day')}{strengthPlan.days.length === 1 ? '' : 's'}
+              </Text>
             </TouchableOpacity>
           ) : null}
 
@@ -106,9 +110,12 @@ export default function WorkoutPlanScreen() {
               activeOpacity={0.85}
               onPress={() => router.push('/workoutplan/video-plan')}
             >
-              <Text style={styles.savedPlanEyebrow}>7-DAY VIDEO PLAN</Text>
+              <Text style={styles.savedPlanEyebrow}>{t('7-DAY VIDEO PLAN')}</Text>
               <Text style={styles.savedPlanTitle}>{videoPlan.summary}</Text>
-              <Text style={styles.savedPlanMeta}>{videoPlan.days.filter((day) => day.workouts_count > 0).length} active day{videoPlan.days.filter((day) => day.workouts_count > 0).length === 1 ? '' : 's'}</Text>
+              <Text style={styles.savedPlanMeta}>
+                {videoPlan.days.filter((day) => day.workouts_count > 0).length}{' '}
+                {videoPlan.days.filter((day) => day.workouts_count > 0).length === 1 ? t('active day') : t('active days')}
+              </Text>
             </TouchableOpacity>
           ) : null}
 
@@ -117,7 +124,7 @@ export default function WorkoutPlanScreen() {
             activeOpacity={0.8}
             onPress={() => setIsModalVisible(true)}
           >
-            <Text style={styles.createBtnText}>Create Another Plan</Text>
+            <Text style={styles.createBtnText}>{t('Create Another Plan')}</Text>
           </TouchableOpacity>
         </ScrollView>
       ) : (
@@ -127,17 +134,15 @@ export default function WorkoutPlanScreen() {
             <Ionicons name="person" size={40} color="rgba(255,255,255,0.4)" />
           </View>
 
-          <Text style={styles.title}>No Plan? No Problem.</Text>
-          <Text style={styles.subtitle}>
-            Create your personal AI plan to reach your goals faster.
-          </Text>
+          <Text style={styles.title}>{t('No Plan? No Problem.')}</Text>
+          <Text style={styles.subtitle}>{t('Create your personal AI plan to reach your goals faster.')}</Text>
 
           <TouchableOpacity 
             style={styles.createBtn} 
             activeOpacity={0.8}
             onPress={() => setIsModalVisible(true)}
           >
-            <Text style={styles.createBtnText}>Create Plan</Text>
+            <Text style={styles.createBtnText}>{t('Create Plan')}</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -153,7 +158,7 @@ export default function WorkoutPlanScreen() {
         <View style={styles.modalOverlay}>
           <View style={styles.modalCard}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Create Plan</Text>
+              <Text style={styles.modalTitle}>{t('Create Plan')}</Text>
               <TouchableOpacity 
                 style={styles.closeBtn} 
                 onPress={() => setIsModalVisible(false)}
@@ -162,9 +167,7 @@ export default function WorkoutPlanScreen() {
               </TouchableOpacity>
             </View>
 
-            <Text style={styles.modalSubtitle}>
-              Choose the type of plan you want to create.
-            </Text>
+            <Text style={styles.modalSubtitle}>{t('Choose the type of plan you want to create.')}</Text>
 
             <TouchableOpacity 
               style={styles.optionCard} 
@@ -174,9 +177,9 @@ export default function WorkoutPlanScreen() {
                 router.push('/workoutplan/video-wizard');
               }}
             >
-              <Text style={styles.optionTitle}>7-DAY VIDEO PLAN</Text>
+              <Text style={styles.optionTitle}>{t('7-DAY VIDEO PLAN')}</Text>
               <Text style={styles.optionDescription}>
-                A flexible 7-day plan based on our video library, tailored to your goals by AI.
+                {t('A flexible 7-day plan based on our video library, tailored to your goals by AI.')}
               </Text>
             </TouchableOpacity>
 
@@ -188,9 +191,9 @@ export default function WorkoutPlanScreen() {
                 router.push('/workoutplan/strength-wizard');
               }}
             >
-              <Text style={styles.optionTitle}>CUSTOM STRENGTH PLAN</Text>
+              <Text style={styles.optionTitle}>{t('CUSTOM STRENGTH PLAN')}</Text>
               <Text style={styles.optionDescription}>
-                A detailed, periodized plan to maximize strength and muscle gain.
+                {t('A detailed, periodized plan to maximize strength and muscle gain.')}
               </Text>
             </TouchableOpacity>
           </View>

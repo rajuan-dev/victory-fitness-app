@@ -14,10 +14,12 @@ import { fetchCurrentUser } from '../../lib/api';
 import { canAccessFeature, canAccessPlanRoute } from '../../lib/access';
 import { useRouter } from 'expo-router';
 import { useModuleAccessGuard } from '../../lib/useModuleAccessGuard';
+import { useLanguage } from '../../lib/i18n';
 
 export default function HomeScreen() {
   useModuleAccessGuard('/');
   const router = useRouter();
+  const { t } = useLanguage();
   const [refreshing, setRefreshing] = React.useState(false);
   const [refreshToken, setRefreshToken] = React.useState(0);
   const [canAccessNutrition, setCanAccessNutrition] = React.useState(true);
@@ -64,7 +66,7 @@ export default function HomeScreen() {
   }, []);
 
   const openRestrictedSection = React.useCallback((sectionName: string) => {
-    setRestrictedSection(sectionName);
+          setRestrictedSection(sectionName);
   }, []);
 
   return (
@@ -94,13 +96,13 @@ export default function HomeScreen() {
           <ChallengesSection refreshToken={refreshToken} />
         ) : (
           <View style={styles.lockedSectionCard}>
-            <Text style={styles.lockedSectionEyebrow}>CHALLENGES</Text>
-            <Text style={styles.lockedSectionTitle}>This section needs a higher plan.</Text>
+            <Text style={styles.lockedSectionEyebrow}>{t('CHALLENGES')}</Text>
+            <Text style={styles.lockedSectionTitle}>{t('This section needs a higher plan.')}</Text>
             <Text style={styles.lockedSectionText}>
-              Update your plan to unlock challenge access and community participation.
+              {t('Update your plan to unlock challenge access and community participation.')}
             </Text>
-            <TouchableOpacity style={styles.lockedSectionBtn} onPress={() => openRestrictedSection('Challenges')}>
-              <Text style={styles.lockedSectionBtnText}>CHECK ACCESS</Text>
+            <TouchableOpacity style={styles.lockedSectionBtn} onPress={() => openRestrictedSection(t('CHALLENGES'))}>
+              <Text style={styles.lockedSectionBtnText}>{t('CHECK ACCESS')}</Text>
             </TouchableOpacity>
           </View>
         )}

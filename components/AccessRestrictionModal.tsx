@@ -1,14 +1,16 @@
 import React from 'react';
 import { Modal, Pressable, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
 import { Colors } from '../constants/Colors';
+import { useLanguage } from '../lib/i18n';
 
 type AccessRestrictionModalProps = {
   visible: boolean;
   sectionName: string;
   onClose: () => void;
-  onUpdatePlan: () => void;
-  onBackHome: () => void;
+  onUpdatePlan?: () => void;
+  onBackHome?: () => void;
 };
 
 export default function AccessRestrictionModal({
@@ -18,6 +20,28 @@ export default function AccessRestrictionModal({
   onUpdatePlan,
   onBackHome,
 }: AccessRestrictionModalProps) {
+  const router = useRouter();
+  const { t } = useLanguage();
+  const handleUpdatePlan = () => {
+    onClose();
+    if (onUpdatePlan) {
+      onUpdatePlan();
+      return;
+    }
+
+    router.push('/plan');
+  };
+
+  const handleBackHome = () => {
+    onClose();
+    if (onBackHome) {
+      onBackHome();
+      return;
+    }
+
+    router.replace('/(tabs)');
+  };
+
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <Pressable style={styles.backdrop} onPress={onClose}>
@@ -31,17 +55,15 @@ export default function AccessRestrictionModal({
             </TouchableOpacity>
           </View>
 
-          <Text style={styles.title}>Access Restricted</Text>
-          <Text style={styles.message}>
-            You can&apos;t access {sectionName} with your current plan. Update your plan to unlock this section.
-          </Text>
+          <Text style={styles.title}>{t('Access Restricted')}</Text>
+          <Text style={styles.message}>{t('Access restriction message', { sectionName })}</Text>
 
           <View style={styles.actions}>
-            <TouchableOpacity style={styles.primaryBtn} onPress={onUpdatePlan} activeOpacity={0.85}>
-              <Text style={styles.primaryBtnText}>Update Plan</Text>
+            <TouchableOpacity style={styles.primaryBtn} onPress={handleUpdatePlan} activeOpacity={0.85}>
+              <Text style={styles.primaryBtnText}>{t('Update Plan')}</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.secondaryBtn} onPress={onBackHome} activeOpacity={0.85}>
-              <Text style={styles.secondaryBtnText}>Back Home</Text>
+            <TouchableOpacity style={styles.secondaryBtn} onPress={handleBackHome} activeOpacity={0.85}>
+              <Text style={styles.secondaryBtnText}>{t('Back Home')}</Text>
             </TouchableOpacity>
           </View>
         </Pressable>

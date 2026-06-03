@@ -18,6 +18,7 @@ import { Colors } from '../../constants/Colors';
 import VictoryHeader from '../../components/VictoryHeader';
 import { createVideoWorkoutPlan } from '../../lib/workout-plans';
 import { useModuleAccessGuard } from '../../lib/useModuleAccessGuard';
+import { useLanguage } from '../../lib/i18n';
 
 const { width, height } = Dimensions.get('window');
 
@@ -64,6 +65,7 @@ const EQUIPMENT = [
 export default function WorkoutVideoWizard() {
   const checkingAccess = useModuleAccessGuard('/workoutplan');
   const router = useRouter();
+  const { t } = useLanguage();
   const [step, setStep] = useState(1);
   const [formData, setFormData] = useState<any>({
     countryCode: '+49',
@@ -119,7 +121,7 @@ export default function WorkoutVideoWizard() {
       return (
         <View style={[styles.content, styles.loadingContent]}>
           <ActivityIndicator size="large" color={Colors.accentBlue} />
-          <Text style={styles.loadingText}>Creating your personalized video plan...</Text>
+          <Text style={styles.loadingText}>{t('Creating your personalized video plan...')}</Text>
         </View>
       );
     }
@@ -128,8 +130,8 @@ export default function WorkoutVideoWizard() {
       case 1:
         return (
           <View style={styles.content}>
-            <Text style={styles.title}>What is your main goal?</Text>
-            <Text style={styles.subtitle}>Choose the goal that fits you best.</Text>
+            <Text style={styles.title}>{t('What is your main goal?')}</Text>
+            <Text style={styles.subtitle}>{t('Choose the goal that fits you best.')}</Text>
             <View style={styles.optionList}>
               {GOALS.map((item) => (
                 <TouchableOpacity
@@ -138,7 +140,7 @@ export default function WorkoutVideoWizard() {
                   onPress={() => updateData('goal', item.id)}
                 >
                   <Text style={styles.optionEmoji}>{item.emoji}</Text>
-                  <Text style={[styles.optionLabel, formData.goal === item.id && styles.optionLabelActive]}>{item.label}</Text>
+                  <Text style={[styles.optionLabel, formData.goal === item.id && styles.optionLabelActive]}>{t(item.label)}</Text>
                 </TouchableOpacity>
               ))}
             </View>
@@ -147,8 +149,8 @@ export default function WorkoutVideoWizard() {
       case 2:
         return (
           <View style={styles.content}>
-            <Text style={styles.title}>What is your current fitness level?</Text>
-            <Text style={styles.subtitle}>Be honest with yourself.</Text>
+            <Text style={styles.title}>{t('What is your current fitness level?')}</Text>
+            <Text style={styles.subtitle}>{t('Be honest with yourself.')}</Text>
             <View style={styles.optionList}>
               {LEVELS.map((item) => (
                 <TouchableOpacity
@@ -157,8 +159,8 @@ export default function WorkoutVideoWizard() {
                   onPress={() => updateData('level', item.id)}
                 >
                   <View>
-                    <Text style={[styles.optionLabel, formData.level === item.id && styles.optionLabelActive]}>{item.label}</Text>
-                    <Text style={styles.optionSub}>{item.sub}</Text>
+                    <Text style={[styles.optionLabel, formData.level === item.id && styles.optionLabelActive]}>{t(item.label)}</Text>
+                    <Text style={styles.optionSub}>{t(item.sub)}</Text>
                   </View>
                 </TouchableOpacity>
               ))}
@@ -168,8 +170,8 @@ export default function WorkoutVideoWizard() {
       case 3:
         return (
           <View style={styles.content}>
-            <Text style={styles.title}>How many days per week do you want to train?</Text>
-            <Text style={styles.subtitle}>Consistency is the key to success.</Text>
+            <Text style={styles.title}>{t('How many days per week do you want to train?')}</Text>
+            <Text style={styles.subtitle}>{t('Consistency is the key to success.')}</Text>
             <View style={styles.optionList}>
               {DAYS_PER_WEEK.map((item) => (
                 <TouchableOpacity
@@ -180,7 +182,7 @@ export default function WorkoutVideoWizard() {
                   <View style={styles.iconContainer}>
                     <Text style={styles.optionEmoji}>{item.emoji}</Text>
                   </View>
-                  <Text style={[styles.optionLabel, formData.days === item.id && styles.optionLabelActive]}>{item.label}</Text>
+                  <Text style={[styles.optionLabel, formData.days === item.id && styles.optionLabelActive]}>{t(item.label)}</Text>
                 </TouchableOpacity>
               ))}
             </View>
@@ -189,8 +191,8 @@ export default function WorkoutVideoWizard() {
       case 4:
         return (
           <View style={styles.content}>
-            <Text style={styles.title}>How long should your plan last?</Text>
-            <Text style={styles.subtitle}>Choose your focus period.</Text>
+            <Text style={styles.title}>{t('How long should your plan last?')}</Text>
+            <Text style={styles.subtitle}>{t('Choose your focus period.')}</Text>
             <View style={styles.optionList}>
               {DURATIONS.map((item) => (
                 <TouchableOpacity
@@ -199,7 +201,7 @@ export default function WorkoutVideoWizard() {
                   onPress={() => updateData('duration', item.id)}
                 >
                   <Text style={styles.optionEmoji}>{item.emoji}</Text>
-                  <Text style={[styles.optionLabel, formData.duration === item.id && styles.optionLabelActive]}>{item.label}</Text>
+                  <Text style={[styles.optionLabel, formData.duration === item.id && styles.optionLabelActive]}>{t(item.label)}</Text>
                 </TouchableOpacity>
               ))}
             </View>
@@ -208,8 +210,8 @@ export default function WorkoutVideoWizard() {
       case 5:
         return (
           <View style={styles.content}>
-            <Text style={styles.title}>How much time do you have per session?</Text>
-            <Text style={styles.subtitle}>Every workout counts, no matter how long.</Text>
+            <Text style={styles.title}>{t('How much time do you have per session?')}</Text>
+            <Text style={styles.subtitle}>{t('Every workout counts, no matter how long.')}</Text>
             <View style={styles.optionList}>
               {TIME_PER_SESSION.map((item) => (
                 <TouchableOpacity
@@ -218,7 +220,7 @@ export default function WorkoutVideoWizard() {
                   onPress={() => updateData('time', item.id)}
                 >
                   <Text style={styles.optionEmoji}>{item.emoji}</Text>
-                  <Text style={[styles.optionLabel, formData.time === item.id && styles.optionLabelActive]}>{item.label}</Text>
+                  <Text style={[styles.optionLabel, formData.time === item.id && styles.optionLabelActive]}>{t(item.label)}</Text>
                 </TouchableOpacity>
               ))}
             </View>
@@ -227,11 +229,11 @@ export default function WorkoutVideoWizard() {
       case 6:
         return (
           <View style={styles.content}>
-            <Text style={styles.title}>Is there anything we should know?</Text>
-            <Text style={styles.subtitle}>Do you have any injuries or limitations we should consider?</Text>
+            <Text style={styles.title}>{t('Is there anything we should know?')}</Text>
+            <Text style={styles.subtitle}>{t('Do you have any injuries or limitations we should consider?')}</Text>
             <TextInput
               style={styles.textArea}
-              placeholder="e.g. Knee problems, shoulder strain..."
+              placeholder={t('e.g. Knee problems, shoulder strain...')}
               placeholderTextColor="rgba(255,255,255,0.2)"
               multiline
               numberOfLines={6}
@@ -243,9 +245,9 @@ export default function WorkoutVideoWizard() {
       case 7:
         return (
           <View style={styles.content}>
-            <Text style={styles.title}>Accountability Text Reminder</Text>
+            <Text style={styles.title}>{t('Accountability Text Reminder')}</Text>
             <Text style={styles.subtitle}>
-              Provide your phone number to receive motivational messages (Gold Tier & higher).
+              {t('Provide your phone number to receive motivational messages (Gold Tier & higher).')}
             </Text>
             <View style={styles.phoneInputRow}>
               <View style={styles.countryCodeContainer}>
@@ -268,15 +270,15 @@ export default function WorkoutVideoWizard() {
               />
             </View>
             <Text style={styles.disclaimer}>
-              Your number will only be used for accountability reminders.
+              {t('Your number will only be used for accountability reminders.')}
             </Text>
           </View>
         );
       case 8:
         return (
           <View style={styles.content}>
-            <Text style={styles.title}>Which equipment do you have?</Text>
-            <Text style={styles.subtitle}>We'll tailor your plan to the tools you have available.</Text>
+            <Text style={styles.title}>{t('Which equipment do you have?')}</Text>
+            <Text style={styles.subtitle}>{t("We'll tailor your plan to the tools you have available.")}</Text>
             <View style={styles.optionList}>
               {EQUIPMENT.map((item) => (
                 <TouchableOpacity
@@ -286,8 +288,8 @@ export default function WorkoutVideoWizard() {
                 >
                   <Text style={styles.optionEmoji}>{item.emoji}</Text>
                   <View>
-                    <Text style={[styles.optionLabel, formData.equipment === item.id && styles.optionLabelActive]}>{item.label}</Text>
-                    <Text style={styles.optionSub}>{item.sub}</Text>
+                  <Text style={[styles.optionLabel, formData.equipment === item.id && styles.optionLabelActive]}>{t(item.label)}</Text>
+                    <Text style={styles.optionSub}>{t(item.sub)}</Text>
                   </View>
                 </TouchableOpacity>
               ))}
@@ -335,11 +337,11 @@ export default function WorkoutVideoWizard() {
         {step <= TOTAL_STEPS && !loading && (
           <View style={styles.footer}>
             <TouchableOpacity onPress={prevStep} disabled={step === 1}>
-              <Text style={[styles.navBtnText, step === 1 && { opacity: 0.2 }]}>Back</Text>
+              <Text style={[styles.navBtnText, step === 1 && { opacity: 0.2 }]}>{t('Back')}</Text>
             </TouchableOpacity>
             <TouchableOpacity onPress={nextStep}>
               <Text style={styles.navBtnText}>
-                {step === TOTAL_STEPS ? 'Generate Plan' : 'Next'}
+                {step === TOTAL_STEPS ? t('Generate Plan') : t('Next')}
               </Text>
             </TouchableOpacity>
           </View>

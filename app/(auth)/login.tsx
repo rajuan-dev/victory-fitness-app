@@ -20,11 +20,13 @@ import { GoogleSignInButton } from '../../components/GoogleSignInButton';
 import { apiRequest, AuthResponse, fetchCurrentUser, getValidAuthTokens, setAuthTokens } from '../../lib/api';
 import { canAccessFeature, getPostAuthRoute } from '../../lib/access';
 import { formatAppError } from '../../lib/error';
+import { useLanguage } from '../../lib/i18n';
 
 const { height } = Dimensions.get('window');
 
 export default function LoginScreen() {
   const router = useRouter();
+  const { t } = useLanguage();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -64,8 +66,8 @@ export default function LoginScreen() {
     const normalizedEmail = email.trim().toLowerCase();
     if (!normalizedEmail || !password) {
       setErrorDialog({
-        title: 'Missing Information',
-        message: 'Please enter your email and password.',
+        title: t('Missing Information'),
+        message: t('Please enter your email and password.'),
       });
       return;
     }
@@ -120,7 +122,7 @@ export default function LoginScreen() {
       <View style={styles.overlay}>
         <ErrorPopupModal
           visible={Boolean(errorDialog)}
-          title={errorDialog?.title ?? 'Error'}
+          title={errorDialog?.title ?? t('Error')}
           message={errorDialog?.message ?? ''}
           onClose={() => setErrorDialog(null)}
         />
@@ -140,20 +142,20 @@ export default function LoginScreen() {
             </View>
 
             {/* Heading */}
-            <Text style={styles.heading}>WELCOME BACK</Text>
-            <Text style={styles.subheading}>Log in to continue</Text>
+            <Text style={styles.heading}>{t('WELCOME BACK')}</Text>
+            <Text style={styles.subheading}>{t('Log in to continue')}</Text>
 
             {/* Form */}
             <View style={styles.formContainer}>
               <AuthInput
-                placeholder="Email"
+                placeholder={t('Email')}
                 value={email}
                 onChangeText={setEmail}
                 keyboardType="email-address"
                 autoComplete="email"
               />
               <AuthInput
-                placeholder="Password"
+                placeholder={t('Password')}
                 value={password}
                 onChangeText={setPassword}
                 secureTextEntry
@@ -164,24 +166,24 @@ export default function LoginScreen() {
                 style={styles.forgotPassword}
                 onPress={handleForgotPassword}
               >
-                <Text style={styles.forgotPasswordText}>Forgot Password?</Text>
+                <Text style={styles.forgotPasswordText}>{t('Forgot Password?')}</Text>
               </TouchableOpacity>
 
-              <AuthButton title="Log In" onPress={handleLogin} disabled={loading} />
+              <AuthButton title={t('Log In')} onPress={handleLogin} disabled={loading} />
             </View>
 
             {/* Register Link */}
             <View style={styles.linkContainer}>
-              <Text style={styles.linkText}>Don't have an account? </Text>
+              <Text style={styles.linkText}>{t("Don't have an account? ")}</Text>
               <TouchableOpacity onPress={() => router.push('/register')}>
-                <Text style={styles.linkHighlight}>Register</Text>
+                <Text style={styles.linkHighlight}>{t('Register')}</Text>
               </TouchableOpacity>
             </View>
 
             {/* Divider */}
             <View style={styles.dividerContainer}>
               <View style={styles.dividerLine} />
-              <Text style={styles.dividerText}>or</Text>
+              <Text style={styles.dividerText}>{t('or')}</Text>
               <View style={styles.dividerLine} />
             </View>
 
@@ -190,9 +192,9 @@ export default function LoginScreen() {
 
             {/* Footer */}
             <View style={styles.footer}>
-              <Text style={styles.footerText}>Information for Developers</Text>
+              <Text style={styles.footerText}>{t('Information for Developers')}</Text>
               <Text style={styles.footerContact}>
-                Problems? Contact support: office@victorakko.com
+                {`${t('Problems? Contact support:')} office@victorakko.com`}
               </Text>
             </View>
           </ScrollView>
