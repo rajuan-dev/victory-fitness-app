@@ -988,10 +988,7 @@ export default function LongevityOS() {
       const [response, user, records, integrationResponse] = await Promise.all([
         fetchLongevityDashboard(language),
         fetchCurrentUser(),
-        fetchLongevityHealthRecords({
-          start_date: today,
-          end_date: today,
-        }, language).catch(() => null),
+        fetchLongevityHealthRecords({}, language).catch(() => null),
         fetchIntegrationConnections().catch(() => null),
       ]);
       setDashboard(localizeDashboard(response));
@@ -1038,11 +1035,7 @@ export default function LongevityOS() {
 
   const refreshHealthSummaryAfterSync = React.useCallback(async () => {
     try {
-      const today = formatLocalDate(new Date());
-      const response = await fetchLongevityHealthRecords({
-        start_date: today,
-        end_date: today,
-      }, language);
+      const response = await fetchLongevityHealthRecords({}, language);
       setHealthSummary(mergeLatestHealthRecords(Array.isArray(response?.items) ? response.items : []));
     } catch (error) {
       console.warn('[LongevityOS] Health summary refresh after sync failed:', error);
