@@ -5,6 +5,7 @@ import { useRouter } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
 import { Colors } from '../../constants/Colors';
 import { apiRequest } from '../../lib/api';
+import { useLanguage } from '../../lib/i18n';
 
 const { width } = Dimensions.get('window');
 
@@ -76,6 +77,7 @@ function ChallengeCard({
   onPrimaryPress,
   onSecondaryPress,
 }: HomeChallengeCard) {
+  const { t } = useLanguage();
   return (
     <View style={styles.challengeLibraryCard}>
       {thumbnail ? <Image source={{ uri: thumbnail }} style={styles.challengeLibraryImage} /> : null}
@@ -85,7 +87,7 @@ function ChallengeCard({
           <Text style={styles.challengeLibraryCategory}>{category}</Text>
         </View>
         <View style={styles.challengeLibraryPointsBadge}>
-          <Text style={styles.challengeLibraryPointsText}>+{points} Points</Text>
+          <Text style={styles.challengeLibraryPointsText}>+{points} {t('Points')}</Text>
         </View>
       </View>
 
@@ -109,7 +111,7 @@ function ChallengeCard({
         <View style={styles.challengeLibraryMetaRow}>
           <View style={styles.challengeLibraryMetaItem}>
             <Ionicons name="people-outline" size={14} color="rgba(255,255,255,0.58)" />
-            <Text style={styles.challengeLibraryMetaText}>{participants} joined</Text>
+            <Text style={styles.challengeLibraryMetaText}>{participants} {t('joined')}</Text>
           </View>
           <View style={styles.challengeLibraryMetaItem}>
             <Ionicons
@@ -127,7 +129,7 @@ function ChallengeCard({
             onPress={onSecondaryPress}
           >
             <Ionicons name={state === 'ACTIVE' ? 'chatbubble-outline' : 'person-add-outline'} size={15} color="#D9EEFF" />
-            <Text style={styles.challengeInviteBtnText}>{state === 'ACTIVE' ? 'Chat' : 'Invite'}</Text>
+            <Text style={styles.challengeInviteBtnText}>{state === 'ACTIVE' ? t('Chat') : t('Invite')}</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={[
@@ -149,7 +151,7 @@ function ChallengeCard({
                   color={state === 'UPCOMING' ? '#E9D5FF' : '#052E16'}
                 />
                 <Text style={[styles.challengeStatusBtnText, state === 'UPCOMING' && styles.challengeStatusBtnTextLocked]}>
-                  {state === 'ACTIVE' ? 'In Progress' : state === 'READY' ? 'Join' : 'Coming Soon'}
+                  {state === 'ACTIVE' ? t('In Progress') : state === 'READY' ? t('Join') : t('Coming Soon')}
                 </Text>
               </>
             )}
@@ -181,6 +183,7 @@ function ChallengeSkeletonCard() {
 
 export default function ChallengesSection({ refreshToken = 0 }: { refreshToken?: number }) {
   const router = useRouter();
+  const { t } = useLanguage();
   const [cards, setCards] = React.useState<HomeChallengeCard[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [joiningId, setJoiningId] = React.useState('');
@@ -282,13 +285,13 @@ export default function ChallengesSection({ refreshToken = 0 }: { refreshToken?:
   return (
     <View style={styles.section}>
       <View style={styles.sectionHeader}>
-        <Text style={styles.sectionTitle}>CHALLENGES</Text>
+        <Text style={styles.sectionTitle}>{t('CHALLENGES')}</Text>
         <TouchableOpacity style={styles.headerInviteBtn} onPress={() => router.push('/challenge')}>
-          <Text style={styles.headerInviteBtnText}>View All</Text>
+          <Text style={styles.headerInviteBtnText}>{t('View All')}</Text>
         </TouchableOpacity>
       </View>
 
-      <Text style={styles.challengeLibraryLead}>Grow through out of the Comfort zone</Text>
+      <Text style={styles.challengeLibraryLead}>{t('Grow through out of the Comfort zone')}</Text>
 
       {loading ? (
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.challengesScroll}>
@@ -297,8 +300,8 @@ export default function ChallengesSection({ refreshToken = 0 }: { refreshToken?:
         </ScrollView>
       ) : cards.length === 0 ? (
         <View style={styles.emptyCard}>
-          <Text style={styles.emptyTitle}>No challenges available</Text>
-          <Text style={styles.emptyText}>Active or ready challenges will appear here based on your current plan.</Text>
+          <Text style={styles.emptyTitle}>{t('No challenges available')}</Text>
+          <Text style={styles.emptyText}>{t('Active or ready challenges will appear here based on your current plan.')}</Text>
         </View>
       ) : (
         <ScrollView

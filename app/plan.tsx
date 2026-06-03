@@ -15,13 +15,15 @@ import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { ApiError, fetchCurrentUser, updateCurrentUserSubscription } from '../lib/api';
-import { BillingCycle, getPlanPrice, getPostAuthRoute, getSubscriptionCard, isSubscriptionActive, PLAN_CARDS, SubscriptionTier } from '../lib/access';
+import { BillingCycle, getPlanPrice, getSubscriptionCard, isSubscriptionActive, PLAN_CARDS, SubscriptionTier } from '../lib/access';
+import { useLanguage } from '../lib/i18n';
 
 const { width } = Dimensions.get('window');
 const CARD_WIDTH = Math.min(width - 92, 320);
 
 export default function PlanSelectionScreen() {
   const router = useRouter();
+  const { t } = useLanguage();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [confirmVisible, setConfirmVisible] = useState(false);
@@ -40,18 +42,13 @@ export default function PlanSelectionScreen() {
           return;
         }
 
-        if (isSubscriptionActive(user)) {
-          router.replace(getPostAuthRoute(user));
-          return;
-        }
-
         const tier = String(user.subscription_tier ?? 'NONE').toUpperCase().replace(/\s+/g, '_') as SubscriptionTier;
         setCurrentTier(tier === 'NONE' ? 'NONE' : tier);
         setSelectedTier(tier === 'NONE' ? 'SILVER' : tier);
         setUserName(String(user.name || 'Member'));
       } catch {
         if (!cancelled) {
-          Alert.alert('Access error', 'Unable to load your subscription state right now.');
+          Alert.alert(t('Access error'), t('Unable to load your subscription state right now.'));
         }
       } finally {
         if (!cancelled) {
@@ -101,7 +98,7 @@ export default function PlanSelectionScreen() {
       <SafeAreaView style={styles.screen}>
         <View style={styles.loadingWrap}>
           <ActivityIndicator color="#18D2EF" size="large" />
-          <Text style={styles.loadingText}>Loading your access plans...</Text>
+          <Text style={styles.loadingText}>{t('Loading your access plans...')}</Text>
         </View>
       </SafeAreaView>
     );
@@ -113,15 +110,15 @@ export default function PlanSelectionScreen() {
         <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
           <View style={styles.hero}>
             <Text style={styles.kicker}>VICTORY FITNESS</Text>
-            <Text style={styles.title}>Choose the plan that fits your goal</Text>
+            <Text style={styles.title}>{t('Choose the plan that fits your goal')}</Text>
             <Text style={styles.subtitle}>
-              {userName}, pick your access level. After payment confirmation the profile and app access update immediately.
+              {`${userName}, ${t('review your access level and update it when you want to unlock more sections. Changes apply immediately after confirmation.')}`}
             </Text>
           </View>
 
           <View style={styles.billingRow}>
             <View style={styles.billingSwitch}>
-              <Text style={[styles.billingSideText, billingCycle === 'monthly' && styles.billingSideTextActive]}>MONTHLY</Text>
+              <Text style={[styles.billingSideText, billingCycle === 'monthly' && styles.billingSideTextActive]}>{t('MONTHLY')}</Text>
               <View style={styles.billingTrack}>
                 <TouchableOpacity
                   activeOpacity={0.9}
@@ -131,10 +128,10 @@ export default function PlanSelectionScreen() {
                 <TouchableOpacity style={styles.billingTouchLeft} activeOpacity={1} onPress={() => setBillingCycle('monthly')} />
                 <TouchableOpacity style={styles.billingTouchRight} activeOpacity={1} onPress={() => setBillingCycle('yearly')} />
               </View>
-              <Text style={[styles.billingSideText, billingCycle === 'yearly' && styles.billingSideTextActive]}>YEARLY</Text>
+              <Text style={[styles.billingSideText, billingCycle === 'yearly' && styles.billingSideTextActive]}>{t('YEARLY')}</Text>
             </View>
             <View style={styles.savePill}>
-              <Text style={styles.savePillText}>SAVE UP TO 33%</Text>
+              <Text style={styles.savePillText}>{t('SAVE UP TO 33%')}</Text>
             </View>
           </View>
 
@@ -150,10 +147,10 @@ export default function PlanSelectionScreen() {
               const active = selectedTier === card.tier;
               const current = currentTier === card.tier;
               const actionLabel = current
-                ? 'CURRENT PLAN'
+                ? t('Current Plan').toUpperCase()
                 : card.tier === 'INNER_CIRCLE'
-                  ? 'APPLY NOW'
-                  : 'CHOOSE PLAN';
+                  ? t('Apply now').toUpperCase()
+                  : t('Choose Plan').toUpperCase();
 
               return (
                 <TouchableOpacity
@@ -186,11 +183,11 @@ export default function PlanSelectionScreen() {
                   </View>
 
                   <Text style={styles.cardTitle}>{card.title.toUpperCase()}</Text>
-                  <Text style={styles.cardDescription}>{card.description}</Text>
+                  <Text style={styles.cardDescription}>{t(card.description)}</Text>
                   <View style={styles.priceRow}>
-                    <Text style={styles.price}>{getPlanPrice(card, billingCycle).split(' / ')[0].replace('EUR ', 'EUR ')}</Text>
+                    <Text style={styles.price}>{t(getPlanPrice(card, billingCycle))}</Text>
                     {card.tier !== 'INNER_CIRCLE' ? (
-                      <Text style={styles.priceSuffix}>{billingCycle === 'monthly' ? 'per month' : 'per year'}</Text>
+                      <Text style={styles.priceSuffix}>{billingCycle === 'monthly' ? t('per month') : t('per year')}</Text>
                     ) : null}
                   </View>
                   {card.tier !== 'INNER_CIRCLE' && billingCycle === 'yearly' ? (
@@ -201,12 +198,12 @@ export default function PlanSelectionScreen() {
                     {card.features.map((feature) => (
                       <View key={feature} style={styles.featureRow}>
                         <Ionicons name="checkmark-circle" size={16} color="#19D6F3" />
-                        <Text style={styles.featureText}>{feature}</Text>
+                        <Text style={styles.featureText}>{t(feature)}</Text>
                       </View>
                     ))}
                   </View>
 
-                  {current ? <Text style={styles.currentPlanText}>Active on your profile</Text> : null}
+                  {current ? <Text style={styles.currentPlanText}>{t('Active on your profile')}</Text> : null}
 
                   <View style={[styles.selectPill, active && !current && styles.selectPillActive, current && styles.selectPillCurrent]}>
                     <Text style={[styles.selectText, (active || current) && styles.selectTextActive]}>
@@ -219,16 +216,22 @@ export default function PlanSelectionScreen() {
           />
 
           <View style={styles.summaryCard}>
-            <Text style={styles.summaryLabel}>Selected plan</Text>
+            <Text style={styles.summaryLabel}>{t('Selected plan')}</Text>
             <Text style={styles.summaryTitle}>{selectedPlan.title}</Text>
             <Text style={styles.summaryText}>
-              {getPlanPrice(selectedPlan, billingCycle)}. Access: {selectedPlan.tabAccess.join(', ')}.
+              {t(getPlanPrice(selectedPlan, billingCycle))}. {t('Access:')} {selectedPlan.tabAccess.join(', ')}.
             </Text>
           </View>
 
           <TouchableOpacity style={styles.confirmButton} onPress={() => setConfirmVisible(true)} activeOpacity={0.9}>
             <Text style={styles.confirmButtonText}>
-              {currentTier === selectedTier ? 'Continue with current plan' : 'Confirm Payment'}
+              {currentTier === selectedTier
+                ? currentTier === 'NONE'
+                  ? t('Confirm payment')
+                  : t('Current Plan')
+                : currentTier === 'NONE'
+                  ? t('Confirm payment')
+                  : t('Update Plan')}
             </Text>
           </TouchableOpacity>
         </ScrollView>
@@ -236,9 +239,9 @@ export default function PlanSelectionScreen() {
         <Modal visible={confirmVisible} transparent animationType="fade" onRequestClose={() => setConfirmVisible(false)}>
           <View style={styles.modalBackdrop}>
             <View style={styles.modalCard}>
-              <Text style={styles.modalTitle}>Confirm payment</Text>
+              <Text style={styles.modalTitle}>{t('Confirm payment')}</Text>
               <Text style={styles.modalText}>
-                Activate {selectedPlan.title} now. This will update the user profile subscription immediately and unlock the allowed sections.
+                {`Activate ${selectedPlan.title} now. This will update the user profile subscription immediately and unlock the allowed sections.`}
               </Text>
 
               <View style={styles.modalActions}>
@@ -247,10 +250,10 @@ export default function PlanSelectionScreen() {
                   onPress={() => setConfirmVisible(false)}
                   disabled={saving}
                 >
-                  <Text style={styles.modalSecondaryText}>Cancel</Text>
+                  <Text style={styles.modalSecondaryText}>{t('Cancel')}</Text>
                 </TouchableOpacity>
                 <TouchableOpacity style={styles.modalPrimary} onPress={handleConfirm} disabled={saving}>
-                  {saving ? <ActivityIndicator color="#021417" /> : <Text style={styles.modalPrimaryText}>Confirm</Text>}
+                  {saving ? <ActivityIndicator color="#021417" /> : <Text style={styles.modalPrimaryText}>{t('Confirm')}</Text>}
                 </TouchableOpacity>
               </View>
             </View>

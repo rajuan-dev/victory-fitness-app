@@ -14,6 +14,10 @@ EXPO_PUBLIC_API_URL=https://your-backend-domain.com
 
 Do not leave the default Android emulator URL in production. The deployed web app must point to your hosted backend.
 
+Optional client-side config:
+
+- `EXPO_PUBLIC_API_URL` is the only environment variable the app needs for Junction and other backend calls.
+
 ### Local production build
 
 ```bash

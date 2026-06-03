@@ -20,6 +20,7 @@ import VictoryHeader from '../../components/VictoryHeader';
 import AccessRestrictionModal from '../../components/AccessRestrictionModal';
 import { BodyMetrics, clearAuthTokens, fetchCurrentUser, fetchCurrentUserBodyMetrics, updateCurrentUserBodyMetrics } from '../../lib/api';
 import { canAccessFeature, canAccessPlanRoute } from '../../lib/access';
+import { useLanguage } from '../../lib/i18n';
 import { useModuleAccessGuard } from '../../lib/useModuleAccessGuard';
 
 function getRankIcon(rank: string) {
@@ -57,7 +58,7 @@ const MENU_SECTIONS = [
         { icon: 'person-outline', label: 'Edit Profile', tint: '#4F8EF7', route: '/profile/edit' },
         { icon: 'document-text-outline', label: 'Application', tint: '#EAB308', route: '/profile/application' },
         { icon: 'lock-closed-outline', label: 'Privacy Policy', tint: '#A855F7', route: '/profile/privacy' },
-        { icon: 'language-outline', label: 'Language', tint: '#22C55E', value: 'English' },
+        { icon: 'language-outline', label: 'Language', tint: '#22C55E', action: 'language' },
         { icon: 'help-circle-outline', label: 'Help & Support', tint: '#8B5CF6', route: '/profile/support' },
       ],
   },
@@ -71,6 +72,11 @@ const MENU_SECTIONS = [
     ],
   }
 ];
+
+const LANGUAGE_OPTIONS = [
+  { key: 'en', label: 'English' },
+  { key: 'de', label: 'German' },
+] as const;
 
 function getDynamicRankIcon(rank: string) {
   const normalized = rank.trim().toLowerCase();
@@ -104,6 +110,7 @@ function getDynamicRankIcon(rank: string) {
 export default function ProfileScreen() {
   useModuleAccessGuard('/profile');
   const router = useRouter();
+  const { language, setLanguage, t } = useLanguage();
   const [me, setMe] = React.useState<{
     id: string;
     name: string;
@@ -129,6 +136,7 @@ export default function ProfileScreen() {
     weight: '',
     gender: '',
   });
+  const [showLanguageModal, setShowLanguageModal] = React.useState(false);
   const [showMetricsModal, setShowMetricsModal] = React.useState(false);
   const [savingMetrics, setSavingMetrics] = React.useState(false);
   const [metricsDraft, setMetricsDraft] = React.useState<BodyMetrics>({
@@ -142,13 +150,18 @@ export default function ProfileScreen() {
   const [restrictedSection, setRestrictedSection] = React.useState('');
   const bodyMetricsSummary = React.useMemo(() => {
     const parts = [
-      bodyMetrics.age ? `${bodyMetrics.age}y` : '',
-      bodyMetrics.height ? `${bodyMetrics.height}cm` : '',
-      bodyMetrics.weight ? `${bodyMetrics.weight}kg` : '',
-      bodyMetrics.gender || '',
+      bodyMetrics.age ? `${bodyMetrics.age}${t('y')}` : '',
+      bodyMetrics.height ? `${bodyMetrics.height}${t('cm')}` : '',
+      bodyMetrics.weight ? `${bodyMetrics.weight}${t('kg')}` : '',
+      bodyMetrics.gender ? t(bodyMetrics.gender) : '',
     ].filter(Boolean);
-    return parts.length > 0 ? parts.join(' • ') : 'Not set';
-  }, [bodyMetrics.age, bodyMetrics.gender, bodyMetrics.height, bodyMetrics.weight]);
+    return parts.length > 0 ? parts.join(' • ') : t('Not set');
+  }, [bodyMetrics.age, bodyMetrics.gender, bodyMetrics.height, bodyMetrics.weight, t]);
+
+  const languageLabel = React.useMemo(
+    () => (language === 'de' ? t('German') : t('English')),
+    [language, t],
+  );
 
   const visibleMenuSections = React.useMemo(() => {
     return MENU_SECTIONS.map((section) => ({
@@ -184,10 +197,16 @@ export default function ProfileScreen() {
               value: bodyMetricsSummary,
             };
           }
+          if ((item as any).action === 'language') {
+            return {
+              ...item,
+              value: languageLabel,
+            };
+          }
           return item;
         }),
     }));
-  }, [bodyMetricsSummary, me]);
+  }, [bodyMetricsSummary, languageLabel, me]);
 
   const genderOptions = ['Male', 'Female', 'Other'];
 
@@ -238,9 +257,9 @@ export default function ProfileScreen() {
     }
   }, [loadProfileData]);
 
-  const displayName = me?.name ?? 'Loading...';
-  const displayEmail = me?.email ?? 'Fetching /me data';
-  const displayVerified = me?.is_verified ? 'Verified' : 'Not verified';
+  const displayName = me?.name ?? t('Loading...');
+  const displayEmail = me?.email ?? t('Fetching /me data');
+  const displayVerified = me?.is_verified ? t('Verified') : t('Not verified');
   const points = me?.points ?? 0;
   const workoutsCompleted = me?.workouts_completed ?? 0;
   const workoutsTotal = me?.workouts_total ?? 0;
@@ -253,15 +272,20 @@ export default function ProfileScreen() {
   const pointsToNextRank = Math.max(me?.points_to_next_rank ?? 0, 0);
   const rankIcon = getDynamicRankIcon(rank);
   const profileStats = [
-    { label: 'Exercises completed', value: workoutsTotal > 0 ? `${workoutsCompleted}/${workoutsTotal}` : String(workoutsCompleted), icon: '\u{1F3CB}\uFE0F' },
-    { label: 'Streak', value: `${streakDays}d`, icon: '\u{1F525}' },
-    { label: 'Points', value: String(points), icon: '\u26A1' },
-    { label: 'Rank', value: rank.toUpperCase(), icon: rankIcon },
+    { label: t('Exercises completed'), value: workoutsTotal > 0 ? `${workoutsCompleted}/${workoutsTotal}` : String(workoutsCompleted), icon: '\u{1F3CB}\uFE0F' },
+    { label: t('Streak'), value: `${streakDays}d`, icon: '\u{1F525}' },
+    { label: t('Points'), value: String(points), icon: '\u26A1' },
+    { label: t('Rank'), value: rank.toUpperCase(), icon: rankIcon },
   ];
 
   const openMetricsModal = () => {
     setMetricsDraft(bodyMetrics);
     setShowMetricsModal(true);
+  };
+
+  const handleSelectLanguage = async (languageKey: (typeof LANGUAGE_OPTIONS)[number]['key']) => {
+    await setLanguage(languageKey);
+    setShowLanguageModal(false);
   };
 
   const handleSaveMetrics = async () => {
@@ -281,7 +305,7 @@ export default function ProfileScreen() {
       setShowMetricsModal(false);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unable to update body metrics right now.';
-      Alert.alert('Save failed', message);
+      Alert.alert(t('Save failed'), message);
     } finally {
       setSavingMetrics(false);
     }
@@ -321,8 +345,8 @@ export default function ProfileScreen() {
           </View>
 
           {/* Name & Badge */}
-          <Text style={styles.heroName}>{loadingMe ? 'Loading...' : displayName}</Text>
-          <Text style={styles.heroEmail}>{loadingMe ? 'Fetching /me data' : displayEmail}</Text>
+          <Text style={styles.heroName}>{loadingMe ? t('Loading...') : displayName}</Text>
+          <Text style={styles.heroEmail}>{loadingMe ? t('Fetching /me data') : displayEmail}</Text>
           <View style={styles.heroBadgeRow}>
             <View style={styles.rankBadge}>
               <Text style={styles.rankBadgeText}>{loadingMe ? 'MEMBER' : `${rankIcon} ${rank.toUpperCase()}`}</Text>
@@ -332,8 +356,8 @@ export default function ProfileScreen() {
             </View>
           </View>
           <View style={styles.heroMetaRow}>
-            <Text style={styles.heroMetaText}>{loadingMe ? 'Loading profile...' : displayVerified}</Text>
-            {me?.is_admin ? <Text style={styles.heroMetaAdmin}>Admin account</Text> : null}
+            <Text style={styles.heroMetaText}>{loadingMe ? t('Loading profile...') : displayVerified}</Text>
+            {me?.is_admin ? <Text style={styles.heroMetaAdmin}>{t('Admin account')}</Text> : null}
           </View>
 
           {/* Rank Progress */}
@@ -341,7 +365,7 @@ export default function ProfileScreen() {
             <View style={styles.rankProgressLabels}>
               <Text style={styles.rankProgressLabel}>{rank.toUpperCase()}</Text>
               <Text style={styles.rankProgressLabel}>
-                {pointsToNextRank > 0 ? `${pointsToNextRank} pts to ${nextRank.toUpperCase()}` : 'MAX RANK'}
+                {pointsToNextRank > 0 ? `${pointsToNextRank} ${t('pts to')} ${nextRank.toUpperCase()}` : t('MAX RANK')}
               </Text>
             </View>
             <View style={styles.rankBarBg}>
@@ -368,14 +392,14 @@ export default function ProfileScreen() {
 
         {/* ── Coach Cards ── */}
         <View style={styles.coachSection}>
-          <Text style={styles.sectionTitle}>MY COACHES</Text>
+          <Text style={styles.sectionTitle}>{t('MY COACHES')}</Text>
           {canAccessCoachVictor ? <View style={[styles.coachCard, { backgroundColor: Colors.surface }]}>
             <View style={[styles.coachIconWrap, { backgroundColor: Colors.accentBlue }]}>
               <Ionicons name="add" size={26} color="#fff" />
             </View>
             <View style={{ flex: 1 }}>
               <Text style={styles.coachName}>COACH VICTOR</Text>
-              <Text style={styles.coachStatus}>🟢 Ready for you</Text>
+              <Text style={styles.coachStatus}>🟢 {t('Ready for you')}</Text>
             </View>
             <TouchableOpacity
               style={styles.coachArrow}
@@ -384,13 +408,13 @@ export default function ProfileScreen() {
               <Ionicons name="chevron-forward" size={18} color="rgba(255,255,255,0.4)" />
             </TouchableOpacity>
           </View> : (
-            <TouchableOpacity style={[styles.coachCard, styles.lockedCard]} activeOpacity={0.85} onPress={() => setRestrictedSection('Coach Victor')}>
+            <TouchableOpacity style={[styles.coachCard, styles.lockedCard]} activeOpacity={0.85} onPress={() => setRestrictedSection(t('Coach Victor'))}>
               <View style={[styles.coachIconWrap, { backgroundColor: Colors.accentBlue }]}>
                 <Ionicons name="add" size={26} color="#fff" />
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={styles.coachName}>COACH VICTOR</Text>
-                <Text style={styles.coachStatus}>Upgrade required</Text>
+                <Text style={styles.coachStatus}>{t('Upgrade required')}</Text>
               </View>
               <Ionicons name="lock-closed" size={16} color="rgba(255,255,255,0.5)" />
             </TouchableOpacity>
@@ -402,7 +426,7 @@ export default function ProfileScreen() {
             </View>
               <View style={{ flex: 1 }}>
               <Text style={styles.coachName}>LONGEVITY OS</Text>
-              <Text style={[styles.coachStatus, { color: '#A855F7' }]}>⚡ Optimizing for you</Text>
+              <Text style={[styles.coachStatus, { color: '#A855F7' }]}>⚡ {t('Optimizing for you')}</Text>
             </View>
               <TouchableOpacity
                 style={styles.coachArrow}
@@ -412,23 +436,33 @@ export default function ProfileScreen() {
               </TouchableOpacity>
             </View>
           ) : (
-            <TouchableOpacity style={[styles.coachCard, styles.lockedCard]} activeOpacity={0.85} onPress={() => setRestrictedSection('Longevity OS')}>
+            <TouchableOpacity style={[styles.coachCard, styles.lockedCard]} activeOpacity={0.85} onPress={() => setRestrictedSection(t('Longevity OS'))}>
               <View style={[styles.coachIconWrap, { backgroundColor: Colors.accentPurple }]}>
                 <Ionicons name="pulse" size={22} color="#fff" />
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={styles.coachName}>LONGEVITY OS</Text>
-                <Text style={[styles.coachStatus, { color: '#A855F7' }]}>Upgrade required</Text>
+                <Text style={[styles.coachStatus, { color: '#A855F7' }]}>{t('Upgrade required')}</Text>
               </View>
               <Ionicons name="lock-closed" size={16} color="rgba(255,255,255,0.5)" />
             </TouchableOpacity>
           )}
+          <TouchableOpacity style={[styles.coachCard, styles.planCard]} activeOpacity={0.86} onPress={() => router.push('/plan')}>
+            <View style={[styles.coachIconWrap, { backgroundColor: Colors.accentGold }]}>
+              <Ionicons name="card-outline" size={22} color="#fff" />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.coachName}>{t('Update Plan').toUpperCase()}</Text>
+              <Text style={styles.coachStatus}>{t('Review or change your subscription tier')}</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color="rgba(255,255,255,0.4)" />
+          </TouchableOpacity>
         </View>
 
         {/* ── Menu Sections ── */}
         {visibleMenuSections.map((section) => (
           <View key={section.title} style={styles.menuSection}>
-            <Text style={styles.sectionTitle}>{section.title.toUpperCase()}</Text>
+            <Text style={styles.sectionTitle}>{t(section.title).toUpperCase()}</Text>
             <View style={styles.menuCard}>
               {section.items.map((item, i) => (
                 <View key={item.label}>
@@ -440,8 +474,12 @@ export default function ProfileScreen() {
                         openMetricsModal();
                         return;
                       }
+                      if ((item as any).action === 'language') {
+                        setShowLanguageModal(true);
+                        return;
+                      }
                       if ((item as any).restricted) {
-                        setRestrictedSection(item.label);
+                        setRestrictedSection(t(item.label));
                         return;
                       }
                       if ((item as any).route) {
@@ -452,7 +490,7 @@ export default function ProfileScreen() {
                     <View style={[styles.menuIconWrap, { backgroundColor: `${item.tint}20` }]}>
                       <Ionicons name={item.icon as any} size={18} color={item.tint} />
                     </View>
-                    <Text style={styles.menuLabel}>{item.label}</Text>
+                    <Text style={styles.menuLabel}>{t(item.label)}</Text>
                     <View style={styles.menuRight}>
                       {(item as any).value && <Text style={styles.menuValue}>{(item as any).value}</Text>}
                       {(item as any).restricted ? (
@@ -484,7 +522,7 @@ export default function ProfileScreen() {
           <Text style={styles.logoutText}>Log Out</Text>
         </TouchableOpacity>
 
-        <Text style={styles.versionText}>Victory Fitness v1.0.0</Text>
+        <Text style={styles.versionText}>{t('Victory Fitness v1.0.0')}</Text>
         <View style={{ height: 40 }} />
       </ScrollView>
       <AccessRestrictionModal
@@ -508,12 +546,12 @@ export default function ProfileScreen() {
               <View style={styles.metricsSavingOverlay}>
                 <View style={styles.metricsSavingCard}>
                   <ActivityIndicator color={Colors.accentBlue} size="large" />
-                  <Text style={styles.metricsSavingText}>Saving metrics...</Text>
+                  <Text style={styles.metricsSavingText}>{t('Saving metrics...')}</Text>
                 </View>
               </View>
             ) : null}
             <View style={styles.metricsModalHeader}>
-              <Text style={styles.metricsModalTitle}>UPDATE BODY METRICS</Text>
+              <Text style={styles.metricsModalTitle}>{t('UPDATE BODY METRICS')}</Text>
               <TouchableOpacity onPress={() => setShowMetricsModal(false)} disabled={savingMetrics}>
                 <Ionicons name="close" size={22} color="rgba(255,255,255,0.7)" />
               </TouchableOpacity>
@@ -521,7 +559,7 @@ export default function ProfileScreen() {
 
             <View style={styles.metricsFormGrid}>
               <View style={styles.metricsInputGroup}>
-                <Text style={styles.metricsInputLabel}>AGE</Text>
+                <Text style={styles.metricsInputLabel}>{t('AGE')}</Text>
                 <View style={styles.metricsInputWrap}>
                   <TextInput
                     style={styles.metricsInput}
@@ -535,20 +573,20 @@ export default function ProfileScreen() {
               </View>
 
               <View style={styles.metricsInputGroup}>
-                <Text style={styles.metricsInputLabel}>GENDER</Text>
+                <Text style={styles.metricsInputLabel}>{t('GENDER')}</Text>
                 <TouchableOpacity
                   style={styles.metricsInputWrap}
                   activeOpacity={0.8}
                   onPress={() => setShowGenderModal(true)}
                   disabled={savingMetrics}
                 >
-                  <Text style={styles.metricsInput}>{metricsDraft.gender || 'Select'}</Text>
+                  <Text style={styles.metricsInput}>{metricsDraft.gender ? t(metricsDraft.gender) : t('Select')}</Text>
                   <Ionicons name="chevron-down" size={16} color="rgba(255,255,255,0.45)" />
                 </TouchableOpacity>
               </View>
 
               <View style={styles.metricsInputGroup}>
-                <Text style={styles.metricsInputLabel}>HEIGHT</Text>
+                <Text style={styles.metricsInputLabel}>{t('HEIGHT')}</Text>
                 <View style={styles.metricsInputWrap}>
                   <TextInput
                     style={styles.metricsInput}
@@ -562,7 +600,7 @@ export default function ProfileScreen() {
               </View>
 
               <View style={styles.metricsInputGroup}>
-                <Text style={styles.metricsInputLabel}>WEIGHT</Text>
+                <Text style={styles.metricsInputLabel}>{t('WEIGHT')}</Text>
                 <View style={styles.metricsInputWrap}>
                   <TextInput
                     style={styles.metricsInput}
@@ -583,20 +621,42 @@ export default function ProfileScreen() {
                 onPress={() => setShowMetricsModal(false)}
                 disabled={savingMetrics}
               >
-                <Text style={styles.metricsCancelBtnText}>Cancel</Text>
+                <Text style={styles.metricsCancelBtnText}>{t('Cancel')}</Text>
               </TouchableOpacity>
               <TouchableOpacity style={styles.metricsSaveBtn} activeOpacity={0.85} onPress={handleSaveMetrics} disabled={savingMetrics}>
-                {savingMetrics ? <ActivityIndicator size="small" color="#04111F" /> : <Text style={styles.metricsSaveBtnText}>Save Changes</Text>}
+                {savingMetrics ? <ActivityIndicator size="small" color="#04111F" /> : <Text style={styles.metricsSaveBtnText}>{t('Save Changes')}</Text>}
               </TouchableOpacity>
             </View>
           </View>
         </View>
       </Modal>
 
+      <Modal visible={showLanguageModal} transparent animationType="fade" onRequestClose={() => setShowLanguageModal(false)}>
+        <TouchableOpacity style={styles.metricsModalOverlay} activeOpacity={1} onPress={() => setShowLanguageModal(false)}>
+          <View style={styles.genderModalCard}>
+            <Text style={styles.genderModalTitle}>{t('SELECT LANGUAGE')}</Text>
+            {LANGUAGE_OPTIONS.map((option) => (
+              <TouchableOpacity
+                key={option.key}
+                style={styles.genderModalOption}
+                onPress={() => void handleSelectLanguage(option.key)}
+              >
+                <Text style={[styles.genderModalOptionText, language === option.key && styles.genderModalOptionTextActive]}>
+                  {t(option.label).toUpperCase()}
+                </Text>
+                {language === option.key ? (
+                  <Ionicons name="checkmark-circle" size={20} color={Colors.accentBlue} />
+                ) : null}
+              </TouchableOpacity>
+            ))}
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
       <Modal visible={showGenderModal} transparent animationType="fade" onRequestClose={() => setShowGenderModal(false)}>
         <TouchableOpacity style={styles.metricsModalOverlay} activeOpacity={1} onPress={() => setShowGenderModal(false)}>
           <View style={styles.genderModalCard}>
-            <Text style={styles.genderModalTitle}>SELECT GENDER</Text>
+            <Text style={styles.genderModalTitle}>{t('SELECT GENDER')}</Text>
             {genderOptions.map((option) => (
               <TouchableOpacity
                 key={option}
@@ -974,6 +1034,10 @@ const styles = StyleSheet.create({
   },
   lockedCard: {
     opacity: 0.82,
+  },
+  planCard: {
+    borderColor: 'rgba(245,158,11,0.24)',
+    backgroundColor: 'rgba(245,158,11,0.08)',
   },
   coachIconWrap: { width: 50, height: 50, borderRadius: 14, justifyContent: 'center', alignItems: 'center' },
   coachName: { fontSize: 14, fontWeight: '800', color: '#fff', fontFamily: 'Inter_700Bold', letterSpacing: 0.5 },

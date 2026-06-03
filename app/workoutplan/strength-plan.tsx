@@ -15,10 +15,12 @@ import { Colors } from '../../constants/Colors';
 import VictoryHeader from '../../components/VictoryHeader';
 import { fetchLatestStrengthWorkoutPlan, getLatestStrengthWorkoutPlan, loadLatestStrengthWorkoutPlan, StrengthPlanResponse } from '../../lib/workout-plans';
 import { useModuleAccessGuard } from '../../lib/useModuleAccessGuard';
+import { useLanguage } from '../../lib/i18n';
 
 export default function StrengthPlanResult() {
   useModuleAccessGuard('/workoutplan');
   const router = useRouter();
+  const { t } = useLanguage();
   const [plan, setPlan] = useState<StrengthPlanResponse | null>(getLatestStrengthWorkoutPlan());
   const [loading, setLoading] = useState(!plan);
   const dayLabels = useMemo(() => (plan?.days?.length ? plan.days.map((day) => day.day) : ['Mon']), [plan]);
@@ -65,7 +67,7 @@ export default function StrengthPlanResult() {
     <SafeAreaView style={styles.container}>
       <Stack.Screen options={{
         headerShown: true,
-        title: 'CUSTOM STRENGTH PLAN',
+        title: t('CUSTOM STRENGTH PLAN'),
         headerTransparent: true,
         headerTintColor: '#fff',
         headerTitleStyle: { fontFamily: 'Inter_700Bold', fontSize: 13, letterSpacing: 2 } as any,
@@ -78,23 +80,23 @@ export default function StrengthPlanResult() {
       {loading ? (
         <View style={styles.loadingState}>
           <ActivityIndicator size="large" color={Colors.accentBlue} />
-          <Text style={styles.loadingStateText}>Loading your custom strength plan...</Text>
+          <Text style={styles.loadingStateText}>{t('Loading your custom strength plan...')}</Text>
         </View>
       ) : !plan || !selectedPlanDay ? (
         <View style={styles.emptyState}>
-          <Text style={styles.emptyStateTitle}>No custom strength plan yet</Text>
-          <Text style={styles.emptyStateText}>Create a plan first from the wizard to see it here.</Text>
+          <Text style={styles.emptyStateTitle}>{t('No custom strength plan yet')}</Text>
+          <Text style={styles.emptyStateText}>{t('Create a plan first from the wizard to see it here.')}</Text>
           <TouchableOpacity style={styles.emptyStateButton} onPress={() => router.replace('/workoutplan/strength-wizard')}>
-            <Text style={styles.emptyStateButtonText}>Create Plan</Text>
+            <Text style={styles.emptyStateButtonText}>{t('Create Plan')}</Text>
           </TouchableOpacity>
         </View>
       ) : (
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         {/* Header Section */}
         <View style={styles.topSection}>
-          <Text style={styles.welcomeText}>{plan?.summary ?? 'Your Strength Roadmap'}</Text>
+          <Text style={styles.welcomeText}>{plan?.summary ?? t('Your Strength Roadmap')}</Text>
           <Text style={styles.dateText}>
-            {selectedPlanDay ? `Day ${dayLabels.indexOf(selectedPlanDay.day) + 1}: ${selectedPlanDay.title}` : 'No generated plan'}
+            {selectedPlanDay ? `Day ${dayLabels.indexOf(selectedPlanDay.day) + 1}: ${selectedPlanDay.title}` : t('No generated plan')}
           </Text>
         </View>
 
@@ -120,23 +122,23 @@ export default function StrengthPlanResult() {
         {/* Daily Stats */}
         <View style={styles.statsRow}>
           <View style={styles.statBox}>
-            <Text style={styles.statLabel}>EST. TIME</Text>
+            <Text style={styles.statLabel}>{t('EST. TIME')}</Text>
             <Text style={styles.statValue}>{selectedPlanDay?.est_time ?? '-'}</Text>
           </View>
           <View style={styles.statDivider} />
           <View style={styles.statBox}>
-            <Text style={styles.statLabel}>VOLUME</Text>
+            <Text style={styles.statLabel}>{t('VOLUME')}</Text>
             <Text style={styles.statValue}>{selectedPlanDay?.volume ?? '-'}</Text>
           </View>
           <View style={styles.statDivider} />
           <View style={styles.statBox}>
-            <Text style={styles.statLabel}>INTENSITY</Text>
+            <Text style={styles.statLabel}>{t('INTENSITY')}</Text>
             <Text style={styles.statValue}>{selectedPlanDay?.intensity ?? '-'}</Text>
           </View>
         </View>
 
         {/* Exercise List */}
-        <Text style={styles.sectionHeader}>TODAY'S EXERCISES</Text>
+        <Text style={styles.sectionHeader}>{t("TODAY'S EXERCISES")}</Text>
         <View style={styles.exerciseList}>
           {(selectedPlanDay?.exercises ?? []).map((ex) => (
             <View key={ex.id} style={styles.exerciseCard}>
@@ -153,11 +155,11 @@ export default function StrengthPlanResult() {
               <View style={styles.exerciseMetrics}>
                 <View style={styles.metricItem}>
                   <Ionicons name="layers-outline" size={16} color={Colors.accentBlue} />
-                  <Text style={styles.metricValue}>{ex.sets} Sets</Text>
+                  <Text style={styles.metricValue}>{ex.sets} {t('Sets')}</Text>
                 </View>
                 <View style={styles.metricItem}>
                   <Ionicons name="repeat-outline" size={16} color={Colors.accentBlue} />
-                  <Text style={styles.metricValue}>{ex.reps} Reps</Text>
+                  <Text style={styles.metricValue}>{ex.reps} {t('Reps')}</Text>
                 </View>
                 <View style={styles.metricItem}>
                   <Ionicons name="fitness-outline" size={16} color={Colors.accentBlue} />
@@ -165,7 +167,7 @@ export default function StrengthPlanResult() {
                 </View>
                 <View style={styles.metricItem}>
                   <Ionicons name="timer-outline" size={16} color={Colors.accentBlue} />
-                  <Text style={styles.metricValue}>{ex.rest} Rest</Text>
+                  <Text style={styles.metricValue}>{ex.rest} {t('Rest')}</Text>
                 </View>
               </View>
             </View>

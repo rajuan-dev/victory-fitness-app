@@ -12,6 +12,7 @@ import { Colors } from '../constants/Colors';
 import { fetchCurrentUser, getValidAuthTokens, setAuthFailureHandler } from '../lib/api';
 import { getPostAuthRoute, isPublicRoute, isRouteAllowedForPlan } from '../lib/access';
 import { appendRunLog, formatRunLogMessage } from '../lib/runLog';
+import { LanguageProvider } from '../lib/i18n';
 
 export default function RootLayout() {
   const router = useRouter();
@@ -177,16 +178,18 @@ export default function RootLayout() {
   }
 
   return (
-    <View style={styles.container}>
-      <StatusBar style="light" />
-      <Stack
-        screenOptions={{
-          headerShown: false,
-          contentStyle: { backgroundColor: Colors.background },
-          animation: 'none',
-        }}
-      />
-    </View>
+    <LanguageProvider>
+      <View style={styles.container}>
+        <StatusBar style="light" />
+        <Stack
+          screenOptions={{
+            headerShown: false,
+            contentStyle: { backgroundColor: Colors.background },
+            animation: 'none',
+          }}
+        />
+      </View>
+    </LanguageProvider>
   );
 }
 

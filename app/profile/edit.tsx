@@ -16,9 +16,11 @@ import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { Colors } from '../../constants/Colors';
 import { fetchCurrentUser, updateCurrentUserProfile, uploadCurrentUserProfileImage } from '../../lib/api';
+import { useLanguage } from '../../lib/i18n';
 
 export default function EditProfileScreen() {
   const router = useRouter();
+  const { t } = useLanguage();
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [location, setLocation] = useState('');
@@ -44,7 +46,7 @@ export default function EditProfileScreen() {
         setProfileImage(me.profileImage ?? '');
       } catch (error) {
         if (!cancelled) {
-          Alert.alert('Profile unavailable', 'Unable to load your profile right now.');
+          Alert.alert(t('Profile unavailable'), t('Unable to load your profile right now.'));
         }
       } finally {
         if (!cancelled) {
@@ -75,8 +77,8 @@ export default function EditProfileScreen() {
       });
       router.back();
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unable to save profile changes.';
-      Alert.alert('Save failed', message);
+      const message = error instanceof Error ? error.message : t('Unable to save profile changes.');
+      Alert.alert(t('Save failed'), message);
     } finally {
       setSavingProfile(false);
     }
@@ -90,7 +92,7 @@ export default function EditProfileScreen() {
     try {
       const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (!permission.granted) {
-        Alert.alert('Permission needed', 'Please allow photo library access to choose a profile image.');
+        Alert.alert(t('Permission needed'), t('Please allow photo library access to choose a profile image.'));
         return;
       }
 
@@ -123,8 +125,8 @@ export default function EditProfileScreen() {
         setUploadingImage(false);
       }
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unable to upload your profile image right now.';
-      Alert.alert('Upload failed', message);
+      const message = error instanceof Error ? error.message : t('Unable to upload your profile image right now.');
+      Alert.alert(t('Upload failed'), message);
       setUploadingImage(false);
     }
   };
@@ -133,7 +135,7 @@ export default function EditProfileScreen() {
     <SafeAreaView style={styles.container}>
       <Stack.Screen options={{ 
         headerShown: true, 
-        title: 'EDIT PROFILE',
+        title: t('EDIT PROFILE'),
         headerTransparent: true,
         headerTintColor: '#fff',
         headerTitleStyle: { fontFamily: 'Inter_700Bold', fontSize: 16, letterSpacing: 2 } as any,
@@ -168,30 +170,30 @@ export default function EditProfileScreen() {
             </TouchableOpacity>
           </View>
           <TouchableOpacity onPress={handleChangePhoto} disabled={uploadingImage || loadingProfile || savingProfile}>
-            <Text style={styles.changePhotoText}>{uploadingImage ? 'Uploading photo...' : 'Change Profile Photo'}</Text>
+            <Text style={styles.changePhotoText}>{uploadingImage ? t('Uploading photo...') : t('Change Profile Photo')}</Text>
           </TouchableOpacity>
         </View>
 
         <View style={styles.formSection}>
           <View style={styles.inputGroup}>
-            <Text style={styles.label}>FULL NAME</Text>
+            <Text style={styles.label}>{t('FULL NAME')}</Text>
             <TextInput
               style={styles.input}
               value={name}
               onChangeText={setName}
-              placeholder="Your Name"
+              placeholder={t('Your Name')}
               placeholderTextColor="rgba(255,255,255,0.2)"
               editable={!loadingProfile && !savingProfile}
             />
           </View>
 
           <View style={styles.inputGroup}>
-            <Text style={styles.label}>EMAIL ADDRESS</Text>
+            <Text style={styles.label}>{t('EMAIL ADDRESS')}</Text>
             <TextInput
               style={styles.input}
               value={email}
               onChangeText={setEmail}
-              placeholder="Your Email"
+              placeholder={t('Your Email')}
               placeholderTextColor="rgba(255,255,255,0.2)"
               keyboardType="email-address"
               editable={!loadingProfile && !savingProfile}
@@ -199,12 +201,12 @@ export default function EditProfileScreen() {
           </View>
 
           <View style={styles.inputGroup}>
-            <Text style={styles.label}>LOCATION (OPTIONAL)</Text>
+            <Text style={styles.label}>{t('LOCATION (OPTIONAL)')}</Text>
             <TextInput
               style={styles.input}
               value={location}
               onChangeText={setLocation}
-              placeholder="City, Country"
+              placeholder={t('City, Country')}
               placeholderTextColor="rgba(255,255,255,0.2)"
               editable={!loadingProfile && !savingProfile}
             />
@@ -220,10 +222,10 @@ export default function EditProfileScreen() {
           {savingProfile ? (
             <View style={styles.saveBtnRow}>
               <ActivityIndicator color="#000" />
-              <Text style={styles.saveBtnText}>SAVING...</Text>
+              <Text style={styles.saveBtnText}>{t('SAVING...')}</Text>
             </View>
           ) : (
-            <Text style={styles.saveBtnText}>{loadingProfile ? 'LOADING...' : 'SAVE CHANGES'}</Text>
+            <Text style={styles.saveBtnText}>{loadingProfile ? t('LOADING...') : t('SAVE CHANGES')}</Text>
           )}
         </TouchableOpacity>
       </ScrollView>

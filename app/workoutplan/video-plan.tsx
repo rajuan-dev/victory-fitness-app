@@ -15,12 +15,14 @@ import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../constants/Colors';
 import { getLatestVideoWorkoutPlan } from '../../lib/workout-plans';
 import { useModuleAccessGuard } from '../../lib/useModuleAccessGuard';
+import { useLanguage } from '../../lib/i18n';
 
 const { width } = Dimensions.get('window');
 
 export default function VideoPlanResult() {
   const checkingAccess = useModuleAccessGuard('/workoutplan');
   const router = useRouter();
+  const { t } = useLanguage();
   const plan = getLatestVideoWorkoutPlan();
   const dayLabels = useMemo(() => (plan?.days?.length ? plan.days.map((day) => day.day) : ['Mon']), [plan]);
   const [selectedDay, setSelectedDay] = useState(dayLabels[0] ?? 'Mon');
@@ -34,7 +36,7 @@ export default function VideoPlanResult() {
     <SafeAreaView style={styles.container}>
       <Stack.Screen options={{
         headerShown: true,
-        title: '7-DAY VIDEO PLAN',
+        title: t('7-DAY VIDEO PLAN'),
         headerTransparent: true,
         headerTintColor: '#fff',
         headerTitleStyle: { fontFamily: 'Inter_700Bold', fontSize: 13, letterSpacing: 2 } as any,
@@ -48,8 +50,8 @@ export default function VideoPlanResult() {
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         {/* Profile/Welcome Section */}
         <View style={styles.topSection}>
-          <Text style={styles.welcomeText}>{plan?.summary ?? 'Your Weekly Path'}</Text>
-          <Text style={styles.dateText}>Ready for Day {dayLabels.indexOf(selectedDay) + 1}?</Text>
+          <Text style={styles.welcomeText}>{plan?.summary ?? t('Your Weekly Path')}</Text>
+          <Text style={styles.dateText}>{t('Ready for Day')} {dayLabels.indexOf(selectedDay) + 1}?</Text>
         </View>
 
         {/* Premium Day Selector */}
@@ -79,7 +81,7 @@ export default function VideoPlanResult() {
               <Ionicons name="time" size={20} color={Colors.accentBlue} />
             </View>
             <View>
-              <Text style={styles.statLabel}>DURATION</Text>
+              <Text style={styles.statLabel}>{t('DURATION')}</Text>
               <Text style={styles.statValue}>{selectedPlanDay?.duration_label ?? '-'}</Text>
             </View>
           </View>
@@ -89,7 +91,7 @@ export default function VideoPlanResult() {
               <Ionicons name="videocam" size={20} color={Colors.accentBlue} />
             </View>
             <View>
-              <Text style={styles.statLabel}>WORKOUTS</Text>
+              <Text style={styles.statLabel}>{t('WORKOUTS')}</Text>
               <Text style={styles.statValue}>{selectedPlanDay?.workouts_count ?? 0}</Text>
             </View>
           </View>
@@ -97,9 +99,9 @@ export default function VideoPlanResult() {
 
         {/* Workout List Section */}
         <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>TODAY'S LINEUP</Text>
+          <Text style={styles.sectionTitle}>{t("TODAY'S LINEUP")}</Text>
           <TouchableOpacity>
-            <Text style={styles.seeAllText}>Overview</Text>
+            <Text style={styles.seeAllText}>{t('Overview')}</Text>
           </TouchableOpacity>
         </View>
 

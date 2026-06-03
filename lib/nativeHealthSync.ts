@@ -32,6 +32,8 @@ export type NativeHealthChecklistState = NativeHealthReadiness & {
 };
 
 const HEALTH_SYNC_LOOKBACK_DAYS = 7;
+const INITIAL_HEALTH_SYNC_LOOKBACK_DAYS = 3;
+const HEALTH_SYNC_UPLOAD_CONCURRENCY = 4;
 const HEALTH_CONNECT_READ_PERMISSIONS = [
   { accessType: 'read' as const, recordType: 'Steps' as const },
   { accessType: 'read' as const, recordType: 'Distance' as const },
@@ -51,9 +53,13 @@ const HEALTH_CONNECT_SOURCE_CHECK_RECORD_TYPES = [
   'OxygenSaturation',
 ] as const;
 
-function getSyncWindow() {
+function getSyncWindow(startFrom?: string | Date | null, lookbackDays = HEALTH_SYNC_LOOKBACK_DAYS) {
   const end = new Date();
-  const start = new Date(end.getTime() - HEALTH_SYNC_LOOKBACK_DAYS * 24 * 60 * 60 * 1000);
+  const defaultStart = new Date(end.getTime() - lookbackDays * 24 * 60 * 60 * 1000);
+  const requestedStart = startFrom ? new Date(startFrom) : null;
+  const start = requestedStart && !Number.isNaN(requestedStart.getTime())
+    ? new Date(Math.max(requestedStart.getTime() - 24 * 60 * 60 * 1000, defaultStart.getTime()))
+    : defaultStart;
   return {
     start,
     end,
@@ -90,6 +96,48 @@ function buildMetric(
   };
 }
 
+function chunkMetrics(metrics: NormalizedHealthMetricPayload[], size: number): NormalizedHealthMetricPayload[][] {
+  if (size <= 0) {
+    return [metrics];
+  }
+  const chunks: NormalizedHealthMetricPayload[][] = [];
+  for (let index = 0; index < metrics.length; index += size) {
+    chunks.push(metrics.slice(index, index + size));
+  }
+  return chunks;
+}
+
+async function runConcurrentBatches<T, R>(items: T[], concurrency: number, worker: (item: T) => Promise<R>): Promise<R[]> {
+  if (items.length === 0) {
+    return [];
+  }
+
+  const results: R[] = [];
+  for (let index = 0; index < items.length; index += concurrency) {
+    const batch = items.slice(index, index + concurrency);
+    const batchResults = await Promise.all(batch.map((item) => worker(item)));
+    results.push(...batchResults);
+  }
+  return results;
+}
+
+function logSyncPayload(target: string, payload: MobileHealthSyncPayload) {
+  try {
+    const metricPreview = payload.metrics.map((metric) => ({
+      metric_type: metric.metric_type,
+      value: metric.value,
+      unit: metric.unit,
+      source_device: metric.source_device,
+    }));
+    console.log(
+      `[sync-data] ${target} | source=${payload.source_device || 'unknown'} | metrics=${payload.metrics.length}`,
+      JSON.stringify(metricPreview),
+    );
+  } catch {
+    console.log(`[sync-data] ${target} | source=${payload.source_device || 'unknown'} | metrics=${payload.metrics.length}`);
+  }
+}
+
 function toHours(startTime: string, endTime: string) {
   const start = new Date(startTime).getTime();
   const end = new Date(endTime).getTime();
@@ -102,7 +150,7 @@ function normalizeHealthSourceLabel(origin: string) {
     return 'Unknown source';
   }
   if (normalized.includes('samsung')) {
-    return 'Samsung Health';
+    return 'Android Health App';
   }
   if (normalized.includes('runmefit')) {
     return 'Runmefit';
@@ -123,6 +171,20 @@ function normalizeHealthSourceLabel(origin: string) {
     return 'Withings';
   }
   return origin;
+}
+
+function sortHealthSourceLabels(labels: string[]) {
+  const priority = ['Runmefit', 'Android Health App', 'Apple Health'];
+  return [...labels].sort((left, right) => {
+    const leftIndex = priority.indexOf(left);
+    const rightIndex = priority.indexOf(right);
+    const safeLeft = leftIndex === -1 ? priority.length : leftIndex;
+    const safeRight = rightIndex === -1 ? priority.length : rightIndex;
+    if (safeLeft !== safeRight) {
+      return safeLeft - safeRight;
+    }
+    return left.localeCompare(right);
+  });
 }
 
 function buildNativeChecklistItems(base: {
@@ -214,11 +276,11 @@ function callbackToPromise<T>(register: (callback: (error: string | null, result
   });
 }
 
-async function collectAppleHealthMetrics(): Promise<MobileHealthSyncPayload> {
+async function collectAppleHealthMetrics(startFrom?: string | Date | null, lookbackDays = HEALTH_SYNC_LOOKBACK_DAYS): Promise<MobileHealthSyncPayload> {
   const AppleHealthKit = require('react-native-health').default;
   await authorizeAppleHealth(AppleHealthKit);
 
-  const { startIso, endIso } = getSyncWindow();
+  const { startIso, endIso } = getSyncWindow(startFrom, lookbackDays);
   const baseOptions = {
     startDate: startIso,
     endDate: endIso,
@@ -347,7 +409,7 @@ async function collectAppleHealthMetrics(): Promise<MobileHealthSyncPayload> {
   });
 
   if (metrics.length === 0) {
-    throw new Error('No Apple Health records were found for the last 7 days.');
+    throw new Error(`No Apple Health records were found for the last ${lookbackDays} days.`);
   }
 
   return {
@@ -357,47 +419,74 @@ async function collectAppleHealthMetrics(): Promise<MobileHealthSyncPayload> {
   };
 }
 
-async function collectHealthConnectMetrics(): Promise<MobileHealthSyncPayload> {
+async function collectHealthConnectMetrics(startFrom?: string | Date | null, lookbackDays = HEALTH_SYNC_LOOKBACK_DAYS): Promise<MobileHealthSyncPayload> {
   const HealthConnect = require('react-native-health-connect') as typeof import('react-native-health-connect');
   await authorizeHealthConnect(HealthConnect);
 
-  const { startIso, endIso } = getSyncWindow();
+  const { startIso, endIso } = getSyncWindow(startFrom, lookbackDays);
   const timeRangeFilter = {
     operator: 'between' as const,
     startTime: startIso,
     endTime: endIso,
   };
 
+  const sourceDevice = 'Health Connect';
+  const metrics: NormalizedHealthMetricPayload[] = [];
+
+  // Fetch continuous and sample-based metrics in parallel
   const [
-    stepTotals,
-    calorieTotals,
-    distanceTotals,
     heartRateRecords,
     hrvRecords,
     sleepRecords,
     oxygenRecords,
   ] = await Promise.all([
-    HealthConnect.aggregateRecord({ recordType: 'Steps', timeRangeFilter }),
-    HealthConnect.aggregateRecord({ recordType: 'ActiveCaloriesBurned', timeRangeFilter }),
-    HealthConnect.aggregateRecord({ recordType: 'Distance', timeRangeFilter }),
     HealthConnect.readRecords('HeartRate', { timeRangeFilter, ascendingOrder: false, pageSize: 50 }),
     HealthConnect.readRecords('HeartRateVariabilityRmssd', { timeRangeFilter, ascendingOrder: false, pageSize: 50 }),
     HealthConnect.readRecords('SleepSession', { timeRangeFilter, ascendingOrder: false, pageSize: 30 }),
     HealthConnect.readRecords('OxygenSaturation', { timeRangeFilter, ascendingOrder: false, pageSize: 50 }),
   ]);
 
-  const sourceDevice = 'Health Connect';
-  const metrics: NormalizedHealthMetricPayload[] = [];
+  // Fetch daily aggregates for Steps, ActiveCaloriesBurned, and Distance for each of the last 7 days
+  const dailySyncPromises = Array.from({ length: lookbackDays }).map(async (_, i) => {
+    const dayStart = new Date();
+    dayStart.setHours(0, 0, 0, 0);
+    dayStart.setDate(dayStart.getDate() - i);
 
-  if (typeof stepTotals.COUNT_TOTAL === 'number' && stepTotals.COUNT_TOTAL > 0) {
-    metrics.push(buildMetric('health-connect', 'steps', stepTotals.COUNT_TOTAL, 'count', startIso, endIso, sourceDevice));
-  }
-  if (distanceTotals.DISTANCE?.inMeters) {
-    metrics.push(buildMetric('health-connect', 'distance', distanceTotals.DISTANCE.inMeters, 'meter', startIso, endIso, sourceDevice));
-  }
-  if (calorieTotals.ACTIVE_CALORIES_TOTAL?.inKilocalories) {
-    metrics.push(buildMetric('health-connect', 'calories', calorieTotals.ACTIVE_CALORIES_TOTAL.inKilocalories, 'kcal', startIso, endIso, sourceDevice));
-  }
+    const dayEnd = new Date();
+    dayEnd.setHours(23, 59, 59, 999);
+    dayEnd.setDate(dayEnd.getDate() - i);
+
+    const dayStartIso = dayStart.toISOString();
+    const dayEndIso = dayEnd.toISOString();
+
+    const dailyFilter = {
+      operator: 'between' as const,
+      startTime: dayStartIso,
+      endTime: dayEndIso,
+    };
+
+    try {
+      const [stepsAgg, calorieAgg, distanceAgg] = await Promise.all([
+        HealthConnect.aggregateRecord({ recordType: 'Steps', timeRangeFilter: dailyFilter }).catch(() => null),
+        HealthConnect.aggregateRecord({ recordType: 'ActiveCaloriesBurned', timeRangeFilter: dailyFilter }).catch(() => null),
+        HealthConnect.aggregateRecord({ recordType: 'Distance', timeRangeFilter: dailyFilter }).catch(() => null),
+      ]);
+
+      if (stepsAgg && typeof stepsAgg.COUNT_TOTAL === 'number' && stepsAgg.COUNT_TOTAL > 0) {
+        metrics.push(buildMetric('health-connect', 'steps', stepsAgg.COUNT_TOTAL, 'count', dayStartIso, dayEndIso, sourceDevice));
+      }
+      if (distanceAgg && distanceAgg.DISTANCE?.inMeters) {
+        metrics.push(buildMetric('health-connect', 'distance', distanceAgg.DISTANCE.inMeters, 'meter', dayStartIso, dayEndIso, sourceDevice));
+      }
+      if (calorieAgg && calorieAgg.ACTIVE_CALORIES_TOTAL?.inKilocalories) {
+        metrics.push(buildMetric('health-connect', 'calories', calorieAgg.ACTIVE_CALORIES_TOTAL.inKilocalories, 'kcal', dayStartIso, dayEndIso, sourceDevice));
+      }
+    } catch (e) {
+      console.warn(`[nativeHealthSync] Failed to collect daily aggregates for day -${i}:`, e);
+    }
+  });
+
+  await Promise.all(dailySyncPromises);
 
   heartRateRecords.records.forEach((record: any) => {
     const samples = Array.isArray(record.samples) ? record.samples : [];
@@ -457,10 +546,6 @@ async function collectHealthConnectMetrics(): Promise<MobileHealthSyncPayload> {
       ),
     );
   });
-
-  if (metrics.length === 0) {
-    throw new Error('No Health Connect records were found for the last 7 days.');
-  }
 
   return {
     metrics,
@@ -566,7 +651,7 @@ export async function getNativeHealthReadiness(target: NativeSyncTarget): Promis
       label,
       isReady: false,
       status: 'needs_setup',
-      message: 'Health Connect is not ready on this phone yet. Install it first, then connect Samsung Health, Runmefit, or other Android health apps.',
+      message: 'Health Connect is not ready on this phone yet. Install it first, then connect your Android health apps.',
       action: 'open_settings',
       actionLabel: 'Open Health Connect',
     };
@@ -595,8 +680,8 @@ export async function getNativeHealthReadiness(target: NativeSyncTarget): Promis
     isReady: true,
     status: 'ready',
     message: hasAnyReadPermission
-      ? 'Health Connect is ready. Sync approved records from Samsung Health, Runmefit, and other connected Android apps.'
-      : 'Health Connect is installed. Connect it in this app and allow read access to sync Samsung Health, Runmefit, and other Android apps.',
+      ? 'Health Connect is ready. Sync approved records from connected Android apps.'
+      : 'Health Connect is installed. Connect it in this app and allow read access to sync connected Android apps.',
     action: 'open_data_management',
     actionLabel: 'Manage Permissions',
   };
@@ -634,7 +719,7 @@ async function inspectAndroidSourceRecords(HealthConnect: typeof import('react-n
     }
   });
 
-  const detectedSourceLabels = Array.from(origins).map(normalizeHealthSourceLabel);
+  const detectedSourceLabels = sortHealthSourceLabels(Array.from(origins).map(normalizeHealthSourceLabel));
   return {
     recordsFound: records.length,
     detectedSourceLabels,
@@ -738,7 +823,7 @@ export async function inspectNativeHealthChecklist(target: NativeSyncTarget): Pr
       label,
       isReady: false,
       status: 'needs_setup',
-      message: 'Health Connect is not ready on this phone yet. Install it first, then connect Samsung Health, Runmefit, or other Android health apps.',
+      message: 'Health Connect is not ready on this phone yet. Install it first, then connect your Android health apps.',
       action: 'open_settings',
       actionLabel: 'Open Health Connect',
       items: buildNativeChecklistItems({
@@ -798,23 +883,20 @@ export async function inspectNativeHealthChecklist(target: NativeSyncTarget): Pr
 
   const { recordsFound, detectedSourceLabels } = await inspectAndroidSourceRecords(HealthConnect);
   const hasSourceData = recordsFound > 0;
-  const hasSamsungOrRunmefitSource = detectedSourceLabels.some((label) => label === 'Samsung Health' || label === 'Runmefit');
   const sourceMessage = hasSourceData
-    ? hasSamsungOrRunmefitSource
-      ? `Detected data from ${detectedSourceLabels.join(', ')} in the last 7 days.`
-      : `Detected data from ${detectedSourceLabels.join(', ')}, but not from Samsung Health or Runmefit yet.`
-    : 'No source app data was found in the last 7 days. Open Samsung Health or Runmefit and make sure it is writing into Health Connect.';
-  const isReady = hasPermission && hasSamsungOrRunmefitSource;
+    ? `Detected data from ${detectedSourceLabels.join(', ')} in the last 7 days.`
+    : 'No source app data was found in the last 7 days. Open your Android health app and make sure it is writing into Health Connect.';
+  const isReady = hasPermission && hasSourceData;
 
   return {
     effectiveTarget,
     label,
     isReady,
     status: isReady ? 'ready' : 'needs_setup',
-    message: hasPermission && hasSamsungOrRunmefitSource
+    message: hasPermission && hasSourceData
       ? `Health Connect is ready. Sync approved records from ${detectedSourceLabels.join(', ')}.`
       : hasPermission
-        ? 'Health Connect is installed and your app can read it, but Samsung Health or Runmefit has not written data into it yet.'
+        ? 'Health Connect is installed and your app can read it, but no source app has written data into it yet.'
         : 'Health Connect is installed, but your app still needs read access for the requested health data types.',
     action: hasPermission ? undefined : 'open_data_management',
     actionLabel: hasPermission ? undefined : 'Manage Permissions',
@@ -822,7 +904,7 @@ export async function inspectNativeHealthChecklist(target: NativeSyncTarget): Pr
       platformLabel: 'Health Connect',
       ready: isReady,
       hasPermission,
-      hasSourceData: hasSamsungOrRunmefitSource,
+      hasSourceData,
       detectedSourceLabels,
       recordsFound,
       setupMessage: 'Health Connect is available on this Android phone.',
@@ -830,7 +912,7 @@ export async function inspectNativeHealthChecklist(target: NativeSyncTarget): Pr
         ? 'Read permissions were granted for the requested health record types.'
         : `Missing read access for: ${missingPermissions.join(', ')}.`,
       sourceMessage,
-      syncMessage: hasPermission && hasSamsungOrRunmefitSource
+      syncMessage: hasPermission && hasSourceData
         ? 'Press Sync Data to import the last 7 days into Longevity OS.'
         : 'Fix permissions or source app data before syncing.',
     }),
@@ -882,13 +964,90 @@ export async function revokeNativeHealthPermissions(target: NativeSyncTarget) {
   return true;
 }
 
-export async function syncNativeHealthSource(target: NativeSyncTarget): Promise<WearableSyncResponse> {
+export async function syncNativeHealthSource(
+  target: NativeSyncTarget,
+  options: { startFrom?: string | Date | null } = {},
+): Promise<WearableSyncResponse> {
   const effectiveTarget = normalizeNativeSyncTarget(target);
   assertNativePlatform(effectiveTarget);
+  const syncBatchSize = 40;
+  const lookbackDays = options.startFrom ? HEALTH_SYNC_LOOKBACK_DAYS : INITIAL_HEALTH_SYNC_LOOKBACK_DAYS;
   if (effectiveTarget === 'apple-health') {
-    const payload = await collectAppleHealthMetrics();
-    return syncLongevityAppleHealth(payload);
+    const payload = await collectAppleHealthMetrics(options.startFrom, lookbackDays);
+    if (payload.metrics.length === 0) {
+      return {
+        provider: 'apple-health',
+        user_id: '',
+        synced_records: 0,
+        skipped_duplicates: 0,
+        connection_status: 'connected',
+        last_synced_at: null,
+        message: `Apple Health is connected, but no records were found in the last ${lookbackDays} days yet.`,
+        payload_preview: [],
+      };
+    }
+    logSyncPayload('apple-health', payload);
+    const chunks = chunkMetrics(payload.metrics, syncBatchSize);
+    const responses = await runConcurrentBatches(chunks, HEALTH_SYNC_UPLOAD_CONCURRENCY, (metrics) => syncLongevityAppleHealth({
+      ...payload,
+      metrics,
+    }));
+    const finalResponse = responses[responses.length - 1];
+    const aggregate = responses.reduce(
+      (totals, item) => ({
+        synced_records: totals.synced_records + Number(item.synced_records || 0),
+        skipped_duplicates: totals.skipped_duplicates + Number(item.skipped_duplicates || 0),
+      }),
+      { synced_records: 0, skipped_duplicates: 0 },
+    );
+    return {
+      ...finalResponse,
+      synced_records: aggregate.synced_records,
+      skipped_duplicates: aggregate.skipped_duplicates,
+      payload_preview: payload.metrics.map((metric) => ({
+        metric_type: metric.metric_type,
+        value: metric.value,
+        unit: metric.unit,
+        source_device: metric.source_device,
+      })),
+    };
   }
-  const payload = await collectHealthConnectMetrics();
-  return syncLongevityHealthConnect(payload);
+  const payload = await collectHealthConnectMetrics(options.startFrom, lookbackDays);
+  if (payload.metrics.length === 0) {
+    return {
+      provider: 'health-connect',
+      user_id: '',
+      synced_records: 0,
+      skipped_duplicates: 0,
+      connection_status: 'connected',
+      last_synced_at: null,
+      message: 'Health Connect is connected, but no source app has written data into it yet.',
+      payload_preview: [],
+    };
+  }
+  logSyncPayload('health-connect', payload);
+  const chunks = chunkMetrics(payload.metrics, syncBatchSize);
+  const responses = await runConcurrentBatches(chunks, HEALTH_SYNC_UPLOAD_CONCURRENCY, (metrics) => syncLongevityHealthConnect({
+    ...payload,
+    metrics,
+  }));
+  const finalResponse = responses[responses.length - 1];
+  const aggregate = responses.reduce(
+    (totals, item) => ({
+      synced_records: totals.synced_records + Number(item.synced_records || 0),
+      skipped_duplicates: totals.skipped_duplicates + Number(item.skipped_duplicates || 0),
+    }),
+    { synced_records: 0, skipped_duplicates: 0 },
+  );
+  return {
+    ...finalResponse,
+    synced_records: aggregate.synced_records,
+    skipped_duplicates: aggregate.skipped_duplicates,
+    payload_preview: payload.metrics.map((metric) => ({
+      metric_type: metric.metric_type,
+      value: metric.value,
+      unit: metric.unit,
+      source_device: metric.source_device,
+    })),
+  };
 }

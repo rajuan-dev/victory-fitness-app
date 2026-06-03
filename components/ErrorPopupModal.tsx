@@ -9,6 +9,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../constants/Colors';
+import { useLanguage } from '../lib/i18n';
 
 type ErrorPopupModalProps = {
   visible: boolean;
@@ -27,6 +28,7 @@ export function ErrorPopupModal({
   onRetry,
   retryLabel = 'Try Again',
 }: ErrorPopupModalProps) {
+  const { t } = useLanguage();
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <View style={styles.backdrop}>
@@ -40,11 +42,11 @@ export function ErrorPopupModal({
           <View style={styles.actions}>
             {onRetry ? (
               <TouchableOpacity style={[styles.button, styles.retryButton]} onPress={onRetry} activeOpacity={0.85}>
-                <Text style={styles.retryText}>{retryLabel}</Text>
+                <Text style={styles.retryText}>{t(retryLabel)}</Text>
               </TouchableOpacity>
             ) : null}
             <TouchableOpacity style={[styles.button, styles.closeButton]} onPress={onClose} activeOpacity={0.85}>
-              <Text style={styles.closeText}>OK</Text>
+              <Text style={styles.closeText}>{t('OK')}</Text>
             </TouchableOpacity>
           </View>
         </View>

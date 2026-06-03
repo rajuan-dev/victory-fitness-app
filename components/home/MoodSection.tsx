@@ -2,29 +2,31 @@ import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Colors } from '../../constants/Colors';
+import { useLanguage } from '../../lib/i18n';
 
 const emojis = ['😡', '😟', '😐', '😊', '🤩'];
 
 export default function MoodSection() {
   const router = useRouter();
+  const { t } = useLanguage();
 
   return (
     <View style={styles.moodCard}>
-      <Text style={styles.moodTitle}>Your Mindful Moment</Text>
+      <Text style={styles.moodTitle}>{t('Your Mindful Moment')}</Text>
       <Text style={styles.moodSubtitle}>
-        What is one thing you will do for your well-being tomorrow?
+        {t('What is one thing you will do for your well-being tomorrow?')}
       </Text>
 
       <TouchableOpacity
         style={styles.journalActionBtn}
         onPress={() => router.push('/journal')}
       >
-        <Text style={styles.journalActionText}>Write in Journal</Text>
+        <Text style={styles.journalActionText}>{t('Write in Journal')}</Text>
       </TouchableOpacity>
 
       <View style={styles.moodDivider} />
 
-      <Text style={styles.moodPromptText}>How are you feeling right now?</Text>
+      <Text style={styles.moodPromptText}>{t('How are you feeling right now?')}</Text>
       <View style={styles.moodEmojiRow}>
         {emojis.map((e, i) => (
           <TouchableOpacity key={i} style={styles.moodEmojiBtn}>

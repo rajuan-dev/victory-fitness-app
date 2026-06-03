@@ -2,6 +2,7 @@ import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Colors } from '../../constants/Colors';
+import { useLanguage } from '../../lib/i18n';
 
 type WorkoutSectionProps = {
   canAccessWorkoutPlans?: boolean;
@@ -13,41 +14,42 @@ export default function WorkoutSection({
   onRestrictedPress,
 }: WorkoutSectionProps) {
   const router = useRouter();
+  const { t } = useLanguage();
 
   return (
     <View style={styles.section}>
       <View style={styles.workoutCard}>
-        <Text style={styles.sectionTitle}>NEXT UP: YOUR WORKOUT</Text>
+        <Text style={styles.sectionTitle}>{t('NEXT UP: YOUR WORKOUT')}</Text>
         {canAccessWorkoutPlans ? (
           <>
-            <Text style={styles.workoutHeading}>NO PLAN? NO PROBLEM.</Text>
+            <Text style={styles.workoutHeading}>{t('NO PLAN? NO PROBLEM.')}</Text>
             <Text style={styles.workoutDesc}>
-              Choose your path to victory. Which plan will you start?
+              {t('Choose your path to victory. Which plan will you start?')}
             </Text>
             <TouchableOpacity 
               style={styles.workoutBtnPrimary}
               onPress={() => router.push('/workoutplan/video-wizard')}
             >
-              <Text style={styles.workoutBtnPrimaryText}>7-DAY VIDEO PLAN</Text>
+              <Text style={styles.workoutBtnPrimaryText}>{t('7-DAY VIDEO PLAN')}</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.workoutBtnOutline}
               onPress={() => router.push('/workoutplan/strength-wizard')}
             >
-              <Text style={styles.workoutBtnOutlineText}>CUSTOM STRENGTH PLAN</Text>
+              <Text style={styles.workoutBtnOutlineText}>{t('CUSTOM STRENGTH PLAN')}</Text>
             </TouchableOpacity>
           </>
         ) : (
           <>
-            <Text style={styles.workoutHeading}>WORKOUT LIBRARY READY.</Text>
+            <Text style={styles.workoutHeading}>{t('WORKOUT LIBRARY READY.')}</Text>
             <Text style={styles.workoutDesc}>
-              Your current plan includes the workout library. Upgrade to unlock custom workout plans.
+              {t('Your current plan includes the workout library. Upgrade to unlock custom workout plans.')}
             </Text>
             <TouchableOpacity
               style={styles.workoutBtnPrimary}
               onPress={() => onRestrictedPress?.('Workout Plans')}
             >
-              <Text style={styles.workoutBtnPrimaryText}>UNLOCK WORKOUT PLANS</Text>
+              <Text style={styles.workoutBtnPrimaryText}>{t('UNLOCK WORKOUT PLANS')}</Text>
             </TouchableOpacity>
           </>
         )}

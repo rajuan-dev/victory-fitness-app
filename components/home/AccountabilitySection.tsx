@@ -2,6 +2,7 @@ import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../constants/Colors';
+import { useLanguage } from '../../lib/i18n';
 
 const days = [
   { name: 'MON', active: true },
@@ -14,10 +15,11 @@ const days = [
 ];
 
 export default function AccountabilitySection() {
+  const { t } = useLanguage();
   return (
     <View style={styles.section}>
       <View style={styles.sectionHeader}>
-        <Text style={styles.accountabilityTitle}>Accountability</Text>
+        <Text style={styles.accountabilityTitle}>{t('Accountability')}</Text>
         <View style={styles.accountabilityIcons}>
           <Ionicons name="chatbubble-outline" size={24} color={Colors.accentBlue} />
           <Ionicons name="add" size={24} color={Colors.accentBlue} style={{ marginLeft: 16 }} />
@@ -31,18 +33,18 @@ export default function AccountabilitySection() {
               <Ionicons name="fitness" size={16} color={Colors.accentPurple} />
             </View>
             <View style={{ marginLeft: 12 }}>
-              <Text style={styles.streakSub}>STREAK</Text>
-              <Text style={styles.streakVal}>0 Days</Text>
+              <Text style={styles.streakSub}>{t('STREAK')}</Text>
+              <Text style={styles.streakVal}>{t('0 Days')}</Text>
             </View>
           </View>
           <TouchableOpacity style={styles.atRiskBtn} activeOpacity={0.8}>
-            <Text style={styles.atRiskText}>STREAK AT RISK!</Text>
+            <Text style={styles.atRiskText}>{t('STREAK AT RISK!')}</Text>
           </TouchableOpacity>
         </View>
 
         <View style={styles.milestoneContainer}>
           <View style={styles.milestoneTextRow}>
-            <Text style={styles.milestoneLabel}>NEXT MILESTONE: 3 DAYS</Text>
+            <Text style={styles.milestoneLabel}>{t('NEXT MILESTONE: 3 DAYS')}</Text>
             <Text style={styles.milestonePercent}>0%</Text>
           </View>
           <View style={styles.dividerSubtle} />
@@ -69,7 +71,7 @@ export default function AccountabilitySection() {
             <View style={[styles.avatarMini, { backgroundColor: '#888', marginLeft: -8 }]} />
           </View>
           <Text style={styles.championsBannerText}>
-            <Text style={{ color: Colors.accentBlue, fontWeight: '700' }}>1,270</Text> CHAMPIONS TRAINING TODAY
+            <Text style={{ color: Colors.accentBlue, fontWeight: '700' }}>1,270</Text> {t('CHAMPIONS TRAINING TODAY')}
           </Text>
         </View>
       </View>

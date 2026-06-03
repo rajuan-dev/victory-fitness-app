@@ -21,6 +21,11 @@ function resolveApiUrl(url: string): string {
 
 const API_URL = resolveApiUrl(RAW_API_URL);
 const REQUEST_TIMEOUT_MS = 8_000;
+let apiLanguage: string | undefined;
+
+export function setApiLanguage(language?: string) {
+  apiLanguage = language?.trim() || undefined;
+}
 
 export function resolveRemoteAssetUrl(url: string | null | undefined): string {
   const normalizedUrl = String(url || '').trim();
@@ -42,6 +47,8 @@ export function resolveRemoteAssetUrl(url: string | null | undefined): string {
 type RequestOptions = {
   method?: string;
   body?: unknown;
+  timeoutMs?: number;
+  language?: string;
 };
 
 export class ApiError extends Error {
@@ -137,6 +144,7 @@ export type LongevityOverview = {
 export type LongevityQuickAction = {
   id: string;
   label: string;
+  subtitle: string;
   image: string;
   color: string;
 };
@@ -147,6 +155,7 @@ export type LongevityWearableDevice = {
   status: string;
   active: boolean;
   image: string;
+  device_name?: string;
   source_device?: string;
   platform?: string;
 };
@@ -174,6 +183,25 @@ export type LongevityWearables = {
   last_synced_at?: string | null;
   has_data: boolean;
   sync_message: string;
+};
+
+export type HealthMetricRecord = {
+  id: string;
+  user_id: string;
+  provider: WearableProvider;
+  metric_type: string;
+  value: number | string;
+  unit?: string;
+  start_time: string;
+  end_time: string;
+  source_device?: string;
+  metadata?: Record<string, unknown>;
+  synced_at: string;
+};
+
+export type HealthMetricListResponse = {
+  items: HealthMetricRecord[];
+  total: number;
 };
 
 export type HealthMetricSummaryItem = {
@@ -208,10 +236,13 @@ export type WearableConnectionResponse = {
   user_id: string;
   provider: WearableProvider;
   status: string;
+  device_name?: string;
   connected_at?: string | null;
+  disconnected_at?: string | null;
   last_synced_at?: string | null;
   last_sync_status?: string;
   last_sync_message?: string;
+  permission_granted?: boolean;
   metadata?: Record<string, unknown>;
   created_at?: string;
   updated_at?: string;
@@ -242,6 +273,12 @@ export type WearableSyncResponse = {
   connection_status: string;
   last_synced_at?: string | null;
   message: string;
+  payload_preview?: Array<{
+    metric_type: string;
+    value: number | string;
+    unit: string;
+    source_device?: string;
+  }>;
 };
 
 export type LongevityHabit = {
@@ -754,8 +791,11 @@ export async function submitSupportMessage(payload: SupportMessagePayload) {
   });
 }
 
-export async function fetchLongevityDashboard() {
-  const response = await apiRequest<LongevityDashboard>('/longevity-os/dashboard');
+export async function fetchLongevityDashboard(language?: string) {
+  const response = await apiRequest<LongevityDashboard>('/longevity-os/dashboard', {
+    timeoutMs: 30_000,
+    language,
+  });
   const overview = response?.overview && typeof response.overview === 'object' ? response.overview : {} as LongevityOverview;
   const wearables = response?.wearables && typeof response.wearables === 'object' ? response.wearables : {} as LongevityWearables;
   const habits = response?.habits && typeof response.habits === 'object' ? response.habits : {} as LongevityHabits;
@@ -769,7 +809,15 @@ export async function fetchLongevityDashboard() {
       hrv_ms: Number(overview.hrv_ms ?? 0) || 0,
       sleep_score: Number(overview.sleep_score ?? 0) || 0,
     },
-    quick_actions: Array.isArray(response?.quick_actions) ? response.quick_actions : [],
+    quick_actions: Array.isArray(response?.quick_actions)
+      ? response.quick_actions.map((item) => ({
+          id: String(item.id ?? ''),
+          label: String(item.label ?? ''),
+          subtitle: String(item.subtitle ?? ''),
+          image: String(item.image ?? ''),
+          color: String(item.color ?? ''),
+        }))
+      : [],
     wearables: {
       devices: Array.isArray(wearables.devices) ? wearables.devices : [],
       last_synced_at: wearables.last_synced_at ?? null,
@@ -792,7 +840,7 @@ export async function fetchLongevityDashboard() {
   };
 }
 
-export async function syncLongevityWearables(provider?: WearableProvider | WearableProvider[] | null) {
+export async function syncLongevityWearables(provider?: WearableProvider | WearableProvider[] | null, language?: string) {
   const body = Array.isArray(provider)
     ? { providers: provider }
     : provider
@@ -801,6 +849,8 @@ export async function syncLongevityWearables(provider?: WearableProvider | Weara
   return apiRequest<LongevityWearables>('/longevity-os/wearables/sync', {
     method: 'POST',
     body,
+    timeoutMs: 20_000,
+    language,
   });
 }
 
@@ -856,13 +906,14 @@ export async function markNativeIntegrationConnected(payload: {
   });
 }
 
-export async function syncLongevityQrImport(qrPayload: string, sourceDevice?: string) {
+export async function syncLongevityQrImport(qrPayload: string, sourceDevice?: string, language?: string) {
   return apiRequest<WearableSyncResponse>('/integrations/import/qr', {
     method: 'POST',
     body: {
       qr_payload: qrPayload,
       source_device: sourceDevice || '',
     },
+    language,
   });
 }
 
@@ -883,6 +934,7 @@ export async function syncLongevityAppleHealth(payload: MobileHealthSyncPayload)
       platform: 'ios',
       metrics: payload.metrics,
     },
+    timeoutMs: 30_000,
   });
 }
 
@@ -896,6 +948,7 @@ export async function syncLongevityHealthConnect(payload: MobileHealthSyncPayloa
       platform: 'android',
       metrics: payload.metrics,
     },
+    timeoutMs: 30_000,
   });
 }
 
@@ -903,16 +956,42 @@ export async function fetchLongevityHealthSummary() {
   return apiRequest<HealthMetricSummaryResponse>('/health-data/me/summary');
 }
 
-export async function updateLongevityHabit(habitId: string, done: boolean) {
+export async function fetchLongevityHealthRecords(params?: {
+  provider?: string;
+  metric_type?: string;
+  start_date?: string;
+  end_date?: string;
+}) {
+  const query = new URLSearchParams();
+  if (params?.provider) {
+    query.set('provider', params.provider);
+  }
+  if (params?.metric_type) {
+    query.set('metric_type', params.metric_type);
+  }
+  if (params?.start_date) {
+    query.set('start_date', params.start_date);
+  }
+  if (params?.end_date) {
+    query.set('end_date', params.end_date);
+  }
+  const path = query.toString() ? `/health-data/me?${query.toString()}` : '/health-data/me';
+  return apiRequest<HealthMetricListResponse>(path);
+}
+
+export async function updateLongevityHabit(habitId: string, done: boolean, language?: string) {
   return apiRequest<LongevityHabits>(`/longevity-os/habits/${encodeURIComponent(habitId)}`, {
     method: 'PATCH',
     body: { done },
+    language,
   });
 }
 
-export async function generateLongevityWeeklyPlan() {
+export async function generateLongevityWeeklyPlan(language?: string) {
   return apiRequest<LongevityWeeklyPlan>('/longevity-os/heal/weekly-plan', {
     method: 'POST',
+    timeoutMs: 120_000,
+    language,
   });
 }
 
@@ -1027,12 +1106,17 @@ export async function apiRequest<T>(
     headers.Authorization = `Bearer ${authTokens.access_token}`;
   }
 
+  const requestLanguage = options.language ?? apiLanguage;
+  if (requestLanguage) {
+    headers['Accept-Language'] = requestLanguage;
+  }
+
   const response = await fetchWithTimeout(`${API_URL}${path}`, {
     method: options.method ?? 'GET',
     headers,
     credentials: 'include',
     body: options.body ? JSON.stringify(options.body) : undefined,
-  });
+  }, options.timeoutMs);
 
   const data = await response.json().catch(() => ({}));
 

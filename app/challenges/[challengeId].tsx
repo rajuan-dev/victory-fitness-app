@@ -20,6 +20,7 @@ import { Colors } from '../../constants/Colors';
 import { apiRequest } from '../../lib/api';
 import { ErrorPopupModal } from '../../components/ErrorPopupModal';
 import { formatAppError } from '../../lib/error';
+import { useLanguage } from '../../lib/i18n';
 
 type ChallengePlanDayProgress = {
   day_number: number;
@@ -103,6 +104,7 @@ function formatMessageTime(value: string) {
 
 export default function ChallengeDetailScreen() {
   const router = useRouter();
+  const { t } = useLanguage();
   const params = useLocalSearchParams<{ challengeId?: string }>();
   const challengeId = Array.isArray(params.challengeId) ? params.challengeId[0] : params.challengeId;
   const [detail, setDetail] = useState<ChallengeDetail | null>(null);
@@ -127,7 +129,7 @@ export default function ChallengeDetailScreen() {
       const response = await apiRequest<ChallengeDetail>(`/challenges/${encodeURIComponent(challengeId)}`);
       setDetail(response);
     } catch (error) {
-      setErrorDialog(formatAppError(error, 'Failed to load challenge details.'));
+      setErrorDialog(formatAppError(error, t('Failed to load challenge details.')));
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -141,7 +143,7 @@ export default function ChallengeDetailScreen() {
   const quoteText = useMemo(() => {
     const source = (detail?.plan_text || detail?.description || '').trim();
     if (!source) {
-      return 'Show up, stay consistent, and keep your momentum moving forward.';
+      return t('Show up, stay consistent, and keep your momentum moving forward.');
     }
     return source;
   }, [detail?.description, detail?.plan_text]);
@@ -157,7 +159,7 @@ export default function ChallengeDetailScreen() {
       });
       await loadDetail(false);
     } catch (error) {
-      setErrorDialog(formatAppError(error, 'Failed to start challenge.'));
+      setErrorDialog(formatAppError(error, t('Failed to start challenge.')));
     } finally {
       setStarting(false);
     }
@@ -180,7 +182,7 @@ export default function ChallengeDetailScreen() {
       setMessage('');
       await loadDetail(false);
     } catch (error) {
-      setErrorDialog(formatAppError(error, 'Failed to send encouragement.'));
+      setErrorDialog(formatAppError(error, t('Failed to send encouragement.')));
     } finally {
       setSending(false);
     }
@@ -191,12 +193,12 @@ export default function ChallengeDetailScreen() {
       return;
     }
     Alert.alert(
-      'Complete today?',
-      `Mark day ${detail.current_day_number} as complete?`,
+      t('Complete today?'),
+      t('Mark day {day} as complete?', { day: detail.current_day_number }),
       [
-        { text: 'Cancel', style: 'cancel' },
+        { text: t('Cancel'), style: 'cancel' },
         {
-          text: 'Confirm',
+          text: t('Confirm'),
           onPress: () => {
             void (async () => {
               setCompletingToday(true);
@@ -209,7 +211,7 @@ export default function ChallengeDetailScreen() {
                 );
                 await loadDetail(false);
               } catch (error) {
-                setErrorDialog(formatAppError(error, 'Unable to complete today right now.'));
+                setErrorDialog(formatAppError(error, t('Unable to complete today right now.')));
               } finally {
                 setCompletingToday(false);
               }
@@ -221,20 +223,20 @@ export default function ChallengeDetailScreen() {
   }, [challengeId, completingToday, detail?.can_complete_today, detail?.current_day_number, loadDetail]);
 
   const ctaLabel = detail?.viewer_membership_status === 'ACTIVE'
-    ? 'In Progress'
+    ? t('In Progress')
     : detail?.viewer_membership_status === 'COMPLETED'
-      ? 'Completed'
-      : 'Start Challenge';
+      ? t('Completed')
+      : t('Start Challenge');
 
   const ctaDisabled = !detail || starting || detail.has_joined || (!detail.can_start && !detail.has_joined);
   const showCompleteToday = Boolean(detail?.has_joined && detail?.viewer_membership_status === 'ACTIVE');
-  const completeButtonLabel = detail?.completed_today ? 'Completed Today' : 'Mark Complete';
+  const completeButtonLabel = detail?.completed_today ? t('Completed Today') : t('Mark Complete');
 
   return (
     <SafeAreaView style={styles.container}>
       <Stack.Screen options={{ headerShown: false }} />
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>Challenges</Text>
+        <Text style={styles.headerTitle}>{t('Challenges')}</Text>
         <Ionicons name="notifications-outline" size={24} color="#E5E7EB" />
       </View>
 
@@ -258,7 +260,7 @@ export default function ChallengeDetailScreen() {
           >
             <TouchableOpacity style={styles.backRow} activeOpacity={0.8} onPress={() => router.back()}>
               <Ionicons name="arrow-back" size={18} color="#F59E0B" />
-              <Text style={styles.backText}>Back to Challenges</Text>
+              <Text style={styles.backText}>{t('Back to Challenges')}</Text>
             </TouchableOpacity>
 
             {detail ? (
@@ -272,7 +274,7 @@ export default function ChallengeDetailScreen() {
                   </View>
                   <View style={styles.heroDivider} />
                   <View style={styles.heroFooter}>
-                    <Text style={styles.pointsText}>+{detail.points} Points</Text>
+                    <Text style={styles.pointsText}>+{detail.points} {t('Points')}</Text>
                     <View style={styles.heroActions}>
                       {showCompleteToday ? (
                         <TouchableOpacity
@@ -324,7 +326,7 @@ export default function ChallengeDetailScreen() {
                 <View style={styles.participantsCard}>
                   <View style={styles.sectionHeader}>
                     <Ionicons name="people-outline" size={24} color="#F59E0B" />
-                    <Text style={styles.sectionTitle}>Fellow Challengers ({detail.participant_count})</Text>
+                    <Text style={styles.sectionTitle}>{t('Fellow Challengers')} ({detail.participant_count})</Text>
                   </View>
                   {detail.participants.length > 0 ? (
                     <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.participantsRow}>
@@ -342,12 +344,12 @@ export default function ChallengeDetailScreen() {
                       ))}
                     </ScrollView>
                   ) : (
-                    <Text style={styles.emptyHelper}>Be the first to join!</Text>
+                    <Text style={styles.emptyHelper}>{t('Be the first to join!')}</Text>
                   )}
                 </View>
 
                 <View style={styles.hubCard}>
-                  <Text style={styles.hubTitle}>Encouragement Hub</Text>
+                  <Text style={styles.hubTitle}>{t('Encouragement Hub')}</Text>
                   <View style={styles.hubDivider} />
                   <View style={styles.messagesWrap}>
                     {detail.messages.length > 0 ? detail.messages.map((item) => (
@@ -355,20 +357,20 @@ export default function ChallengeDetailScreen() {
                         <Text style={styles.messageAuthor}>{item.author_name}</Text>
                         <Text style={styles.messageTime}>{formatMessageTime(item.created_at)}</Text>
                         <Text style={styles.messageBody}>
-                          {item.is_deleted ? 'Message deleted' : item.content || (item.progress_payload?.completed_day ? `Completed day ${item.progress_payload.completed_day}.` : '')}
+                          {item.is_deleted ? t('Message deleted') : item.content || (item.progress_payload?.completed_day ? t('Completed day {day}.', { day: item.progress_payload.completed_day }) : '')}
                         </Text>
                       </View>
                     )) : (
                       <View style={styles.emptyMessages}>
-                        <Text style={styles.emptyMessagesTitle}>No messages yet.</Text>
-                        <Text style={styles.emptyMessagesText}>Be the first to send some encouragement!</Text>
+                        <Text style={styles.emptyMessagesTitle}>{t('No messages yet.')}</Text>
+                        <Text style={styles.emptyMessagesText}>{t('Be the first to send some encouragement!')}</Text>
                       </View>
                     )}
                   </View>
                   <View style={styles.composerRow}>
                     <TextInput
                       style={styles.input}
-                      placeholder={detail.can_post ? 'Encourage someone...' : 'Start the challenge to join the hub'}
+                      placeholder={detail.can_post ? t('Encourage someone...') : t('Start the challenge to join the hub')}
                       placeholderTextColor="rgba(255,255,255,0.35)"
                       value={message}
                       onChangeText={setMessage}
@@ -392,7 +394,7 @@ export default function ChallengeDetailScreen() {
 
       <ErrorPopupModal
         visible={Boolean(errorDialog)}
-        title={errorDialog?.title || 'Error'}
+        title={errorDialog?.title || t('Error')}
         message={errorDialog?.message || ''}
         onClose={() => setErrorDialog(null)}
       />

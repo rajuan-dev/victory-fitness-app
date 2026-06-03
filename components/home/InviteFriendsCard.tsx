@@ -1,8 +1,10 @@
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../constants/Colors';
+import { useLanguage } from '../../lib/i18n';
 
 export default function InviteFriendsCard() {
+  const { t } = useLanguage();
   return (
     <View
       style={[styles.premiumInviteCard, { backgroundColor: Colors.accentPurple }]}
@@ -12,17 +14,17 @@ export default function InviteFriendsCard() {
           <Ionicons name="people-outline" size={28} color="rgba(255,255,255,0.85)" />
         </View>
         <View style={styles.goldBadge}>
-          <Text style={styles.goldBadgeText}>+100 Pts</Text>
+          <Text style={styles.goldBadgeText}>+100 {t('Points')}</Text>
         </View>
       </View>
 
-      <Text style={styles.premiumInviteTitle}>Don't train alone!</Text>
+      <Text style={styles.premiumInviteTitle}>{t("Don't train alone!")}</Text>
       <Text style={styles.premiumInviteDesc}>
-        Bring your friends to Victory Fitness. Motivate each other and earn points for the next rank.
+        {t('Bring your friends to Victory Fitness. Motivate each other and earn points for the next rank.')}
       </Text>
 
       <TouchableOpacity style={styles.premiumInviteBtn} activeOpacity={0.85}>
-        <Text style={styles.premiumInviteBtnText}>Invite Friends</Text>
+        <Text style={styles.premiumInviteBtnText}>{t('Invite Friends')}</Text>
       </TouchableOpacity>
     </View>
   );

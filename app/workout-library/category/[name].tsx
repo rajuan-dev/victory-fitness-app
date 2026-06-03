@@ -14,6 +14,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../../constants/Colors';
 import { formatAppError } from '../../../lib/error';
 import { fetchWorkoutLibrary, WorkoutLibraryItem } from '../../../lib/workouts';
+import { useLanguage } from '../../../lib/i18n';
 
 const FALLBACK_WORKOUT_IMAGE = 'https://images.unsplash.com/photo-1517836357463-d25dfeac3438?w=600&q=80';
 
@@ -24,8 +25,9 @@ function safeImageUri(value: string | null | undefined) {
 
 export default function WorkoutCategoryScreen() {
   const router = useRouter();
+  const { t } = useLanguage();
   const params = useLocalSearchParams<{ name?: string }>();
-  const categoryName = typeof params.name === 'string' ? params.name : 'Category';
+  const categoryName = typeof params.name === 'string' ? params.name : t('CATEGORY');
   const [workouts, setWorkouts] = useState<WorkoutLibraryItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -93,21 +95,21 @@ export default function WorkoutCategoryScreen() {
           <Ionicons name="arrow-back" size={22} color="#fff" />
         </TouchableOpacity>
         <View style={styles.headerCopy}>
-          <Text style={styles.headerEyebrow}>CATEGORY</Text>
+          <Text style={styles.headerEyebrow}>{t('CATEGORY')}</Text>
           <Text style={styles.headerTitle} numberOfLines={1}>
             {title}
           </Text>
         </View>
         <View style={styles.headerMeta}>
           <Text style={styles.headerMetaText}>{workouts.length}</Text>
-          <Text style={styles.headerMetaLabel}>VIDEOS</Text>
+          <Text style={styles.headerMetaLabel}>{t('VIDEOS')}</Text>
         </View>
       </View>
 
       {loading ? (
         <View style={styles.centerState}>
           <ActivityIndicator size="large" color={Colors.primary} />
-          <Text style={styles.stateText}>Loading category workouts...</Text>
+          <Text style={styles.stateText}>{t('Loading category workouts...')}</Text>
         </View>
       ) : error ? (
         <View style={styles.centerState}>
@@ -117,9 +119,9 @@ export default function WorkoutCategoryScreen() {
       ) : workouts.length === 0 ? (
         <View style={styles.centerState}>
           <Ionicons name="videocam-off-outline" size={34} color={Colors.textMuted} />
-          <Text style={styles.emptyTitle}>No videos in this category yet</Text>
+          <Text style={styles.emptyTitle}>{t('No videos in this category yet')}</Text>
           <Text style={styles.stateText}>
-            Add and publish workouts with the {categoryName} tag from the dashboard.
+            {t('Add and publish workouts with the {categoryName} tag from the dashboard.', { categoryName })}
           </Text>
         </View>
       ) : (
@@ -139,12 +141,12 @@ export default function WorkoutCategoryScreen() {
               <View style={styles.workoutContent}>
                 <View style={styles.playBadge}>
                   <Ionicons name="play" size={12} color="#fff" />
-                  <Text style={styles.playBadgeText}>WATCH</Text>
+                  <Text style={styles.playBadgeText}>{t('WATCH')}</Text>
                 </View>
                 <Text style={styles.workoutTitle} numberOfLines={2}>
                   {workout.title}
                 </Text>
-                <Text style={styles.workoutMeta}>{workout.tag} | Video ready</Text>
+                <Text style={styles.workoutMeta}>{workout.tag} | {t('Video ready')}</Text>
               </View>
             </TouchableOpacity>
           ))}

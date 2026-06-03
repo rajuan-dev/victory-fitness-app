@@ -20,6 +20,7 @@ import VictoryHeader from '../../components/VictoryHeader';
 import { fetchCurrentUser, fetchCurrentUserBodyMetrics } from '../../lib/api';
 import { createStrengthWorkoutPlan } from '../../lib/workout-plans';
 import { useModuleAccessGuard } from '../../lib/useModuleAccessGuard';
+import { useLanguage } from '../../lib/i18n';
 
 const { width } = Dimensions.get('window');
 
@@ -60,6 +61,7 @@ const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 
 export default function StrengthWizard() {
   useModuleAccessGuard('/workoutplan');
   const router = useRouter();
+  const { t } = useLanguage();
   const [step, setStep] = useState(1);
   const [formData, setFormData] = useState<any>({
     equipment: [],
@@ -144,7 +146,7 @@ export default function StrengthWizard() {
       router.replace('/workoutplan/strength-plan');
     } catch {
       setLoading(false);
-      Alert.alert('Generation failed', 'Unable to create your custom strength plan right now.');
+      Alert.alert(t('Generation failed'), t('Unable to create your custom strength plan right now.'));
     }
   };
 
@@ -168,7 +170,7 @@ export default function StrengthWizard() {
       return (
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={Colors.accentBlue} />
-          <Text style={styles.loadingText}>Analyzing your strength profile and generating a periodized plan...</Text>
+          <Text style={styles.loadingText}>{t('Analyzing your strength profile and generating a periodized plan...')}</Text>
         </View>
       );
     }
@@ -177,8 +179,8 @@ export default function StrengthWizard() {
       case 1:
         return (
           <View style={styles.stepContent}>
-            <Text style={styles.title}>What is your primary strength goal?</Text>
-            <Text style={styles.subtitle}>Choose the focus area for your periodized plan.</Text>
+            <Text style={styles.title}>{t('What is your primary strength goal?')}</Text>
+            <Text style={styles.subtitle}>{t('Choose the focus area for your periodized plan.')}</Text>
             <View style={styles.optionGrid}>
               {GOALS.map((g) => (
                 <TouchableOpacity
@@ -187,8 +189,8 @@ export default function StrengthWizard() {
                   onPress={() => updateData('goal', g.id)}
                 >
                   <View>
-                    <Text style={[styles.cardTitle, formData.goal === g.id && styles.activeCardTitle]}>{g.title}</Text>
-                    <Text style={styles.cardSub}>{g.sub}</Text>
+                    <Text style={[styles.cardTitle, formData.goal === g.id && styles.activeCardTitle]}>{t(g.title)}</Text>
+                    <Text style={styles.cardSub}>{t(g.sub)}</Text>
                   </View>
                 </TouchableOpacity>
               ))}
@@ -198,8 +200,8 @@ export default function StrengthWizard() {
       case 2:
         return (
           <View style={styles.stepContent}>
-            <Text style={styles.title}>Level of Experience</Text>
-            <Text style={styles.subtitle}>How long have you been strength training?</Text>
+            <Text style={styles.title}>{t('Level of Experience')}</Text>
+            <Text style={styles.subtitle}>{t('How long have you been strength training?')}</Text>
             <View style={styles.optionGrid}>
               {['BEGINNER', 'INTERMEDIATE', 'ADVANCED'].map((l) => (
                 <TouchableOpacity
@@ -207,7 +209,7 @@ export default function StrengthWizard() {
                   style={[styles.wideCard, formData.level === l && styles.activeCard]}
                   onPress={() => updateData('level', l)}
                 >
-                  <Text style={[styles.cardTitle, formData.level === l && styles.activeCardTitle]}>{l}</Text>
+                  <Text style={[styles.cardTitle, formData.level === l && styles.activeCardTitle]}>{t(l)}</Text>
                 </TouchableOpacity>
               ))}
             </View>
@@ -216,8 +218,8 @@ export default function StrengthWizard() {
       case 3:
         return (
           <View style={styles.stepContent}>
-            <Text style={styles.title}>Preferred training split</Text>
-            <Text style={styles.subtitle}>Select how you want to organize your sessions.</Text>
+            <Text style={styles.title}>{t('Preferred training split')}</Text>
+            <Text style={styles.subtitle}>{t('Select how you want to organize your sessions.')}</Text>
             <View style={styles.optionGrid}>
               {SPLITS.map((s) => (
                 <TouchableOpacity
@@ -226,8 +228,8 @@ export default function StrengthWizard() {
                   onPress={() => updateData('split', s.id)}
                 >
                   <View>
-                    <Text style={[styles.cardTitle, formData.split === s.id && styles.activeCardTitle]}>{s.title}</Text>
-                    <Text style={styles.cardSub}>{s.sub}</Text>
+                    <Text style={[styles.cardTitle, formData.split === s.id && styles.activeCardTitle]}>{t(s.title)}</Text>
+                    <Text style={styles.cardSub}>{t(s.sub)}</Text>
                   </View>
                 </TouchableOpacity>
               ))}
@@ -237,24 +239,24 @@ export default function StrengthWizard() {
       case 4:
         return (
           <View style={styles.stepContent}>
-            <Text style={styles.title}>Your Metrics</Text>
-            <Text style={styles.subtitle}>These help us estimate your initial intensity levels.</Text>
+            <Text style={styles.title}>{t('Your Metrics')}</Text>
+            <Text style={styles.subtitle}>{t('These help us estimate your initial intensity levels.')}</Text>
             <View style={styles.inputGroup}>
               <View style={styles.inputRow}>
                 <TextInput
                   style={styles.numericInput}
-                  placeholder="Your Height (cm)"
+                  placeholder={t('Your Height (cm)')}
                   placeholderTextColor="rgba(255,255,255,0.2)"
                   keyboardType="numeric"
                   value={formData.height}
                   onChangeText={(t) => updateData('height', t)}
                 />
-                <Text style={styles.inputSuffix}>cm</Text>
+                  <Text style={styles.inputSuffix}>{t('cm')}</Text>
               </View>
               <View style={styles.inputRow}>
                 <TextInput
                   style={styles.numericInput}
-                  placeholder="Gender"
+                  placeholder={t('Gender')}
                   placeholderTextColor="rgba(255,255,255,0.2)"
                   value={formData.gender}
                   onChangeText={(t) => updateData('gender', t)}
@@ -266,8 +268,8 @@ export default function StrengthWizard() {
       case 5: // IMAGE 4: STRENGTH VALUES
         return (
           <View style={styles.stepContent}>
-            <Text style={styles.title}>YOUR STRENGTH VALUES</Text>
-            <Text style={styles.subtitle}>Enter your 1-Rep-Max (1RM) weights. If you don't know them, leave the fields blank.</Text>
+            <Text style={styles.title}>{t('YOUR STRENGTH VALUES')}</Text>
+            <Text style={styles.subtitle}>{t("Enter your 1-Rep-Max (1RM) weights. If you don't know them, leave the fields blank.")}</Text>
             <View style={styles.inputGroup}>
               {['1RM Bench Press', '1RM Squat', '1RM Deadlift'].map((label, idx) => {
                 const key = ['bench', 'squat', 'deadlift'][idx];
@@ -275,13 +277,13 @@ export default function StrengthWizard() {
                   <View key={key} style={styles.inputRow}>
                     <TextInput
                       style={styles.numericInput}
-                      placeholder={`${label} (kg)`}
+                      placeholder={`${label} (${t('kg')})`}
                       placeholderTextColor="rgba(255,255,255,0.2)"
                       keyboardType="numeric"
                       value={formData[key]}
                       onChangeText={(t) => updateData(key, t)}
                     />
-                    <Text style={styles.inputSuffix}>kg</Text>
+                    <Text style={styles.inputSuffix}>{t('kg')}</Text>
                   </View>
                 );
               })}
@@ -291,8 +293,8 @@ export default function StrengthWizard() {
       case 6: // IMAGE 5: EQUIPMENT
         return (
           <View style={styles.stepContent}>
-            <Text style={styles.title}>WHAT EQUIPMENT DO YOU HAVE AVAILABLE?</Text>
-            <Text style={styles.subtitle}>We prioritize functional tools like Kettlebells & Ropes if available.</Text>
+            <Text style={styles.title}>{t('WHAT EQUIPMENT DO YOU HAVE AVAILABLE?')}</Text>
+            <Text style={styles.subtitle}>{t('We prioritize functional tools like Kettlebells & Ropes if available.')}</Text>
             <ScrollView style={styles.equipmentScroll} showsVerticalScrollIndicator={false}>
               <View style={styles.equipmentGrid}>
                 {EQUIPMENT.map((e) => {
@@ -306,7 +308,7 @@ export default function StrengthWizard() {
                       <View style={[styles.checkbox, isSelected && styles.activeCheckbox]}>
                         {isSelected && <Ionicons name="checkmark" size={14} color="#000" />}
                       </View>
-                      <Text style={[styles.equipmentLabel, isSelected && styles.activeEquipmentLabel]}>{e.label}</Text>
+                      <Text style={[styles.equipmentLabel, isSelected && styles.activeEquipmentLabel]}>{t(e.label)}</Text>
                     </TouchableOpacity>
                   );
                 })}
@@ -317,8 +319,8 @@ export default function StrengthWizard() {
       case 7: // IMAGE 2: FREQUENCY
         return (
           <View style={styles.stepContent}>
-            <Text style={styles.title}>HOW OFTEN DO YOU WANT TO TRAIN PER WEEK?</Text>
-            <Text style={styles.subtitle}>A typical strength plan has 3-5 sessions per week.</Text>
+            <Text style={styles.title}>{t('HOW OFTEN DO YOU WANT TO TRAIN PER WEEK?')}</Text>
+            <Text style={styles.subtitle}>{t('A typical strength plan has 3-5 sessions per week.')}</Text>
             <View style={styles.frequencyGrid}>
               {['3', '4', '5'].map((n) => (
                 <TouchableOpacity
@@ -335,8 +337,8 @@ export default function StrengthWizard() {
       case 8: // IMAGE 3: PREFERRED DAYS
         return (
           <View style={styles.stepContent}>
-            <Text style={styles.title}>WHICH DAYS DO YOU PREFER TO TRAIN?</Text>
-            <Text style={styles.subtitle}>Select the days that work best for you.</Text>
+            <Text style={styles.title}>{t('WHICH DAYS DO YOU PREFER TO TRAIN?')}</Text>
+            <Text style={styles.subtitle}>{t('Select the days that work best for you.')}</Text>
             <View style={styles.inputGroup}>
               {DAYS.map((day) => {
                 const isSelected = formData.days.includes(day);
@@ -359,30 +361,30 @@ export default function StrengthWizard() {
       case 9: // IMAGE 1: REVIEW DETAILS
         return (
           <View style={styles.stepContent}>
-            <Text style={styles.title}>REVIEW YOUR DETAILS</Text>
-            <Text style={styles.subtitle}>We've taken this data from your profile. Adjust it if needed.</Text>
+            <Text style={styles.title}>{t('REVIEW YOUR DETAILS')}</Text>
+            <Text style={styles.subtitle}>{t("We've taken this data from your profile. Adjust it if needed.")}</Text>
             <View style={styles.inputGroup}>
               <View style={styles.inputRow}>
                 <TextInput
                   style={styles.numericInput}
-                  placeholder="Your Age"
+                  placeholder={t('Your Age')}
                   placeholderTextColor="rgba(255,255,255,0.2)"
                   keyboardType="numeric"
                   value={formData.age}
                   onChangeText={(t) => updateData('age', t)}
                 />
-                <Text style={styles.inputSuffix}>yrs</Text>
+                <Text style={styles.inputSuffix}>{t('yrs')}</Text>
               </View>
               <View style={styles.inputRow}>
                 <TextInput
                   style={styles.numericInput}
-                  placeholder="Your Weight (kg)"
+                  placeholder={t('Your Weight (kg)')}
                   placeholderTextColor="rgba(255,255,255,0.2)"
                   keyboardType="numeric"
                   value={formData.weight}
                   onChangeText={(t) => updateData('weight', t)}
                 />
-                <Text style={styles.inputSuffix}>kg</Text>
+                <Text style={styles.inputSuffix}>{t('kg')}</Text>
               </View>
             </View>
           </View>
@@ -406,7 +408,7 @@ export default function StrengthWizard() {
             </TouchableOpacity>
             <View style={styles.progressSection}>
               <View style={styles.progressLabels}>
-                <Text style={styles.stepLabel}>STEP {step} OF {TOTAL_STEPS}</Text>
+                <Text style={styles.stepLabel}>{t('STEP')} {step} {t('OF')} {TOTAL_STEPS}</Text>
                 <Text style={styles.pctLabel}>{Math.round(progress)}%</Text>
               </View>
               <View style={styles.progressBase}>
@@ -423,7 +425,7 @@ export default function StrengthWizard() {
         {!loading && (
           <View style={styles.footer}>
             <TouchableOpacity onPress={prevStep} disabled={step === 1}>
-              <Text style={[styles.footerBtnText, step === 1 && { opacity: 0.3 }]}>Back</Text>
+              <Text style={[styles.footerBtnText, step === 1 && { opacity: 0.3 }]}>{t('Back')}</Text>
             </TouchableOpacity>
             <TouchableOpacity 
               style={styles.mainBtn} 
@@ -431,7 +433,7 @@ export default function StrengthWizard() {
               activeOpacity={0.8}
             >
               <Text style={styles.mainBtnText}>
-                {step === TOTAL_STEPS ? 'GENERATE PLAN' : 'NEXT'}
+                {step === TOTAL_STEPS ? t('Generate Plan').toUpperCase() : t('Next').toUpperCase()}
               </Text>
             </TouchableOpacity>
           </View>
