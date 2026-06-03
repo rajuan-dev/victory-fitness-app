@@ -81,6 +81,7 @@ export default function PlanSelectionScreen() {
   }, [router]);
 
   const selectedPlan = useMemo(() => getSubscriptionCard(selectedTier), [selectedTier]);
+  const selectedPlanAccentStyle = useMemo(() => getPlanTierAccentStyle(selectedTier), [selectedTier]);
 
   const handleConfirm = async () => {
     if (saving) {
@@ -176,7 +177,8 @@ export default function PlanSelectionScreen() {
                     styles.card,
                     { width: CARD_WIDTH },
                     active && styles.cardActive,
-                    active && { borderColor: card.accent, shadowColor: card.accent },
+                    active && tierAccentStyle,
+                    active && { shadowColor: card.accent },
                   ]}
                   onPress={() => setSelectedTier(card.tier)}
                 >
@@ -232,7 +234,7 @@ export default function PlanSelectionScreen() {
             }}
           />
 
-          <View style={styles.summaryCard}>
+          <View style={[styles.summaryCard, selectedPlanAccentStyle]}>
             <Text style={styles.summaryLabel}>{t('Selected plan')}</Text>
             <Text style={styles.summaryTitle}>{selectedPlan.title}</Text>
             <Text style={styles.summaryText}>
@@ -255,7 +257,7 @@ export default function PlanSelectionScreen() {
 
         <Modal visible={confirmVisible} transparent animationType="fade" onRequestClose={() => setConfirmVisible(false)}>
           <View style={styles.modalBackdrop}>
-            <View style={styles.modalCard}>
+            <View style={[styles.modalCard, selectedPlanAccentStyle]}>
               <Text style={styles.modalTitle}>{t('Confirm payment')}</Text>
               <Text style={styles.modalText}>
                 {`Activate ${selectedPlan.title} now. This will update the user profile subscription immediately and unlock the allowed sections.`}
