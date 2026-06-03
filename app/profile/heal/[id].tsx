@@ -148,11 +148,16 @@ export default function HealPlanDetailScreen() {
       try {
         const user = await fetchCurrentUser();
         if (!cancelled) {
-          setCanAccessHeal(canAccessFeature('longevity_plan', user));
+          const allowed = canAccessFeature('longevity_plan', user);
+          setCanAccessHeal(allowed);
+          if (!allowed) {
+            setLoading(false);
+          }
         }
       } catch {
         if (!cancelled) {
           setCanAccessHeal(false);
+          setLoading(false);
         }
       }
     };
@@ -165,6 +170,14 @@ export default function HealPlanDetailScreen() {
   }, []);
 
   const loadDashboard = React.useCallback(async () => {
+    if (canAccessHeal !== true) {
+      if (canAccessHeal === false) {
+        setLoading(false);
+        setDashboard(null);
+        setError('');
+      }
+      return;
+    }
     setLoading(true);
     try {
       const response = await fetchLongevityDashboard();
@@ -176,7 +189,7 @@ export default function HealPlanDetailScreen() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [canAccessHeal, t]);
 
   useFocusEffect(
     React.useCallback(() => {
@@ -222,17 +235,6 @@ export default function HealPlanDetailScreen() {
     return (
       <SafeAreaView style={styles.container}>
         <Stack.Screen options={{ headerShown: false }} />
-        <View style={styles.header}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.backButton} activeOpacity={0.86}>
-            <Ionicons name="arrow-back" size={22} color="#fff" />
-          </TouchableOpacity>
-          <View style={styles.headerCopy}>
-            <Text style={styles.headerTitle} numberOfLines={1}>
-              {healCategory?.label || t('Health Card')}
-            </Text>
-          </View>
-          <View style={styles.headerSpacer} />
-        </View>
         <LockedState
           onUpdatePlan={() => router.push('/plan')}
           onBackHome={() => router.replace('/(tabs)')}

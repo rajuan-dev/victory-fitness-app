@@ -1816,38 +1816,38 @@ export default function LongevityOS() {
               <Ionicons name={generatingPlan ? 'hourglass-outline' : 'sparkles'} size={16} color="#000" />
               <Text style={styles.secondaryButtonText}>{generatingPlan ? t('Generating...') : t('Generate My Weekly Plan')}</Text>
             </TouchableOpacity>
-          ) : (
-            <View style={styles.infoCard}>
-              <Text style={styles.infoText}>{t('Weekly Longevity plan generation is available on Inner Circle only.')}</Text>
-            </View>
-          )}
+          ) : null}
         </View>
       </View>
 
-      <SectionTitle>{t('Health Food Library')}</SectionTitle>
-      <View style={styles.grid}>
-        {(dashboard?.heal_categories || []).map((item) => (
-          <TouchableOpacity
-            key={item.id}
-            style={[styles.quickCard, { width: (width - 44) / 2 }]}
-            activeOpacity={0.9}
-            onPress={() => {
-              router.push({
-                pathname: '/profile/heal/[id]',
-                params: {
-                  id: item.id,
-                },
-              });
-            }}
-          >
-            <Image source={{ uri: safeImageUri(item.image) }} style={styles.quickImage} />
-            <View style={[styles.quickOverlay, { backgroundColor: `${item.color}CC` }]} />
-            <View style={styles.quickTextWrap}>
-              <Text style={styles.quickText}>{item.label}</Text>
-            </View>
-          </TouchableOpacity>
-        ))}
-      </View>
+      {canGenerateLongevityPlan ? (
+        <>
+          <SectionTitle>{t('Health Food Library')}</SectionTitle>
+          <View style={styles.grid}>
+            {(dashboard?.heal_categories || []).map((item) => (
+              <TouchableOpacity
+                key={item.id}
+                style={[styles.quickCard, { width: (width - 44) / 2 }]}
+                activeOpacity={0.9}
+                onPress={() => {
+                  router.push({
+                    pathname: '/profile/heal/[id]',
+                    params: {
+                      id: item.id,
+                    },
+                  });
+                }}
+              >
+                <Image source={{ uri: safeImageUri(item.image) }} style={styles.quickImage} />
+                <View style={[styles.quickOverlay, { backgroundColor: `${item.color}CC` }]} />
+                <View style={styles.quickTextWrap}>
+                  <Text style={styles.quickText}>{item.label}</Text>
+                </View>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </>
+      ) : null}
     </ScrollView>
   );
 
@@ -2953,6 +2953,50 @@ const styles = StyleSheet.create({
     padding: 16,
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.05)',
+  },
+  lockCard: {
+    backgroundColor: '#12182B',
+    borderRadius: 18,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.05)',
+    alignItems: 'flex-start',
+    gap: 10,
+  },
+  lockBadge: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(250,204,21,0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(250,204,21,0.28)',
+  },
+  lockTitle: {
+    color: '#fff',
+    fontSize: 17,
+    lineHeight: 22,
+    fontFamily: 'Inter_700Bold',
+  },
+  lockText: {
+    color: Colors.textMuted,
+    fontSize: 13,
+    lineHeight: 19,
+    fontFamily: 'Inter_400Regular',
+  },
+  lockPrimaryButton: {
+    marginTop: 4,
+    alignSelf: 'flex-start',
+    backgroundColor: Colors.primary,
+    borderRadius: 14,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  lockPrimaryButtonText: {
+    color: '#000',
+    fontSize: 13,
+    fontFamily: 'Inter_700Bold',
   },
   infoText: {
     color: Colors.textMuted,
