@@ -560,16 +560,19 @@ function formatRecordDisplayValue(metricType: string, value: number | string, un
   return formatHealthRecordValue(value, unit);
 }
 
-function getHealthRecordOrderValue(item: Pick<HealthMetricRecord, 'synced_at' | 'end_time' | 'id'>) {
+function getHealthRecordOrderValue(item: Pick<HealthMetricRecord, 'synced_at' | 'end_time' | 'start_time' | 'id'>) {
   const syncedAt = item.synced_at ? new Date(item.synced_at).getTime() : 0;
   const endTime = item.end_time ? new Date(item.end_time).getTime() : 0;
+  const startTime = item.start_time ? new Date(item.start_time).getTime() : 0;
   return Number.isFinite(syncedAt) && syncedAt > 0
     ? syncedAt
     : Number.isFinite(endTime) && endTime > 0
       ? endTime
-      : String(item.id || '').length > 0
-        ? 1
-        : 0;
+      : Number.isFinite(startTime) && startTime > 0
+        ? startTime
+        : String(item.id || '').length > 0
+          ? 1
+          : 0;
 }
 
 function mergeLatestHealthRecords(items: HealthMetricRecord[]) {
@@ -757,25 +760,9 @@ function buildAllSyncedHealthCards(items: HealthMetricRecord[]): DynamicHealthCa
       continue;
     }
 
-    const currentSyncedAt = current.synced_at ? new Date(current.synced_at).getTime() : 0;
-    const itemSyncedAt = item.synced_at ? new Date(item.synced_at).getTime() : 0;
-    if (itemSyncedAt !== currentSyncedAt) {
-      if (itemSyncedAt > currentSyncedAt) {
-        buckets.set(metricType, item);
-      }
-      continue;
-    }
-
-    const currentEndTime = current.end_time ? new Date(current.end_time).getTime() : 0;
-    const itemEndTime = item.end_time ? new Date(item.end_time).getTime() : 0;
-    if (itemEndTime !== currentEndTime) {
-      if (itemEndTime > currentEndTime) {
-        buckets.set(metricType, item);
-      }
-      continue;
-    }
-
-    if (String(item.id || '') > String(current.id || '')) {
+    const currentOrderValue = getHealthRecordOrderValue(current);
+    const itemOrderValue = getHealthRecordOrderValue(item);
+    if (itemOrderValue > currentOrderValue || (itemOrderValue === currentOrderValue && String(item.id || '') > String(current.id || ''))) {
       buckets.set(metricType, item);
     }
   }
