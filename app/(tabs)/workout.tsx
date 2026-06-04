@@ -49,7 +49,7 @@ function pairCategories(categories: WorkoutLibraryCategory[]) {
 }
 
 export default function WorkoutScreen() {
-  useModuleAccessGuard('/workout');
+  const checkingAccess = useModuleAccessGuard('/workout');
   const router = useRouter();
   const { t } = useLanguage();
   const hasLoadedLibraryRef = React.useRef(false);
@@ -187,6 +187,10 @@ export default function WorkoutScreen() {
   const featuredWorkout = library.featuredWorkout;
   const newAndPopular = useMemo(() => library.workouts.slice(0, 8), [library.workouts]);
   const categoryRows = useMemo(() => pairCategories(library.categories), [library.categories]);
+
+  if (checkingAccess) {
+    return null;
+  }
 
   const openWorkout = (workout: WorkoutLibraryItem) => {
     router.push({

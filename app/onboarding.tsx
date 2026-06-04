@@ -15,6 +15,7 @@ import { Colors } from '../constants/Colors';
 import { StatusBar } from 'expo-status-bar';
 import { clearAuthTokens, fetchCurrentUser, getValidAuthTokens } from '../lib/api';
 import { getPostAuthRoute } from '../lib/access';
+import { replaceRoute } from '../lib/navigation';
 
 const { width } = Dimensions.get('window');
 
@@ -56,13 +57,13 @@ export default function OnboardingScreen() {
       if (tokens) {
         try {
           const user = await fetchCurrentUser();
-          router.replace(getPostAuthRoute(user));
+          replaceRoute(router, getPostAuthRoute(user));
         } catch {
-          router.replace('/login');
+          replaceRoute(router, '/login');
         }
       } else {
         await clearAuthTokens();
-        router.replace('/login');
+        replaceRoute(router, '/login');
       }
 
       if (!cancelled) {
@@ -81,7 +82,7 @@ export default function OnboardingScreen() {
     if (activeStep < ONBOARDING_DATA.length - 1) {
       setActiveStep(activeStep + 1);
     } else {
-      router.replace('/login');
+      replaceRoute(router, '/login');
     }
   };
 
@@ -106,7 +107,7 @@ export default function OnboardingScreen() {
         {activeStep < 2 && (
           <TouchableOpacity 
             style={styles.skipBtn} 
-            onPress={() => router.replace('/login')}
+            onPress={() => replaceRoute(router, '/login')}
           >
             <Text style={styles.skipText}>SKIP</Text>
           </TouchableOpacity>

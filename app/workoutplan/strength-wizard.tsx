@@ -59,7 +59,7 @@ const EQUIPMENT = [
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
 export default function StrengthWizard() {
-  useModuleAccessGuard('/workoutplan');
+  const checkingAccess = useModuleAccessGuard('/workoutplan');
   const router = useRouter();
   const { t } = useLanguage();
   const [step, setStep] = useState(1);
@@ -72,7 +72,6 @@ export default function StrengthWizard() {
     frequency: '4',
   });
   const [loading, setLoading] = useState(false);
-
 
   useEffect(() => {
     let cancelled = false;
@@ -114,6 +113,10 @@ export default function StrengthWizard() {
     (equipmentIds ?? [])
       .map((id) => EQUIPMENT.find((item) => item.id === id)?.label ?? '')
       .filter(Boolean);
+
+  if (checkingAccess) {
+    return null;
+  }
 
   const nextStep = () => {
     if (step < TOTAL_STEPS) setStep(step + 1);

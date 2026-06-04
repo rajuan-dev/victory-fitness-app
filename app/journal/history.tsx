@@ -5,10 +5,10 @@ import {
   StyleSheet,
   FlatList,
   TouchableOpacity,
-  ActivityIndicator,
   Modal,
   Pressable,
   ScrollView,
+  RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Stack, useFocusEffect, useRouter } from 'expo-router';
@@ -18,6 +18,8 @@ import { ErrorPopupModal } from '../../components/ErrorPopupModal';
 import { apiRequest } from '../../lib/api';
 import { formatAppError } from '../../lib/error';
 import { useLanguage } from '../../lib/i18n';
+import { ScreenState } from '../../components/ScreenState';
+import { useAsyncScreenData } from '../../hooks/useAsyncScreenData';
 
 type JournalEntry = {
   id: string;
@@ -122,29 +124,29 @@ function formatJournalContent(content: string): FormattedJournalBlock[] {
 export default function JournalHistoryScreen() {
   const router = useRouter();
   const { t } = useLanguage();
-  const [entries, setEntries] = useState<JournalEntry[]>([]);
-  const [loading, setLoading] = useState(true);
   const [errorDialog, setErrorDialog] = useState<{ title: string; message: string } | null>(null);
   const [selectedEntry, setSelectedEntry] = useState<JournalEntry | null>(null);
   const formattedSelectedEntry = selectedEntry ? formatJournalContent(selectedEntry.content) : [];
 
-  const loadEntries = useCallback(async () => {
-    setLoading(true);
-    try {
+  const {
+    data: entries,
+    loading,
+    refreshing,
+    error,
+    reload,
+  } = useAsyncScreenData<JournalEntry[]>({
+    initialData: [],
+    load: async () => {
       const response = await apiRequest<{ entries: JournalEntry[] }>('/journal/entries');
-      setEntries(response.entries);
-    } catch (error) {
-      setEntries([]);
-      setErrorDialog(formatAppError(error, t('Unable to load journal history right now.')));
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+      return response.entries;
+    },
+    getErrorMessage: (loadError) => formatAppError(loadError, t('Unable to load journal history right now.')).message,
+  });
 
   useFocusEffect(
     useCallback(() => {
-      void loadEntries();
-    }, [loadEntries])
+      void reload().catch(() => null);
+    }, [reload])
   );
 
   const renderItem = ({ item }: { item: JournalEntry }) => {
@@ -270,10 +272,18 @@ export default function JournalHistoryScreen() {
       />
 
       {loading ? (
-        <View style={styles.loadingWrap}>
-          <ActivityIndicator size="large" color={Colors.accentBlue} />
-          <Text style={styles.loadingText}>{t('Loading saved journal entries...')}</Text>
-        </View>
+        <ScreenState mode="loading" message={t('Loading saved journal entries...')} />
+      ) : error ? (
+        <ScreenState
+          mode="error"
+          message={error}
+          actionLabel={t('Try Again')}
+          onAction={() => {
+            void reload().catch((loadError) => {
+              setErrorDialog(formatAppError(loadError, t('Unable to load journal history right now.')));
+            });
+          }}
+        />
       ) : (
         <FlatList
           data={entries}
@@ -289,6 +299,17 @@ export default function JournalHistoryScreen() {
             </View>
           }
           showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={() => {
+                void reload().catch((loadError) => {
+                  setErrorDialog(formatAppError(loadError, t('Unable to load journal history right now.')));
+                });
+              }}
+              tintColor={Colors.accentBlue}
+            />
+          }
         />
       )}
     </SafeAreaView>
@@ -299,18 +320,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#131313',
-  },
-  loadingWrap: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    gap: 12,
-    paddingHorizontal: 24,
-  },
-  loadingText: {
-    color: Colors.textMuted,
-    fontSize: 14,
-    fontFamily: 'Inter_400Regular',
   },
   listContent: {
     paddingHorizontal: 16,

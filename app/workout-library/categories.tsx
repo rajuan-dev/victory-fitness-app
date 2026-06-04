@@ -1,6 +1,5 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useMemo } from 'react';
 import {
-  ActivityIndicator,
   Image,
   ScrollView,
   StyleSheet,
@@ -15,6 +14,8 @@ import { Colors } from '../../constants/Colors';
 import { formatAppError } from '../../lib/error';
 import { fetchWorkoutLibrary, WorkoutLibraryCategory } from '../../lib/workouts';
 import { useLanguage } from '../../lib/i18n';
+import { ScreenState } from '../../components/ScreenState';
+import { useAsyncScreenData } from '../../hooks/useAsyncScreenData';
 
 const FALLBACK_WORKOUT_IMAGE = 'https://images.unsplash.com/photo-1517836357463-d25dfeac3438?w=600&q=80';
 
@@ -34,41 +35,19 @@ function pairCategories(categories: WorkoutLibraryCategory[]) {
 export default function WorkoutCategoriesScreen() {
   const router = useRouter();
   const { t } = useLanguage();
-  const [categories, setCategories] = useState<WorkoutLibraryCategory[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-
-  useEffect(() => {
-    let isMounted = true;
-
-    const loadCategories = async () => {
-      setLoading(true);
-      setError('');
-      try {
-        const response = await fetchWorkoutLibrary();
-        if (!isMounted) {
-          return;
-        }
-        setCategories(response.categories);
-      } catch (loadError) {
-        if (!isMounted) {
-          return;
-        }
-        setError(formatAppError(loadError).message);
-        setCategories([]);
-      } finally {
-        if (isMounted) {
-          setLoading(false);
-        }
-      }
-    };
-
-    loadCategories();
-
-    return () => {
-      isMounted = false;
-    };
-  }, []);
+  const {
+    data: categories,
+    loading,
+    error,
+    reload,
+  } = useAsyncScreenData<WorkoutLibraryCategory[]>({
+    initialData: [],
+    load: async () => {
+      const response = await fetchWorkoutLibrary();
+      return response.categories;
+    },
+    getErrorMessage: (loadError) => formatAppError(loadError).message,
+  });
 
   const categoryRows = useMemo(() => pairCategories(categories), [categories]);
 
@@ -101,15 +80,9 @@ export default function WorkoutCategoriesScreen() {
       </View>
 
       {loading ? (
-        <View style={styles.centerState}>
-          <ActivityIndicator size="large" color={Colors.primary} />
-          <Text style={styles.stateText}>{t('Loading categories...')}</Text>
-        </View>
+        <ScreenState mode="loading" message={t('Loading categories...')} spinnerColor={Colors.primary} />
       ) : error ? (
-        <View style={styles.centerState}>
-          <Ionicons name="alert-circle-outline" size={34} color="#FCA5A5" />
-          <Text style={styles.errorText}>{error}</Text>
-        </View>
+        <ScreenState mode="error" message={error} actionLabel={t('Try Again')} onAction={() => void reload()} />
       ) : (
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.listContent}>
           {categoryRows.map((row, rowIndex) => (
@@ -177,27 +150,6 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 22,
     fontFamily: 'Inter_700Bold',
-  },
-  centerState: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 28,
-    gap: 12,
-  },
-  stateText: {
-    color: Colors.textMuted,
-    fontSize: 14,
-    lineHeight: 22,
-    textAlign: 'center',
-    fontFamily: 'Inter_400Regular',
-  },
-  errorText: {
-    color: '#FCA5A5',
-    fontSize: 14,
-    lineHeight: 22,
-    textAlign: 'center',
-    fontFamily: 'Inter_500Medium',
   },
   listContent: {
     paddingHorizontal: 16,

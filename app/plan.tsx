@@ -17,6 +17,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { ApiError, fetchCurrentUser, updateCurrentUserSubscription } from '../lib/api';
 import { BillingCycle, getPlanPrice, getSubscriptionCard, isSubscriptionActive, PLAN_CARDS, SubscriptionTier } from '../lib/access';
 import { useLanguage } from '../lib/i18n';
+import { replaceRoute } from '../lib/navigation';
 
 const { width } = Dimensions.get('window');
 const CARD_WIDTH = Math.min(width - 92, 320);
@@ -96,7 +97,7 @@ export default function PlanSelectionScreen() {
         confirm_payment: true,
       });
       setCurrentTier(selectedTier);
-      router.replace('/(tabs)');
+      replaceRoute(router, '/(tabs)');
     } catch (error) {
       const message = error instanceof ApiError && error.status === 404
         ? 'The backend route for subscription purchase was not found. Restart or redeploy the backend that serves this app, then try again.'

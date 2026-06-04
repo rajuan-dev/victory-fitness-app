@@ -8,15 +8,18 @@ import {
   ScrollView,
   Image,
   ActivityIndicator,
-  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Stack, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { Colors } from '../../constants/Colors';
+import { ErrorPopupModal } from '../../components/ErrorPopupModal';
+import { ScreenState } from '../../components/ScreenState';
 import { fetchCurrentUser, updateCurrentUserProfile, uploadCurrentUserProfileImage } from '../../lib/api';
+import { formatAppError } from '../../lib/error';
 import { useLanguage } from '../../lib/i18n';
+import { useAsyncScreenData } from '../../hooks/useAsyncScreenData';
 
 export default function EditProfileScreen() {
   const router = useRouter();
@@ -25,42 +28,25 @@ export default function EditProfileScreen() {
   const [email, setEmail] = useState('');
   const [location, setLocation] = useState('');
   const [profileImage, setProfileImage] = useState('');
-  const [loadingProfile, setLoadingProfile] = useState(true);
   const [savingProfile, setSavingProfile] = useState(false);
   const [uploadingImage, setUploadingImage] = useState(false);
-
-  React.useEffect(() => {
-    let cancelled = false;
-
-    const loadProfile = async () => {
-      setLoadingProfile(true);
-      try {
-        const me = await fetchCurrentUser();
-        if (cancelled) {
-          return;
-        }
-
-        setName(me.name ?? '');
-        setEmail(me.email ?? '');
-        setLocation(me.country ?? '');
-        setProfileImage(me.profileImage ?? '');
-      } catch (error) {
-        if (!cancelled) {
-          Alert.alert(t('Profile unavailable'), t('Unable to load your profile right now.'));
-        }
-      } finally {
-        if (!cancelled) {
-          setLoadingProfile(false);
-        }
-      }
-    };
-
-    loadProfile();
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  const [errorDialog, setErrorDialog] = useState<{ title: string; message: string } | null>(null);
+  const {
+    loading: loadingProfile,
+    error: loadError,
+    reload: reloadProfile,
+  } = useAsyncScreenData({
+    initialData: null as null,
+    load: async () => {
+      const me = await fetchCurrentUser();
+      setName(me.name ?? '');
+      setEmail(me.email ?? '');
+      setLocation(me.country ?? '');
+      setProfileImage(me.profileImage ?? '');
+      return null;
+    },
+    getErrorMessage: () => t('Unable to load your profile right now.'),
+  });
 
   const handleSave = async () => {
     if (savingProfile) {
@@ -77,8 +63,7 @@ export default function EditProfileScreen() {
       });
       router.back();
     } catch (error) {
-      const message = error instanceof Error ? error.message : t('Unable to save profile changes.');
-      Alert.alert(t('Save failed'), message);
+      setErrorDialog(formatAppError(error, t('Unable to save profile changes.')));
     } finally {
       setSavingProfile(false);
     }
@@ -92,7 +77,10 @@ export default function EditProfileScreen() {
     try {
       const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (!permission.granted) {
-        Alert.alert(t('Permission needed'), t('Please allow photo library access to choose a profile image.'));
+        setErrorDialog({
+          title: t('Permission needed'),
+          message: t('Please allow photo library access to choose a profile image.'),
+        });
         return;
       }
 
@@ -125,14 +113,19 @@ export default function EditProfileScreen() {
         setUploadingImage(false);
       }
     } catch (error) {
-      const message = error instanceof Error ? error.message : t('Unable to upload your profile image right now.');
-      Alert.alert(t('Upload failed'), message);
+      setErrorDialog(formatAppError(error, t('Unable to upload your profile image right now.')));
       setUploadingImage(false);
     }
   };
 
   return (
     <SafeAreaView style={styles.container}>
+      <ErrorPopupModal
+        visible={Boolean(errorDialog)}
+        title={errorDialog?.title ?? t('Error')}
+        message={errorDialog?.message ?? ''}
+        onClose={() => setErrorDialog(null)}
+      />
       <Stack.Screen options={{ 
         headerShown: true, 
         title: t('EDIT PROFILE'),
@@ -146,6 +139,17 @@ export default function EditProfileScreen() {
         ),
       }} />
 
+      {loadingProfile ? (
+        <ScreenState mode="loading" message={t('Loading your profile...')} />
+      ) : loadError ? (
+        <ScreenState
+          mode="error"
+          title={t('Profile unavailable')}
+          message={loadError}
+          actionLabel={t('Try Again')}
+          onAction={() => void reloadProfile()}
+        />
+      ) : (
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         <View style={styles.avatarSection}>
           <View style={styles.avatarWrap}>
@@ -229,6 +233,7 @@ export default function EditProfileScreen() {
           )}
         </TouchableOpacity>
       </ScrollView>
+      )}
     </SafeAreaView>
   );
 }

@@ -18,7 +18,7 @@ import { useModuleAccessGuard } from '../../lib/useModuleAccessGuard';
 import { useLanguage } from '../../lib/i18n';
 
 export default function StrengthPlanResult() {
-  useModuleAccessGuard('/workoutplan');
+  const checkingAccess = useModuleAccessGuard('/workoutplan');
   const router = useRouter();
   const { t } = useLanguage();
   const [plan, setPlan] = useState<StrengthPlanResponse | null>(getLatestStrengthWorkoutPlan());
@@ -26,7 +26,6 @@ export default function StrengthPlanResult() {
   const dayLabels = useMemo(() => (plan?.days?.length ? plan.days.map((day) => day.day) : ['Mon']), [plan]);
   const [selectedDay, setSelectedDay] = useState(dayLabels[0] ?? 'Mon');
   const selectedPlanDay = plan?.days?.find((day) => day.day === selectedDay) ?? plan?.days?.[0] ?? null;
-
 
   useEffect(() => {
     let cancelled = false;
@@ -62,6 +61,10 @@ export default function StrengthPlanResult() {
       setSelectedDay(dayLabels[0]);
     }
   }, [dayLabels, selectedDay]);
+
+  if (checkingAccess) {
+    return null;
+  }
 
   return (
     <SafeAreaView style={styles.container}>

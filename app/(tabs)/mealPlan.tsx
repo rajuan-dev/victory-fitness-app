@@ -22,11 +22,14 @@ import * as ImagePicker from 'expo-image-picker';
 import { Colors } from '../../constants/Colors';
 import AccessRestrictionModal from '../../components/AccessRestrictionModal';
 import { ErrorPopupModal } from '../../components/ErrorPopupModal';
+import { ScreenState } from '../../components/ScreenState';
 import VictoryHeader from '../../components/VictoryHeader';
 import { apiRequest, fetchCurrentUser } from '../../lib/api';
 import { canAccessFeature } from '../../lib/access';
 import { formatAppError } from '../../lib/error';
+import { useLanguage } from '../../lib/i18n';
 import { useModuleAccessGuard } from '../../lib/useModuleAccessGuard';
+import { replaceRoute } from '../../lib/navigation';
 import {
   NutritionPlanApiResponse,
   analyzeMealImage,
@@ -42,6 +45,10 @@ const PLAN_SUCCESS_SOUND = require('../../assets/sounds/plan-saved.wav');
 const PLAN_SUCCESS_HOLD_MS = 2500;
 const NUTRITION_PLAN_POLL_INTERVAL_MS = 3000;
 const NUTRITION_PLAN_POLL_MAX_ATTEMPTS = 60;
+const GENDER_PLACEHOLDER = 'Please select...';
+const PLAN_DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] as const;
+type PlanTabId = 'my_plan' | 'tracker' | 'meal_analysis';
+type MealKey = 'breakfast' | 'lunch' | 'dinner';
 
 const PLAN_LOADING_MESSAGES = [
   'Reviewing your goal, food preferences, and activity profile.',
@@ -101,6 +108,40 @@ const HEALTH_CONDITIONS = [
   { id: 'h6', emoji: '😵', label: 'Digestive Issues' },
 ];
 
+function getPlanLoadingMessages(t: (key: string) => string) {
+  return PLAN_LOADING_MESSAGES.map((message) => t(message));
+}
+
+function getPlanTabs(t: (key: string) => string) {
+  return [
+    { id: 'my_plan' as const, label: t('My Plan') },
+    { id: 'tracker' as const, label: t('Tracker') },
+    { id: 'meal_analysis' as const, label: t('Meal Analysis') },
+  ];
+}
+
+function getGenderOptions(t: (key: string) => string) {
+  return GENDERS.map((value) => ({ value, label: t(value) }));
+}
+
+function getMealLabel(mealKey: MealKey, t: (key: string) => string) {
+  if (mealKey === 'breakfast') {
+    return t('Breakfast');
+  }
+  if (mealKey === 'lunch') {
+    return t('Lunch');
+  }
+  return t('Dinner');
+}
+
+function getGoalLabel(goal: string | null, t: (key: string) => string) {
+  if (goal === 'g1') return t('Weight Loss');
+  if (goal === 'g2') return t('Muscle Building');
+  if (goal === 'g3') return t('Weight Maintenance');
+  if (goal === 'g4') return t('Flexibility');
+  return t('Endurance');
+}
+
 function OptionList({
   items,
   selected,
@@ -139,8 +180,6 @@ function OptionList({
 }
 
 /* ── Meal Plan Data ── */
-const PLAN_DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-const PLAN_TABS = ['My Plan', 'Tracker', 'Meal Analysis'] as const;
 
 function getCurrentPlanDay() {
   const dayIndex = new Date().getDay();
@@ -181,7 +220,7 @@ function mapPlanProfile(plan: NutritionPlanApiResponse | null): NutritionProfile
     allergies: typeof rawProfile.allergies === 'string' ? rawProfile.allergies : '',
     selectedActivity: typeof rawProfile.activity_level === 'string' ? rawProfile.activity_level : null,
     age: typeof rawProfile.age === 'string' ? rawProfile.age : '',
-    gender: typeof rawProfile.gender === 'string' ? rawProfile.gender : 'Please select...',
+    gender: typeof rawProfile.gender === 'string' ? rawProfile.gender : GENDER_PLACEHOLDER,
     height: typeof rawProfile.height === 'string' ? rawProfile.height : '',
     weight: typeof rawProfile.weight === 'string' ? rawProfile.weight : '',
     healthConditions,
@@ -237,6 +276,8 @@ function MealPlanResult({
   onCreateNewPlan: () => void;
 }) {
   const router = useRouter();
+  const { t } = useLanguage();
+  const planTabs = React.useMemo(() => getPlanTabs(t), [t]);
   const [activeDay, setActiveDay] = useState(() => getCurrentPlanDay());
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [showShopping, setShowShopping] = useState(false);
@@ -255,7 +296,7 @@ function MealPlanResult({
   const [analysisError, setAnalysisError] = useState('');
   const [analysisHistory, setAnalysisHistory] = useState<MealImageAnalysisResponse[]>([]);
   const [selectedAnalysis, setSelectedAnalysis] = useState<MealImageAnalysisResponse | null>(null);
-  const [planTab, setPlanTab] = useState<(typeof PLAN_TABS)[number]>('My Plan');
+  const [planTab, setPlanTab] = useState<PlanTabId>('my_plan');
   const [canAccessTracker, setCanAccessTracker] = useState(false);
   const [canAccessMealAnalysis, setCanAccessMealAnalysis] = useState(false);
   const [restrictedSection, setRestrictedSection] = useState('');
@@ -456,9 +497,9 @@ function MealPlanResult({
   const activeShoppingList = Array.isArray(generatedPlan?.shopping_list) ? generatedPlan.shopping_list : [];
   const day = activePlan[activeDay] ?? MEAL_PLAN[activeDay];
   const dayMealStatuses = [
-    { key: 'breakfast', label: 'Breakfast', meal: day.breakfast, completed: isMealComplete(activeDay, 'breakfast') },
-    { key: 'lunch', label: 'Lunch', meal: day.lunch, completed: isMealComplete(activeDay, 'lunch') },
-    { key: 'dinner', label: 'Dinner', meal: day.dinner, completed: isMealComplete(activeDay, 'dinner') },
+    { key: 'breakfast', label: getMealLabel('breakfast', t), meal: day.breakfast, completed: isMealComplete(activeDay, 'breakfast') },
+    { key: 'lunch', label: getMealLabel('lunch', t), meal: day.lunch, completed: isMealComplete(activeDay, 'lunch') },
+    { key: 'dinner', label: getMealLabel('dinner', t), meal: day.dinner, completed: isMealComplete(activeDay, 'dinner') },
   ];
   const completedMealsCount = dayMealStatuses.filter((item) => item.completed).length;
   const completedDayTotals = dayMealStatuses
@@ -481,11 +522,7 @@ function MealPlanResult({
     .map((item) => item.replace(/^\s*(?:[-*\u2022]|\d+[.)])\s*/, '').trim())
     .filter(Boolean);
 
-  const goalLabel = generatedPlan?.goal_label ?? (profile.goal === 'g1' ? 'Weight Loss'
-    : profile.goal === 'g2' ? 'Muscle Building'
-      : profile.goal === 'g3' ? 'Weight Maintenance'
-        : profile.goal === 'g4' ? 'Flexibility'
-          : 'Endurance');
+  const goalLabel = generatedPlan?.goal_label ? t(generatedPlan.goal_label) : getGoalLabel(profile.goal, t);
   const planJson = generatedPlan
     ? JSON.stringify(generatedPlan, null, 2)
     : JSON.stringify(
@@ -521,7 +558,7 @@ function MealPlanResult({
       });
       setNutritionAdvice(response.reply);
     } catch (error) {
-      setNutritionAdvice(error instanceof Error ? error.message : 'Unable to load nutrition suggestions right now.');
+      setNutritionAdvice(error instanceof Error ? error.message : t('Unable to load nutrition suggestions right now.'));
     } finally {
       setLoadingAdvice(false);
     }
@@ -530,7 +567,7 @@ function MealPlanResult({
     try {
       const permission = await ImagePicker.requestCameraPermissionsAsync();
       if (!permission.granted) {
-        Alert.alert('Permission needed', 'Please allow camera access to take a meal photo for analysis.');
+        Alert.alert(t('Permission needed'), t('Please allow camera access to take a meal photo for analysis.'));
         return;
       }
 
@@ -549,7 +586,7 @@ function MealPlanResult({
         setAnalysisResult(null);
 
         if (!asset.base64) {
-          throw new Error('The selected image could not be read for analysis.');
+          throw new Error(t('The selected image could not be read for analysis.'));
         }
 
         setAnalysisLoading(true);
@@ -568,7 +605,7 @@ function MealPlanResult({
         }
       }
     } catch (error) {
-      Alert.alert('Camera error', error instanceof Error ? error.message : 'Unable to open the camera right now.');
+      Alert.alert(t('Camera error'), error instanceof Error ? error.message : t('Unable to open the camera right now.'));
       setAnalysisLoading(false);
     }
   };
@@ -596,7 +633,7 @@ function MealPlanResult({
           activeOpacity={0.9}
         >
           <Text style={styles.mealLabel}>{label}</Text>
-          {completed ? <Text style={styles.mealCompleteBadge}>COMPLETED</Text> : null}
+          {completed ? <Text style={styles.mealCompleteBadge}>{t('COMPLETED')}</Text> : null}
           <Text style={styles.mealName}>{meal.name}</Text>
           <Text style={styles.mealDesc}>{meal.desc}</Text>
           <View style={styles.mealMacroRow}>
@@ -606,7 +643,7 @@ function MealPlanResult({
             <View style={styles.macroChip}><Text>🥑</Text><Text style={[styles.macroChipText, { color: '#F59E0B' }]}>{meal.f}g F</Text></View>
           </View>
           <View style={styles.mealHintRow}>
-            <Text style={styles.mealHintText}>Tap card for actions</Text>
+            <Text style={styles.mealHintText}>{t('Tap card for actions')}</Text>
             <Ionicons name="chevron-down" size={16} color="rgba(255,255,255,0.5)" />
           </View>
         </TouchableOpacity>
@@ -626,11 +663,11 @@ function MealPlanResult({
             <Ionicons name="arrow-back" size={22} color="#fff" />
           </TouchableOpacity>
           <View style={{ flex: 1 }}>
-            <Text style={styles.slTitle}>Weekly Shopping List</Text>
-            <Text style={styles.slSubtitle}>{checkedCount} of {totalItems} items checked</Text>
+            <Text style={styles.slTitle}>{t('Weekly Shopping List')}</Text>
+            <Text style={styles.slSubtitle}>{t('{checkedCount} of {totalItems} items checked', { checkedCount, totalItems })}</Text>
           </View>
           <TouchableOpacity onPress={() => setCheckedItems(new Set())} style={styles.slClearBtn}>
-            <Text style={styles.slClearText}>Clear</Text>
+            <Text style={styles.slClearText}>{t('Clear')}</Text>
           </TouchableOpacity>
         </View>
 
@@ -671,9 +708,9 @@ function MealPlanResult({
           )) : (
             <View style={styles.analysisEmptyCard}>
               <Ionicons name="basket-outline" size={32} color="rgba(255,255,255,0.35)" />
-              <Text style={styles.analysisEmptyText}>No shopping list yet</Text>
+              <Text style={styles.analysisEmptyText}>{t('No shopping list yet')}</Text>
               <Text style={styles.analysisEmptySub}>
-                Generate a nutrition plan to load the shopping list from the saved plan data.
+                {t('Generate a nutrition plan to load the shopping list from the saved plan data.')}
               </Text>
             </View>
           )}
@@ -689,7 +726,7 @@ function MealPlanResult({
           >
             <View style={[styles.slCopyBtnGrad, { backgroundColor: Colors.accentPurple }]}>
               <Ionicons name="copy-outline" size={18} color="#fff" />
-              <Text style={styles.slCopyBtnText}>Copy List</Text>
+              <Text style={styles.slCopyBtnText}>{t('Copy List')}</Text>
             </View>
           </TouchableOpacity>
         </View>
@@ -705,58 +742,58 @@ function MealPlanResult({
         {loadingPlan && (
           <View style={styles.planLoading}>
             <ActivityIndicator color={Colors.primary} size="large" />
-            <Text style={styles.planLoadingText}>Building your nutrition plan...</Text>
+            <Text style={styles.planLoadingText}>{t('Building your nutrition plan...')}</Text>
           </View>
         )}
 
         {/* Tab Bar */}
         <View style={styles.planTabRow}>
-          {PLAN_TABS.map((t) => (
+          {planTabs.map((tab) => (
             <TouchableOpacity
-              key={t}
-              style={[styles.planTabBtn, planTab === t && styles.planTabBtnActive]}
+              key={tab.id}
+              style={[styles.planTabBtn, planTab === tab.id && styles.planTabBtnActive]}
               onPress={() => {
-                if (t === 'Tracker' && !canAccessTracker) {
-                  setRestrictedSection('Nutrition Tracker');
+                if (tab.id === 'tracker' && !canAccessTracker) {
+                  setRestrictedSection(t('Nutrition Tracker'));
                   return;
                 }
-                if (t === 'Meal Analysis' && !canAccessMealAnalysis) {
-                  setRestrictedSection('Meal Analysis');
+                if (tab.id === 'meal_analysis' && !canAccessMealAnalysis) {
+                  setRestrictedSection(t('Meal Analysis'));
                   return;
                 }
-                setPlanTab(t);
+                setPlanTab(tab.id);
               }}
             >
               <Text
                 style={[
                   styles.planTabText,
-                  planTab === t && styles.planTabTextActive,
-                  ((t === 'Tracker' && !canAccessTracker) || (t === 'Meal Analysis' && !canAccessMealAnalysis)) && styles.planTabTextLocked,
+                  planTab === tab.id && styles.planTabTextActive,
+                  ((tab.id === 'tracker' && !canAccessTracker) || (tab.id === 'meal_analysis' && !canAccessMealAnalysis)) && styles.planTabTextLocked,
                 ]}
               >
-                {t}
+                {tab.label}
               </Text>
             </TouchableOpacity>
           ))}
         </View>
 
         {/* ── MY PLAN ── */}
-        {planTab === 'My Plan' && !loadingPlan && (
+        {planTab === 'my_plan' && !loadingPlan && (
           <View style={styles.planContent}>
-            <Text style={styles.planTitle}>7-DAY TAILORED {goalLabel.toUpperCase()} PLAN</Text>
+            <Text style={styles.planTitle}>{t('7-DAY TAILORED {goalLabel} PLAN', { goalLabel: goalLabel.toUpperCase() })}</Text>
             <Text style={styles.planDesc}>
-              {generatedPlan?.summary ?? 'A carefully portion-controlled nutrition plan designed for you, with practical meals that match your goal.'}
+              {generatedPlan?.summary ?? t('A carefully portion-controlled nutrition plan designed for you, with practical meals that match your goal.')}
             </Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.dayScroll}>
               {PLAN_DAYS.map((d) => (
                 <TouchableOpacity key={d} style={[styles.dayBtn, activeDay === d && styles.dayBtnActive]} onPress={() => setActiveDay(d)}>
-                  <Text style={[styles.dayBtnText, activeDay === d && styles.dayBtnTextActive]}>{d}</Text>
+                  <Text style={[styles.dayBtnText, activeDay === d && styles.dayBtnTextActive]}>{t(d)}</Text>
                 </TouchableOpacity>
               ))}
             </ScrollView>
             <View style={styles.dayUnderline} />
             <View style={styles.totalsCard}>
-              <Text style={styles.totalsTitle}>Daily Totals</Text>
+              <Text style={styles.totalsTitle}>{t('Daily Totals')}</Text>
               <View style={styles.totalsGrid}>
                 <View style={styles.totalsItem}><Text style={styles.totalsIcon}>🔥</Text><Text style={styles.totalsVal}>{totalKcal} kcal</Text></View>
                 <View style={styles.totalsItem}><Text style={styles.totalsIcon}>💪</Text><Text style={styles.totalsVal}>{totalP}g P</Text></View>
@@ -764,53 +801,53 @@ function MealPlanResult({
                 <View style={styles.totalsItem}><Text style={styles.totalsIcon}>🫒</Text><Text style={styles.totalsVal}>{totalF}g F</Text></View>
               </View>
             </View>
-            <MealCard dayLabel={activeDay} mealKey="breakfast" label="Breakfast" meal={day.breakfast} expandKey={`${activeDay}-b`} />
-            <MealCard dayLabel={activeDay} mealKey="lunch" label="Lunch" meal={day.lunch} expandKey={`${activeDay}-l`} />
-            <MealCard dayLabel={activeDay} mealKey="dinner" label="Dinner" meal={day.dinner} expandKey={`${activeDay}-d`} />
+            <MealCard dayLabel={activeDay} mealKey="breakfast" label={t('Breakfast')} meal={day.breakfast} expandKey={`${activeDay}-b`} />
+            <MealCard dayLabel={activeDay} mealKey="lunch" label={t('Lunch')} meal={day.lunch} expandKey={`${activeDay}-l`} />
+            <MealCard dayLabel={activeDay} mealKey="dinner" label={t('Dinner')} meal={day.dinner} expandKey={`${activeDay}-d`} />
             <TouchableOpacity style={styles.shoppingBtn} activeOpacity={0.85} onPress={() => setShowShopping(true)}>
               <View style={[styles.shoppingBtnGrad, { backgroundColor: Colors.accentPurple }]}>
-                <Text style={styles.shoppingBtnText}>Weekly Shopping List</Text>
+                <Text style={styles.shoppingBtnText}>{t('Weekly Shopping List')}</Text>
               </View>
             </TouchableOpacity>
             <TouchableOpacity style={styles.newPlanBtn} activeOpacity={0.7} onPress={onCreateNewPlan}>
-              <Text style={styles.newPlanBtnText}>Create New Plan</Text>
+              <Text style={styles.newPlanBtnText}>{t('Create New Plan')}</Text>
             </TouchableOpacity>
           </View>
         )}
 
         {/* ── TRACKER ── */}
-        {planTab === 'Tracker' && (
+        {planTab === 'tracker' && (
           <View style={styles.planContent}>
             {/* Daily Summary */}
             <View style={styles.trackerSection}>
               <View style={styles.trackerSectionHeader}>
                 <Text style={styles.trackerSectionIcon}>📊</Text>
-                <Text style={styles.trackerSectionTitle}>DAILY SUMMARY</Text>
+                <Text style={styles.trackerSectionTitle}>{t('DAILY SUMMARY')}</Text>
               </View>
               <View style={styles.dailyMetricGrid}>
                 <View style={styles.dailyMetricCard}>
                   <Text style={styles.dailyMetricEmoji}>🔥</Text>
-                  <Text style={styles.dailyMetricLabel}>Calories</Text>
+                  <Text style={styles.dailyMetricLabel}>{t('Calories')}</Text>
                   <Text style={styles.dailyMetricValue}>{completedDayTotals.kcal} / {totalKcal} kcal</Text>
                 </View>
                 <View style={styles.dailyMetricCard}>
                   <Text style={styles.dailyMetricEmoji}>💪</Text>
-                  <Text style={styles.dailyMetricLabel}>Protein</Text>
+                  <Text style={styles.dailyMetricLabel}>{t('Protein')}</Text>
                   <Text style={styles.dailyMetricValue}>{completedDayTotals.p} / {totalP}g P</Text>
                 </View>
                 <View style={styles.dailyMetricCard}>
                   <Text style={styles.dailyMetricEmoji}>🌾</Text>
-                  <Text style={styles.dailyMetricLabel}>Carbs</Text>
+                  <Text style={styles.dailyMetricLabel}>{t('Carbs')}</Text>
                   <Text style={styles.dailyMetricValue}>{completedDayTotals.c} / {totalC}g C</Text>
                 </View>
                 <View style={styles.dailyMetricCard}>
                   <Text style={styles.dailyMetricEmoji}>🥑</Text>
-                  <Text style={styles.dailyMetricLabel}>Fat</Text>
+                  <Text style={styles.dailyMetricLabel}>{t('Fat')}</Text>
                   <Text style={styles.dailyMetricValue}>{completedDayTotals.f} / {totalF}g F</Text>
                 </View>
               </View>
               <Text style={styles.trackerProgressText}>
-                {completedMealsCount} of {dayMealStatuses.length} meals complete for {activeDay}.
+                {t('{completedMealsCount} of {totalMeals} meals complete for {activeDay}.', { completedMealsCount, totalMeals: dayMealStatuses.length, activeDay: t(activeDay) })}
               </Text>
             </View>
 
@@ -818,24 +855,24 @@ function MealPlanResult({
             <View style={styles.trackerSection}>
               <View style={styles.trackerSectionHeader}>
                 <Text style={styles.trackerSectionIcon}>✨</Text>
-                <Text style={styles.trackerSectionTitle}>AI SUGGESTIONS</Text>
+                <Text style={styles.trackerSectionTitle}>{t('AI SUGGESTIONS')}</Text>
               </View>
               <TouchableOpacity style={styles.getSuggestionsBtn} activeOpacity={0.85} onPress={handleGetSuggestions} disabled={loadingAdvice}>
                 {loadingAdvice ? (
                   <ActivityIndicator color="#fff" />
                 ) : (
-                  <Text style={styles.getSuggestionsBtnText}>GET SUGGESTIONS</Text>
+                  <Text style={styles.getSuggestionsBtnText}>{t('GET SUGGESTIONS')}</Text>
                 )}
               </TouchableOpacity>
               {nutritionAdvice ? (
                 <View style={styles.advicePanel}>
                   <View style={styles.advicePanelHeader}>
                     <View>
-                      <Text style={styles.advicePanelEyebrow}>TODAY'S COACHING</Text>
-                      <Text style={styles.advicePanelTitle}>Practical actions for {activeDay}</Text>
+                      <Text style={styles.advicePanelEyebrow}>{t("TODAY'S COACHING")}</Text>
+                      <Text style={styles.advicePanelTitle}>{t('Practical actions for {activeDay}', { activeDay: t(activeDay) })}</Text>
                     </View>
                     <View style={styles.advicePanelPill}>
-                      <Text style={styles.advicePanelPillText}>{adviceItems.length || 1} tips</Text>
+                      <Text style={styles.advicePanelPillText}>{t('{count} tips', { count: adviceItems.length || 1 })}</Text>
                     </View>
                   </View>
                   {adviceItems.length > 0 ? (
@@ -860,14 +897,14 @@ function MealPlanResult({
         )}
 
         {/* ── MEAL ANALYSIS ── */}
-        {planTab === 'Meal Analysis' && (
+        {planTab === 'meal_analysis' && (
           <View style={styles.planContent}>
             <View style={[styles.analysisCard, { backgroundColor: Colors.accentPurple }]}>
               <Ionicons name="analytics-outline" size={40} color="#fff" style={{ opacity: 0.3, marginBottom: 12 }} />
-              <Text style={styles.analysisTitle}>AI MEAL ANALYSIS</Text>
-              <Text style={styles.analysisDesc}>Take a photo of your meal to get instant macro tracking and health feedback.</Text>
+              <Text style={styles.analysisTitle}>{t('AI MEAL ANALYSIS')}</Text>
+              <Text style={styles.analysisDesc}>{t('Take a photo of your meal to get instant macro tracking and health feedback.')}</Text>
               <TouchableOpacity style={styles.analysisBtn} onPress={handleStartAnalysis} activeOpacity={0.85}>
-                <Text style={styles.analysisBtnText}>Start Analysis</Text>
+                <Text style={styles.analysisBtnText}>{t('Start Analysis')}</Text>
               </TouchableOpacity>
             </View>
 
@@ -875,9 +912,9 @@ function MealPlanResult({
               <View style={styles.analysisPreviewCard}>
                 <Image source={{ uri: analysisImage.uri }} style={styles.analysisPreviewImage} />
                 <View style={styles.analysisPreviewMeta}>
-                  <Text style={styles.analysisPreviewLabel}>Selected image</Text>
+                  <Text style={styles.analysisPreviewLabel}>{t('Selected image')}</Text>
                   <Text style={styles.analysisPreviewText} numberOfLines={1}>
-                    {analysisImage.fileName ?? 'Meal photo'}
+                    {analysisImage.fileName ?? t('Meal photo')}
                   </Text>
                 </View>
               </View>
@@ -888,13 +925,13 @@ function MealPlanResult({
                 {analysisLoading ? (
                   <View style={styles.analysisLoadingRow}>
                     <ActivityIndicator color={Colors.primary} />
-                    <Text style={styles.analysisLoadingText}>Analyzing your meal photo...</Text>
+                    <Text style={styles.analysisLoadingText}>{t('Analyzing your meal photo...')}</Text>
                   </View>
                 ) : analysisResult ? (
                   <>
                     <View style={styles.analysisResultHeader}>
                       <View style={{ flex: 1 }}>
-                        <Text style={styles.analysisResultLabel}>Meal analysis</Text>
+                        <Text style={styles.analysisResultLabel}>{t('Meal analysis')}</Text>
                         <Text style={styles.analysisResultTitle}>{analysisResult.meal_name_guess}</Text>
                       </View>
                       <View style={styles.analysisConfidencePill}>
@@ -904,19 +941,19 @@ function MealPlanResult({
                     <Text style={styles.analysisResultSummary}>{analysisResult.summary}</Text>
                     <View style={styles.analysisResultGrid}>
                       <View style={styles.analysisResultMetric}>
-                        <Text style={styles.analysisResultMetricLabel}>Calories</Text>
+                        <Text style={styles.analysisResultMetricLabel}>{t('Calories')}</Text>
                         <Text style={styles.analysisResultMetricValue}>{analysisResult.estimated_calories}</Text>
                       </View>
                       <View style={styles.analysisResultMetric}>
-                        <Text style={styles.analysisResultMetricLabel}>Protein</Text>
+                        <Text style={styles.analysisResultMetricLabel}>{t('Protein')}</Text>
                         <Text style={styles.analysisResultMetricValue}>{analysisResult.estimated_protein}g</Text>
                       </View>
                       <View style={styles.analysisResultMetric}>
-                        <Text style={styles.analysisResultMetricLabel}>Carbs</Text>
+                        <Text style={styles.analysisResultMetricLabel}>{t('Carbs')}</Text>
                         <Text style={styles.analysisResultMetricValue}>{analysisResult.estimated_carbs}g</Text>
                       </View>
                       <View style={styles.analysisResultMetric}>
-                        <Text style={styles.analysisResultMetricLabel}>Fat</Text>
+                        <Text style={styles.analysisResultMetricLabel}>{t('Fat')}</Text>
                         <Text style={styles.analysisResultMetricValue}>{analysisResult.estimated_fat}g</Text>
                       </View>
                     </View>
@@ -934,7 +971,7 @@ function MealPlanResult({
                   <Text style={styles.analysisErrorText}>{analysisError}</Text>
                 ) : (
                   <Text style={styles.analysisEmptySub}>
-                    Capture a meal image to see the analysis here.
+                    {t('Capture a meal image to see the analysis here.')}
                   </Text>
                 )}
               </View>
@@ -942,7 +979,7 @@ function MealPlanResult({
 
             <View style={styles.analysisHistoryCard}>
               <View style={styles.analysisHistoryHeader}>
-                <Text style={styles.analysisHistoryTitle}>Saved Analyses</Text>
+                <Text style={styles.analysisHistoryTitle}>{t('Saved Analyses')}</Text>
                 <Text style={styles.analysisHistoryCount}>{analysisHistory.length}</Text>
               </View>
               {analysisHistory.length > 0 ? (
@@ -956,7 +993,7 @@ function MealPlanResult({
                     <View style={{ flex: 1 }}>
                       <Text style={styles.analysisHistoryRowTitle}>{item.meal_name_guess}</Text>
                       <Text style={styles.analysisHistoryRowMeta} numberOfLines={1}>
-                        {item.created_at ? new Date(item.created_at).toLocaleString() : item.file_name ?? 'Saved analysis'}
+                        {item.created_at ? new Date(item.created_at).toLocaleString() : item.file_name ?? t('Saved analysis')}
                       </Text>
                     </View>
                     <View style={styles.analysisHistoryRowPill}>
@@ -966,7 +1003,7 @@ function MealPlanResult({
                 ))
               ) : (
                 <Text style={styles.analysisEmptySub}>
-                  Your saved meal analyses will appear here after you run them.
+                  {t('Your saved meal analyses will appear here after you run them.')}
                 </Text>
               )}
             </View>
@@ -974,9 +1011,9 @@ function MealPlanResult({
             {!analysisImage ? (
               <View style={styles.analysisEmptyCard}>
                 <Ionicons name="camera-outline" size={40} color="rgba(255,255,255,0.2)" />
-                <Text style={styles.analysisEmptyText}>No analysis yet</Text>
+                <Text style={styles.analysisEmptyText}>{t('No analysis yet')}</Text>
                 <Text style={styles.analysisEmptySub}>
-                  Upload a photo of your meal and our AI will break down the calories, protein, carbs and fats.
+                  {t('Upload a photo of your meal and our AI will break down the calories, protein, carbs and fats.')}
                 </Text>
               </View>
             ) : null}
@@ -1004,15 +1041,15 @@ function MealPlanResult({
                     <Ionicons name="checkmark-circle" size={44} color="#22C55E" />
                   )}
                   <Text style={styles.modalActionOverlayText}>
-                    {mealModalActionState === 'loading' ? 'Updating meal...' : 'Saved'}
+                    {mealModalActionState === 'loading' ? t('Updating meal...') : t('Saved')}
                   </Text>
                 </View>
               </View>
             )}
-            <Text style={styles.modalEyebrow}>MEAL DETAILS</Text>
-            <Text style={styles.modalTitle}>{selectedMeal?.mealLabel ?? 'Meal'}</Text>
+            <Text style={styles.modalEyebrow}>{t('MEAL DETAILS')}</Text>
+            <Text style={styles.modalTitle}>{selectedMeal?.mealLabel ?? t('Meal')}</Text>
             <Text style={styles.modalSubtitle}>
-              Tap complete after you finish this meal. The daily summary updates automatically.
+              {t('Tap complete after you finish this meal. The daily summary updates automatically.')}
             </Text>
 
             {selectedMeal ? (
@@ -1059,9 +1096,7 @@ function MealPlanResult({
                   disabled
                 >
                   <Ionicons name="checkmark-circle" size={18} color="#050816" />
-                  <Text style={[styles.modalCompleteBtnText, styles.modalCompleteBtnTextDone]}>
-                    Already complete
-                  </Text>
+                      <Text style={[styles.modalCompleteBtnText, styles.modalCompleteBtnTextDone]}>{t('Already complete')}</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={styles.modalSecondaryActionBtn}
@@ -1074,7 +1109,7 @@ function MealPlanResult({
                   ) : mealModalActionState === 'done' && mealModalActionMode === 'unmark' ? (
                     <Ionicons name="checkmark" size={18} color="#22C55E" />
                   ) : (
-                    <Text style={styles.modalSecondaryActionText}>Unmark meal</Text>
+                    <Text style={styles.modalSecondaryActionText}>{t('Unmark meal')}</Text>
                   )}
                 </TouchableOpacity>
               </>
@@ -1090,13 +1125,13 @@ function MealPlanResult({
                 ) : mealModalActionState === 'done' && mealModalActionMode === 'complete' ? (
                   <Ionicons name="checkmark" size={20} color="#050816" />
                 ) : (
-                  <Text style={styles.modalCompleteBtnText}>Mark complete</Text>
+                  <Text style={styles.modalCompleteBtnText}>{t('Mark Complete')}</Text>
                 )}
               </TouchableOpacity>
             )}
 
             <TouchableOpacity style={styles.modalCancelBtn} activeOpacity={0.8} onPress={closeMealModal}>
-              <Text style={styles.modalCancelBtnText}>Close</Text>
+              <Text style={styles.modalCancelBtnText}>{t('Close')}</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -1111,10 +1146,10 @@ function MealPlanResult({
         <View style={styles.modalBackdrop}>
           <View style={styles.modalSheet}>
             <View style={styles.modalHandle} />
-            <Text style={styles.modalEyebrow}>MEAL ANALYSIS</Text>
-            <Text style={styles.modalTitle}>{selectedAnalysis?.meal_name_guess ?? 'Saved Analysis'}</Text>
+            <Text style={styles.modalEyebrow}>{t('MEAL ANALYSIS')}</Text>
+            <Text style={styles.modalTitle}>{selectedAnalysis?.meal_name_guess ?? t('Saved Analysis')}</Text>
             <Text style={styles.modalSubtitle}>
-              {selectedAnalysis?.created_at ? new Date(selectedAnalysis.created_at).toLocaleString() : 'Saved meal analysis'}
+              {selectedAnalysis?.created_at ? new Date(selectedAnalysis.created_at).toLocaleString() : t('Saved meal analysis')}
             </Text>
             {selectedAnalysis ? (
               <View style={styles.modalMealCard}>
@@ -1174,7 +1209,7 @@ function MealPlanResult({
         }}
         onBackHome={() => {
           setRestrictedSection('');
-          router.replace('/(tabs)');
+          replaceRoute(router, '/(tabs)');
         }}
       />
 
@@ -1184,7 +1219,10 @@ function MealPlanResult({
 
 /* ── Main Wizard Screen ── */
 export default function JournalScreen() {
-  useModuleAccessGuard('/mealPlan');
+  const checkingAccess = useModuleAccessGuard('/mealPlan');
+  const { t } = useLanguage();
+  const genderOptions = React.useMemo(() => getGenderOptions(t), [t]);
+  const planLoadingMessages = React.useMemo(() => getPlanLoadingMessages(t), [t]);
   const [step, setStep] = useState(1);
   const [generating, setGenerating] = useState(false);
   const [generationSuccess, setGenerationSuccess] = useState(false);
@@ -1206,7 +1244,7 @@ export default function JournalScreen() {
   const [allergies, setAllergies] = useState('');
   const [selectedActivity, setSelectedActivity] = useState<string | null>(null);
   const [age, setAge] = useState('');
-  const [gender, setGender] = useState('Please select...');
+  const [gender, setGender] = useState(GENDER_PLACEHOLDER);
   const [genderOpen, setGenderOpen] = useState(false);
   const [height, setHeight] = useState('');
   const [weight, setWeight] = useState('');
@@ -1252,13 +1290,13 @@ export default function JournalScreen() {
       }
 
       if (status === 'failed') {
-        throw new Error(job.error || 'Nutrition plan generation failed.');
+        throw new Error(job.error || t('Nutrition plan generation failed.'));
       }
 
       await sleep(NUTRITION_PLAN_POLL_INTERVAL_MS);
     }
 
-    throw new Error('Nutrition plan generation timed out while waiting for the saved plan.');
+    throw new Error(t('Nutrition plan generation timed out while waiting for the saved plan.'));
   };
 
 
@@ -1359,7 +1397,7 @@ export default function JournalScreen() {
     if (step === 4) return selectedDiet !== null;
     if (step === 5) return true;
     if (step === 6) return selectedActivity !== null;
-    if (step === 7) return age.trim().length > 0 && gender !== 'Please select...' && height.trim().length > 0 && weight.trim().length > 0;
+    if (step === 7) return age.trim().length > 0 && gender !== GENDER_PLACEHOLDER && height.trim().length > 0 && weight.trim().length > 0;
     return true;
   };
 
@@ -1408,7 +1446,7 @@ export default function JournalScreen() {
       const savedPlan = response.plan ?? (response.job_id ? await waitForNutritionPlanJob(response.job_id) : null);
 
       if (!savedPlan) {
-        throw new Error('Nutrition plan generation did not return a plan');
+        throw new Error(t('Nutrition plan generation did not return a plan'));
       }
 
       setGeneratedPlan(savedPlan);
@@ -1425,35 +1463,35 @@ export default function JournalScreen() {
   };
 
   const formatNutritionPlanError = (error: unknown) => {
-    const formatted = formatAppError(error, 'Unable to generate a nutrition plan right now.');
+    const formatted = formatAppError(error, t('Unable to generate a nutrition plan right now.'));
     if (formatted.message.toLowerCase().includes('nutrition plan refused')) {
       return {
-        title: 'Nutrition Error',
-        message: 'The nutrition request was refused. Adjust your inputs and try again.',
+        title: t('Nutrition Error'),
+        message: t('The nutrition request was refused. Adjust your inputs and try again.'),
       };
     }
     if (formatted.message.toLowerCase().includes('did not return valid plan json')) {
       return {
-        title: 'Nutrition JSON Error',
-        message: 'The AI response was not valid plan JSON. Try again and the system will request a cleaner structured plan.',
+        title: t('Nutrition JSON Error'),
+        message: t('The AI response was not valid plan JSON. Try again and the system will request a cleaner structured plan.'),
       };
     }
     if (formatted.message.toLowerCase().includes('nutrition plan unavailable')) {
       return {
-        title: 'Nutrition Service Error',
-        message: 'The nutrition service is unavailable right now. Try again in a moment.',
+        title: t('Nutrition Service Error'),
+        message: t('The nutrition service is unavailable right now. Try again in a moment.'),
       };
     }
     if (formatted.message.toLowerCase().includes('nutrition plan generations every 30 days')) {
       return {
-        title: 'Plan Limit Reached',
+        title: t('Plan Limit Reached'),
         message: formatted.message,
       };
     }
     if (formatted.message.toLowerCase().includes('waiting for the saved plan')) {
       return {
-        title: 'Plan Still Generating',
-        message: 'Your plan is still being generated on the server. Open the plan page again in a moment to load it.',
+        title: t('Plan Still Generating'),
+        message: t('Your plan is still being generated on the server. Open the plan page again in a moment to load it.'),
       };
     }
     return formatted;
@@ -1461,25 +1499,29 @@ export default function JournalScreen() {
 
   const progressFraction = (step - 1) / (TOTAL_STEPS - 1);
 
+  if (checkingAccess) {
+    return null;
+  }
+
   if (generating) {
     const isQueued = generationStage === 'queued';
     const progressWidth = isQueued ? '28%' : '66%';
-    const stageLabel = isQueued ? 'Queued' : 'Processing';
+    const stageLabel = isQueued ? t('Queued') : t('Processing');
     const stageMessage = isQueued
-      ? 'Your plan request is waiting for the generation worker.'
-      : 'The backend is building your meal plan now.';
+      ? t('Your plan request is waiting for the generation worker.')
+      : t('The backend is building your meal plan now.');
 
     return (
       <View style={styles.loadingScreen}>
         <View style={styles.jobCard}>
           <Text style={styles.jobStage}>{stageLabel}</Text>
-          <Text style={styles.quoteText}>Generating your plan</Text>
+          <Text style={styles.quoteText}>{t('Generating your plan')}</Text>
           <Text style={styles.loadingDetailText}>{stageMessage}</Text>
           <View style={styles.jobProgressTrack}>
             <View style={[styles.jobProgressFill, { width: progressWidth }]} />
           </View>
           <ActivityIndicator size="small" color={Colors.primary} style={{ marginTop: 18 }} />
-          <Text style={styles.loadingDetailText}>{PLAN_LOADING_MESSAGES[loadingMessageIndex]}</Text>
+          <Text style={styles.loadingDetailText}>{planLoadingMessages[loadingMessageIndex]}</Text>
         </View>
       </View>
     );
@@ -1491,18 +1533,13 @@ export default function JournalScreen() {
         <Animated.View style={[styles.successRing, { transform: [{ scale: successScale }] }]}>
           <Ionicons name="checkmark" size={42} color="#fff" />
         </Animated.View>
-        <Text style={styles.quoteText}>Plan saved</Text>
+        <Text style={styles.quoteText}>{t('Plan saved')}</Text>
       </View>
     );
   }
 
   if (loadingSavedPlan) {
-    return (
-      <View style={styles.loadingScreen}>
-        <ActivityIndicator size="large" color={Colors.primary} style={{ marginBottom: 40 }} />
-        <Text style={styles.quoteText}>Loading your saved plan...</Text>
-      </View>
-    );
+    return <ScreenState mode="loading" message={t('Loading your saved plan...')} />;
   }
 
   if ((hasSavedPlan || done) && !creatingNewPlan) {
@@ -1536,7 +1573,7 @@ export default function JournalScreen() {
     <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.container}>
       <ErrorPopupModal
         visible={Boolean(errorDialog)}
-        title={errorDialog?.title ?? 'Error'}
+        title={errorDialog?.title ?? t('Error')}
         message={errorDialog?.message ?? ''}
         onClose={() => setErrorDialog(null)}
         onRetry={errorDialog ? generatePlan : undefined}
@@ -1552,13 +1589,17 @@ export default function JournalScreen() {
       </View>
 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
-        <Text style={styles.stepCounter}>Step {step} of {TOTAL_STEPS}</Text>
+        <Text style={styles.stepCounter}>{t('Step {step} of {total}', { step, total: TOTAL_STEPS })}</Text>
 
         {step === 1 && (
           <View>
-            <Text style={styles.bigQuestion}>What is your primary goal?</Text>
-            <Text style={styles.bigSub}>Choose the goal that motivates you the most.</Text>
-            <OptionList items={GOALS} selected={selectedGoal} onSelect={setSelectedGoal} />
+            <Text style={styles.bigQuestion}>{t('What is your primary goal?')}</Text>
+            <Text style={styles.bigSub}>{t('Choose the goal that motivates you the most.')}</Text>
+            <OptionList
+              items={GOALS.map((item) => ({ ...item, label: t(item.label) }))}
+              selected={selectedGoal}
+              onSelect={setSelectedGoal}
+            />
           </View>
         )}
 
@@ -1584,9 +1625,13 @@ export default function JournalScreen() {
 
         {step === 4 && (
           <View>
-            <Text style={styles.bigQuestion}>Do you have any dietary preferences?</Text>
-            <Text style={styles.bigSub}>We'll make sure your plan fits you perfectly.</Text>
-            <OptionList items={DIET_PREFS} selected={selectedDiet} onSelect={setSelectedDiet} />
+            <Text style={styles.bigQuestion}>{t('Do you have any dietary preferences?')}</Text>
+            <Text style={styles.bigSub}>{t("We'll make sure your plan fits you perfectly.")}</Text>
+            <OptionList
+              items={DIET_PREFS.map((item) => ({ ...item, label: t(item.label) }))}
+              selected={selectedDiet}
+              onSelect={setSelectedDiet}
+            />
           </View>
         )}
 
@@ -1602,9 +1647,13 @@ export default function JournalScreen() {
 
         {step === 6 && (
           <View>
-            <Text style={styles.bigQuestion}>How active are you in daily life?</Text>
-            <Text style={styles.bigSub}>Not including your training with us.</Text>
-            <OptionList items={ACTIVITY_LEVELS} selected={selectedActivity} onSelect={setSelectedActivity} />
+            <Text style={styles.bigQuestion}>{t('How active are you in daily life?')}</Text>
+            <Text style={styles.bigSub}>{t('Not including your training with us.')}</Text>
+            <OptionList
+              items={ACTIVITY_LEVELS.map((item) => ({ ...item, label: t(item.label) }))}
+              selected={selectedActivity}
+              onSelect={setSelectedActivity}
+            />
           </View>
         )}
 
@@ -1620,15 +1669,15 @@ export default function JournalScreen() {
 
             <Text style={styles.fieldLabel}>Gender</Text>
             <TouchableOpacity style={[styles.textInputCard, styles.genderSelector]} onPress={() => setGenderOpen(!genderOpen)} activeOpacity={0.85}>
-              <Text style={[styles.textInput, styles.textInputSingle, { flex: 1 }]}>{gender}</Text>
+              <Text style={[styles.textInput, styles.textInputSingle, { flex: 1 }]}>{t(gender)}</Text>
               <Ionicons name={genderOpen ? 'chevron-up' : 'chevron-down'} size={16} color="rgba(255,255,255,0.4)" />
             </TouchableOpacity>
             {genderOpen && (
               <View style={styles.genderDropdown}>
-                {GENDERS.filter(g => g !== 'Please select...').map((g) => (
-                  <TouchableOpacity key={g} style={[styles.genderOption, gender === g && styles.genderOptionActive]} onPress={() => { setGender(g); setGenderOpen(false); }}>
-                    <Text style={[styles.genderOptionText, gender === g && styles.genderOptionTextActive]}>{g}</Text>
-                    {gender === g && <Ionicons name="checkmark" size={14} color="#A855F7" />}
+                {genderOptions.filter((g) => g.value !== GENDER_PLACEHOLDER).map((g) => (
+                  <TouchableOpacity key={g.value} style={[styles.genderOption, gender === g.value && styles.genderOptionActive]} onPress={() => { setGender(g.value); setGenderOpen(false); }}>
+                    <Text style={[styles.genderOptionText, gender === g.value && styles.genderOptionTextActive]}>{g.label}</Text>
+                    {gender === g.value && <Ionicons name="checkmark" size={14} color="#A855F7" />}
                   </TouchableOpacity>
                 ))}
               </View>
@@ -1656,7 +1705,7 @@ export default function JournalScreen() {
                 return (
                   <TouchableOpacity key={item.id} style={[styles.optionCard, active && styles.optionCardActive]} onPress={() => toggleHealth(item.id)} activeOpacity={0.85}>
                     <Text style={styles.optionEmoji}>{item.emoji}</Text>
-                    <Text style={[styles.optionLabel, active && styles.optionLabelActive, { flex: 1 }]}>{item.label}</Text>
+                    <Text style={[styles.optionLabel, active && styles.optionLabelActive, { flex: 1 }]}>{t(item.label)}</Text>
                     {active && <View style={styles.optionCheck}><Ionicons name="checkmark" size={13} color="#fff" /></View>}
                   </TouchableOpacity>
                 );
@@ -1670,12 +1719,12 @@ export default function JournalScreen() {
 
       <View style={styles.bottomBar}>
         <TouchableOpacity onPress={goBack} style={styles.backBtn} disabled={step === 1 && !hasSavedPlan}>
-          <Text style={[styles.backBtnText, step === 1 && !hasSavedPlan && styles.backBtnDisabled]}>Back</Text>
+          <Text style={[styles.backBtnText, step === 1 && !hasSavedPlan && styles.backBtnDisabled]}>{t('Back')}</Text>
         </TouchableOpacity>
         {step < TOTAL_STEPS ? (
           <TouchableOpacity onPress={goNext} disabled={!canNext()} activeOpacity={0.85}>
             <View style={[styles.nextBtn, { backgroundColor: canNext() ? Colors.accentPurple : '#2A2A40' }]}>
-              <Text style={[styles.nextBtnText, !canNext() && styles.nextBtnDisabled]}>Next</Text>
+              <Text style={[styles.nextBtnText, !canNext() && styles.nextBtnDisabled]}>{t('Next')}</Text>
             </View>
           </TouchableOpacity>
         ) : (
@@ -1684,7 +1733,7 @@ export default function JournalScreen() {
               {generating ? (
                 <ActivityIndicator color="#fff" />
               ) : (
-                <Text style={styles.generateBtnText}>Curate Your Plan</Text>
+                <Text style={styles.generateBtnText}>{t('Curate Your Plan')}</Text>
               )}
             </View>
           </TouchableOpacity>

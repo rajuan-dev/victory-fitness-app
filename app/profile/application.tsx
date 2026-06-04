@@ -18,7 +18,7 @@ import { fetchCurrentUser, submitCoachingApplication } from '../../lib/api';
 import { useModuleAccessGuard } from '../../lib/useModuleAccessGuard';
 
 export default function ApplicationScreen() {
-  useModuleAccessGuard('/profile/application');
+  const checkingAccess = useModuleAccessGuard('/profile/application');
   const router = useRouter();
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
@@ -35,7 +35,6 @@ export default function ApplicationScreen() {
   const [additionalNotes, setAdditionalNotes] = useState('');
   const [loadingProfile, setLoadingProfile] = useState(true);
   const [submitting, setSubmitting] = useState(false);
-
 
   React.useEffect(() => {
     let cancelled = false;
@@ -108,6 +107,10 @@ export default function ApplicationScreen() {
       setSubmitting(false);
     }
   };
+
+  if (checkingAccess) {
+    return null;
+  }
 
   const RadioOption = ({ label, selected, onSelect }: { label: string; selected: boolean; onSelect: () => void }) => (
     <TouchableOpacity

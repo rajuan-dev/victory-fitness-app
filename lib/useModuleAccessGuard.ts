@@ -3,6 +3,7 @@ import { useRouter } from 'expo-router';
 import { fetchCurrentUser, getValidAuthTokens } from './api';
 import { getPostAuthRoute, isRouteAllowedForPlan } from './access';
 import { appendRunLog } from './runLog';
+import { replaceRoute } from './navigation';
 
 export function useModuleAccessGuard(routePath: string) {
   const router = useRouter();
@@ -26,7 +27,7 @@ export function useModuleAccessGuard(routePath: string) {
             route: routePath,
             context: 'ModuleGuard',
           });
-          router.replace('/login');
+          replaceRoute(router, '/login');
           return;
         }
 
@@ -43,7 +44,7 @@ export function useModuleAccessGuard(routePath: string) {
             route: routePath,
             context: 'ModuleGuard',
           });
-          router.replace(getPostAuthRoute(user));
+          replaceRoute(router, getPostAuthRoute(user));
           return;
         }
       } catch {
@@ -55,7 +56,7 @@ export function useModuleAccessGuard(routePath: string) {
             route: routePath,
             context: 'ModuleGuard',
           });
-          router.replace('/login');
+          replaceRoute(router, '/login');
           return;
         }
       } finally {

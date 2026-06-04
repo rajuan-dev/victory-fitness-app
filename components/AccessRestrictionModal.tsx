@@ -4,6 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { Colors } from '../constants/Colors';
 import { useLanguage } from '../lib/i18n';
+import { replaceRoute } from '../lib/navigation';
 
 type AccessRestrictionModalProps = {
   visible: boolean;
@@ -39,7 +40,7 @@ export default function AccessRestrictionModal({
       return;
     }
 
-    router.replace('/(tabs)');
+    replaceRoute(router, '/(tabs)');
   };
 
   return (

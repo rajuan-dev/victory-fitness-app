@@ -1,6 +1,5 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useMemo } from 'react';
 import {
-  ActivityIndicator,
   Image,
   ScrollView,
   StyleSheet,
@@ -15,6 +14,8 @@ import { Colors } from '../../../constants/Colors';
 import { formatAppError } from '../../../lib/error';
 import { fetchWorkoutLibrary, WorkoutLibraryItem } from '../../../lib/workouts';
 import { useLanguage } from '../../../lib/i18n';
+import { ScreenState } from '../../../components/ScreenState';
+import { useAsyncScreenData } from '../../../hooks/useAsyncScreenData';
 
 const FALLBACK_WORKOUT_IMAGE = 'https://images.unsplash.com/photo-1517836357463-d25dfeac3438?w=600&q=80';
 
@@ -28,44 +29,20 @@ export default function WorkoutCategoryScreen() {
   const { t } = useLanguage();
   const params = useLocalSearchParams<{ name?: string }>();
   const categoryName = typeof params.name === 'string' ? params.name : t('CATEGORY');
-  const [workouts, setWorkouts] = useState<WorkoutLibraryItem[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-
-  useEffect(() => {
-    let isMounted = true;
-
-    const loadCategoryWorkouts = async () => {
-      setLoading(true);
-      setError('');
-      try {
-        const response = await fetchWorkoutLibrary(categoryName);
-        if (!isMounted) {
-          return;
-        }
-
-        const normalizedCategory = categoryName.trim().toLowerCase();
-        const categoryWorkouts = response.workouts.filter((workout) => workout.tag.trim().toLowerCase() === normalizedCategory);
-        setWorkouts(categoryWorkouts);
-      } catch (loadError) {
-        if (!isMounted) {
-          return;
-        }
-        setError(formatAppError(loadError).message);
-        setWorkouts([]);
-      } finally {
-        if (isMounted) {
-          setLoading(false);
-        }
-      }
-    };
-
-    loadCategoryWorkouts();
-
-    return () => {
-      isMounted = false;
-    };
-  }, [categoryName]);
+  const {
+    data: workouts,
+    loading,
+    error,
+    reload,
+  } = useAsyncScreenData<WorkoutLibraryItem[]>({
+    initialData: [],
+    load: async () => {
+      const response = await fetchWorkoutLibrary(categoryName);
+      const normalizedCategory = categoryName.trim().toLowerCase();
+      return response.workouts.filter((workout) => workout.tag.trim().toLowerCase() === normalizedCategory);
+    },
+    getErrorMessage: (loadError) => formatAppError(loadError).message,
+  });
 
   const title = useMemo(() => categoryName.toUpperCase(), [categoryName]);
 
@@ -107,23 +84,16 @@ export default function WorkoutCategoryScreen() {
       </View>
 
       {loading ? (
-        <View style={styles.centerState}>
-          <ActivityIndicator size="large" color={Colors.primary} />
-          <Text style={styles.stateText}>{t('Loading category workouts...')}</Text>
-        </View>
+        <ScreenState mode="loading" message={t('Loading category workouts...')} spinnerColor={Colors.primary} />
       ) : error ? (
-        <View style={styles.centerState}>
-          <Ionicons name="alert-circle-outline" size={34} color="#FCA5A5" />
-          <Text style={styles.errorText}>{error}</Text>
-        </View>
+        <ScreenState mode="error" message={error} actionLabel={t('Try Again')} onAction={() => void reload()} />
       ) : workouts.length === 0 ? (
-        <View style={styles.centerState}>
-          <Ionicons name="videocam-off-outline" size={34} color={Colors.textMuted} />
-          <Text style={styles.emptyTitle}>{t('No videos in this category yet')}</Text>
-          <Text style={styles.stateText}>
-            {t('Add and publish workouts with the {categoryName} tag from the dashboard.', { categoryName })}
-          </Text>
-        </View>
+        <ScreenState
+          mode="empty"
+          iconName="videocam-off-outline"
+          title={t('No videos in this category yet')}
+          message={t('Add and publish workouts with the {categoryName} tag from the dashboard.', { categoryName })}
+        />
       ) : (
         <ScrollView
           showsVerticalScrollIndicator={false}
@@ -207,32 +177,6 @@ const styles = StyleSheet.create({
     fontSize: 11,
     letterSpacing: 1.2,
     fontFamily: 'Inter_600SemiBold',
-  },
-  centerState: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 28,
-    gap: 12,
-  },
-  stateText: {
-    color: Colors.textMuted,
-    fontSize: 14,
-    lineHeight: 22,
-    textAlign: 'center',
-    fontFamily: 'Inter_400Regular',
-  },
-  errorText: {
-    color: '#FCA5A5',
-    fontSize: 14,
-    lineHeight: 22,
-    textAlign: 'center',
-    fontFamily: 'Inter_500Medium',
-  },
-  emptyTitle: {
-    color: '#fff',
-    fontSize: 20,
-    fontFamily: 'Inter_700Bold',
   },
   listContent: {
     paddingHorizontal: 16,

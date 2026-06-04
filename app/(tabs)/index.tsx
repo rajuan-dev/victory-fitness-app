@@ -15,9 +15,10 @@ import { canAccessFeature, canAccessPlanRoute } from '../../lib/access';
 import { useRouter } from 'expo-router';
 import { useModuleAccessGuard } from '../../lib/useModuleAccessGuard';
 import { useLanguage } from '../../lib/i18n';
+import { replaceRoute } from '../../lib/navigation';
 
 export default function HomeScreen() {
-  useModuleAccessGuard('/');
+  const checkingAccess = useModuleAccessGuard('/');
   const router = useRouter();
   const { t } = useLanguage();
   const [refreshing, setRefreshing] = React.useState(false);
@@ -68,6 +69,10 @@ export default function HomeScreen() {
   const openRestrictedSection = React.useCallback((sectionName: string) => {
           setRestrictedSection(sectionName);
   }, []);
+
+  if (checkingAccess) {
+    return null;
+  }
 
   return (
     <View style={styles.container}>
@@ -120,7 +125,7 @@ export default function HomeScreen() {
         }}
         onBackHome={() => {
           setRestrictedSection('');
-          router.replace('/(tabs)');
+          replaceRoute(router, '/(tabs)');
         }}
       />
     </View>

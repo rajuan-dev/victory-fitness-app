@@ -60,13 +60,14 @@
           "healthSharePermission": "Victory Fitness reads your Apple Health data to power Longevity OS insights and recovery tracking.",
           "healthUpdatePermission": "Victory Fitness writes health updates only when you choose to sync your wellness data."
         }
-      ]
+      ],
+      "expo-web-browser"
     ],
     "extra": {
       "router": {},
       "googleHealthConnect": {
         "clientId": "664344615268-kjsk6iq3ae0stfuu025o6hsdp988cvrl.apps.googleusercontent.com",
-        "projectId": "victory-fitness-1779318789941",
+        "projectId": "victoria-43064",
         "authUri": "https://accounts.google.com/o/oauth2/auth",
         "tokenUri": "https://oauth2.googleapis.com/token",
         "authProviderCertUrl": "https://www.googleapis.com/oauth2/v1/certs"

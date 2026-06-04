@@ -4,6 +4,7 @@ import { useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { clearAuthTokens, fetchCurrentUser, getValidAuthTokens } from '../lib/api';
 import { getPostAuthRoute } from '../lib/access';
+import { replaceRoute } from '../lib/navigation';
 
 export default function SplashScreen() {
   const router = useRouter();
@@ -37,16 +38,16 @@ export default function SplashScreen() {
       if (tokens) {
         try {
           const user = await fetchCurrentUser();
-          router.replace(getPostAuthRoute(user));
+          replaceRoute(router, getPostAuthRoute(user));
         } catch {
-          router.replace('/login');
+          replaceRoute(router, '/login');
         }
         return;
       }
 
       await clearAuthTokens();
       timer = setTimeout(() => {
-        router.replace('/login');
+        replaceRoute(router, '/login');
       }, 800);
     };
 
