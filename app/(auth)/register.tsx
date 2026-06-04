@@ -23,6 +23,7 @@ import { apiRequest, setAuthTokens } from '../../lib/api';
 import { getPostAuthRoute } from '../../lib/access';
 import { formatAppError } from '../../lib/error';
 import { getFirebaseGoogleConfig, signInWithFirebaseGoogle } from '../../lib/firebaseGoogleAuth';
+import { replaceRoute } from '../../lib/navigation';
 
 const { height } = Dimensions.get('window');
 
@@ -35,6 +36,7 @@ export default function RegisterScreen() {
   const [errorDialog, setErrorDialog] = useState<{ title: string; message: string } | null>(null);
   const firebaseGoogleConfig = getFirebaseGoogleConfig();
   const [googleRequest, , googlePromptAsync] = Google.useAuthRequest({
+    clientId: firebaseGoogleConfig.googleClientId || undefined,
     androidClientId: firebaseGoogleConfig.androidClientId || firebaseGoogleConfig.googleClientId || undefined,
     webClientId: firebaseGoogleConfig.googleClientId || undefined,
     redirectUri: makeRedirectUri({ scheme: 'victoryfitness', path: 'auth/google' }),
@@ -89,7 +91,7 @@ export default function RegisterScreen() {
         accessToken: result.authentication?.accessToken || null,
       });
       await setAuthTokens(auth);
-      router.replace(getPostAuthRoute(auth.user));
+      replaceRoute(router, getPostAuthRoute(auth.user));
     } catch (error) {
       setErrorDialog(formatAppError(error));
     } finally {

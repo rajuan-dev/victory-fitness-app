@@ -18,6 +18,7 @@ import { Colors } from '../../constants/Colors';
 import { apiRequest, AuthResponse, setAuthTokens } from '../../lib/api';
 import { getPostAuthRoute } from '../../lib/access';
 import { formatAppError } from '../../lib/error';
+import { replaceRoute } from '../../lib/navigation';
 
 const { height } = Dimensions.get('window');
 
@@ -59,7 +60,7 @@ export default function VerificationScreen() {
         body: { email, code },
       });
       await setAuthTokens(auth);
-      router.replace(getPostAuthRoute(auth.user));
+      replaceRoute(router, getPostAuthRoute(auth.user));
     } catch (error) {
       setErrorDialog(formatAppError(error));
     } finally {

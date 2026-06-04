@@ -13,6 +13,7 @@ import { fetchCurrentUser, getValidAuthTokens, setAuthFailureHandler } from '../
 import { getPostAuthRoute, isPublicRoute, isRouteAllowedForPlan } from '../lib/access';
 import { appendRunLog, formatRunLogMessage } from '../lib/runLog';
 import { LanguageProvider } from '../lib/i18n';
+import { replaceRoute } from '../lib/navigation';
 
 export default function RootLayout() {
   const router = useRouter();
@@ -27,15 +28,15 @@ export default function RootLayout() {
 
   useEffect(() => {
     setAuthFailureHandler(() => {
-      void appendRunLog({
-        level: 'warning',
-        title: 'Authentication redirect',
-        message: 'Session guard redirected to /login.',
-        route: pathnameRef.current,
-        context: 'RootLayout',
+        void appendRunLog({
+          level: 'warning',
+          title: 'Authentication redirect',
+          message: 'Session guard redirected to /login.',
+          route: pathnameRef.current,
+          context: 'RootLayout',
+        });
+        replaceRoute(router, '/login');
       });
-      router.replace('/login');
-    });
 
     return () => {
       setAuthFailureHandler(null);
@@ -65,7 +66,7 @@ export default function RootLayout() {
               route: pathname,
               context: 'RootLayout',
             });
-            router.replace('/login');
+            replaceRoute(router, '/login');
           }
           setCheckingAccess(false);
           return;
@@ -84,7 +85,7 @@ export default function RootLayout() {
             route: pathname,
             context: 'RootLayout',
           });
-          router.replace(getPostAuthRoute(user));
+          replaceRoute(router, getPostAuthRoute(user));
           return;
         }
 
@@ -96,7 +97,7 @@ export default function RootLayout() {
             route: pathname,
             context: 'RootLayout',
           });
-          router.replace(getPostAuthRoute(user));
+          replaceRoute(router, getPostAuthRoute(user));
           return;
         }
         setCheckingAccess(false);
@@ -113,7 +114,7 @@ export default function RootLayout() {
             route: pathname,
             context: 'RootLayout',
           });
-          router.replace('/login');
+          replaceRoute(router, '/login');
         }
 
         setCheckingAccess(false);

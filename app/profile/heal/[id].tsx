@@ -10,6 +10,7 @@ import { Colors } from '../../../constants/Colors';
 import { fetchCurrentUser, fetchLongevityDashboard, type LongevityDashboard, type LongevityWeeklyPlanSection } from '../../../lib/api';
 import { canAccessFeature } from '../../../lib/access';
 import { useLanguage } from '../../../lib/i18n';
+import { replaceRoute } from '../../../lib/navigation';
 
 const FALLBACK_CARD_IMAGE = 'https://images.unsplash.com/photo-1490645935967-10de6ba17061?w=900&q=80';
 
@@ -237,7 +238,7 @@ export default function HealPlanDetailScreen() {
         <Stack.Screen options={{ headerShown: false }} />
         <LockedState
           onUpdatePlan={() => router.push('/plan')}
-          onBackHome={() => router.replace('/(tabs)')}
+          onBackHome={() => replaceRoute(router, '/(tabs)')}
         />
       </SafeAreaView>
     );

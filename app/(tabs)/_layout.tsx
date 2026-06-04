@@ -8,6 +8,7 @@ import AccessRestrictionModal from '../../components/AccessRestrictionModal';
 import { fetchCurrentUser, getValidAuthTokens } from '../../lib/api';
 import { getAllowedTabNames, isSubscriptionActive } from '../../lib/access';
 import { useLanguage } from '../../lib/i18n';
+import { replaceRoute } from '../../lib/navigation';
 
 export default function TabsLayout() {
   const router = useRouter();
@@ -21,17 +22,37 @@ export default function TabsLayout() {
     let cancelled = false;
 
     const guard = async () => {
-      const tokens = await getValidAuthTokens();
-      if (cancelled) {
-        return;
-      }
+      try {
+        const tokens = await getValidAuthTokens();
+        if (cancelled) {
+          return;
+        }
 
-      if (!tokens) {
-        router.replace('/login');
-        return;
-      }
+        if (!tokens) {
+          replaceRoute(router, '/login');
+          return;
+        }
 
-      setCheckingAuth(false);
+        const authUser = await fetchCurrentUser();
+        if (cancelled) {
+          return;
+        }
+
+        setProfileImage(String(authUser?.profileImage || '').trim());
+
+        if (!isSubscriptionActive(authUser)) {
+          replaceRoute(router, '/plan');
+          return;
+        }
+
+        setAllowedTabs(getAllowedTabNames(authUser));
+        setCheckingAuth(false);
+      } catch {
+        if (!cancelled) {
+          replaceRoute(router, '/login');
+          setCheckingAuth(false);
+        }
+      }
     };
 
     void guard();
@@ -41,43 +62,7 @@ export default function TabsLayout() {
     };
   }, [router]);
 
-  useEffect(() => {
-    let cancelled = false;
-
-    const loadAccess = async () => {
-      try {
-        const authUser = await fetchCurrentUser();
-        if (cancelled) {
-          return;
-        }
-
-        setProfileImage(String(authUser?.profileImage || '').trim());
-
-        if (!isSubscriptionActive(authUser)) {
-          router.replace('/plan');
-          return;
-        }
-
-        setAllowedTabs(getAllowedTabNames(authUser));
-      } catch {
-        if (!cancelled) {
-          router.replace('/login');
-        }
-      } finally {
-        if (!cancelled) {
-          setCheckingAuth(false);
-        }
-      }
-    };
-
-    void loadAccess();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [router]);
-
-  if (checkingAuth) {
+  if (checkingAuth || allowedTabs === null) {
     return null;
   }
 
@@ -189,7 +174,7 @@ export default function TabsLayout() {
         }}
         onBackHome={() => {
           setRestrictedSection('');
-          router.replace('/(tabs)');
+          replaceRoute(router, '/(tabs)');
         }}
       />
     </>

@@ -24,10 +24,14 @@ import { apiRequest, fetchCurrentUser, getAuthUser, resolveRemoteAssetUrl } from
 import { canAccessFeature, normalizeSubscriptionTier } from '../../lib/access';
 import { useLanguage } from '../../lib/i18n';
 import { useModuleAccessGuard } from '../../lib/useModuleAccessGuard';
+import { replaceRoute } from '../../lib/navigation';
 
 const { width } = Dimensions.get('window');
 
-const TABS = ['CHALLENGES', 'COMMUNITY'];
+const CHALLENGE_TABS = [
+  { id: 'CHALLENGES', labelKey: 'CHALLENGES', restrictedSectionKey: 'Challenges' },
+  { id: 'COMMUNITY', labelKey: 'COMMUNITY', restrictedSectionKey: 'Community' },
+] as const;
 const CHALLENGE_DURATION_ORDER = [3, 5, 7, 14, 21];
 const CHALLENGE_FILTER_ALL = 'ALL';
 
@@ -235,7 +239,7 @@ function formatChallengeFilterLabel(value: number | typeof CHALLENGE_FILTER_ALL,
 }
 
 export default function ChallengesScreen() {
-  useModuleAccessGuard('/challenge');
+  const checkingAccess = useModuleAccessGuard('/challenge');
   const router = useRouter();
   const { t } = useLanguage();
   const params = useLocalSearchParams<{
@@ -247,6 +251,15 @@ export default function ChallengesScreen() {
     prefillImageFileName?: string | string[];
     prefillStatus?: string | string[];
   }>();
+  const challengeTabs = useMemo(
+    () =>
+      CHALLENGE_TABS.map((tab) => ({
+        ...tab,
+        label: t(tab.labelKey),
+        restrictedSection: t(tab.restrictedSectionKey),
+      })),
+    [t]
+  );
   const [activeTab, setActiveTab] = useState('CHALLENGES');
   const [canAccessChallenges, setCanAccessChallenges] = useState(true);
   const [canAccessCommunity, setCanAccessCommunity] = useState(true);
@@ -274,10 +287,11 @@ export default function ChallengesScreen() {
   const [deleteSubmitting, setDeleteSubmitting] = useState<Record<string, boolean>>({});
   const [selectedCommunityPost, setSelectedCommunityPost] = useState<CommunityPost | null>(null);
   const [currentCommunityUser, setCurrentCommunityUser] = useState<CurrentCommunityUser>({
-    name: 'You',
+    name: t('You'),
     profileImage: '',
   });
   const [subscriptionTier, setSubscriptionTier] = useState('NONE');
+
   const [restrictedSection, setRestrictedSection] = useState('');
   const [selectedDurationDays, setSelectedDurationDays] = useState<number | typeof CHALLENGE_FILTER_ALL>(CHALLENGE_FILTER_ALL);
   const consumedCommunityPrefillKeyRef = useRef('');
@@ -343,7 +357,7 @@ export default function ChallengesScreen() {
         setCanAccessCommunity(canAccessFeature('community', currentUser));
         setSubscriptionTier(normalizeSubscriptionTier(currentUser?.subscription_tier));
         setCurrentCommunityUser({
-          name: authUser?.name || currentUser?.name || 'You',
+          name: authUser?.name || currentUser?.name || t('You'),
           profileImage: authUser?.profileImage || currentUser?.profileImage || '',
         });
       } catch {
@@ -397,7 +411,7 @@ export default function ChallengesScreen() {
         ready_to_start: Array.isArray(response.ready_to_start) ? response.ready_to_start : [],
       });
     } catch (error) {
-      setChallengeError(error instanceof Error ? error.message : t('Failed to load challenges'));
+      setChallengeError(error instanceof Error ? error.message : t('Failed to load challenges.'));
     } finally {
       if (showLoading) {
         setChallengeLoading(false);
@@ -420,7 +434,7 @@ export default function ChallengesScreen() {
       const response = await apiRequest<{ posts: CommunityPost[] }>('/community/posts');
       setCommunityPosts(Array.isArray(response.posts) ? response.posts : []);
     } catch (error) {
-      setCommunityError(error instanceof Error ? error.message : t('Failed to load community posts'));
+      setCommunityError(error instanceof Error ? error.message : t('Failed to load community posts.'));
     } finally {
       if (showLoading) {
         setCommunityLoading(false);
@@ -537,6 +551,10 @@ export default function ChallengesScreen() {
       setScreenRefreshing(false);
     }
   }, [activeTab, loadChallengeOverview, loadCommunityPosts]);
+
+  if (checkingAccess) {
+    return null;
+  }
 
   const renderChallengeSkeleton = () => (
     <>
@@ -914,30 +932,30 @@ export default function ChallengesScreen() {
         {/* Tabs */}
         <View style={styles.tabStickyWrap}>
           <View style={styles.tabRow}>
-            {TABS.map((tab) => (
+            {challengeTabs.map((tab) => (
               <TouchableOpacity
-                key={tab}
-                style={[styles.tabBtn, activeTab === tab && styles.tabBtnActive]}
+                key={tab.id}
+                style={[styles.tabBtn, activeTab === tab.id && styles.tabBtnActive]}
                 onPress={() => {
-                  if (tab === 'CHALLENGES' && !canAccessChallenges) {
-                    setRestrictedSection(t('Challenges'));
+                  if (tab.id === 'CHALLENGES' && !canAccessChallenges) {
+                    setRestrictedSection(tab.restrictedSection);
                     return;
                   }
-                  if (tab === 'COMMUNITY' && !canAccessCommunity) {
-                    setRestrictedSection(t('Community'));
+                  if (tab.id === 'COMMUNITY' && !canAccessCommunity) {
+                    setRestrictedSection(tab.restrictedSection);
                     return;
                   }
-                  setActiveTab(tab);
+                  setActiveTab(tab.id);
                 }}
               >
                 <Text
                   style={[
                     styles.tabText,
-                    activeTab === tab && styles.tabTextActive,
-                    ((tab === 'CHALLENGES' && !canAccessChallenges) || (tab === 'COMMUNITY' && !canAccessCommunity)) && styles.tabTextLocked,
+                    activeTab === tab.id && styles.tabTextActive,
+                    ((tab.id === 'CHALLENGES' && !canAccessChallenges) || (tab.id === 'COMMUNITY' && !canAccessCommunity)) && styles.tabTextLocked,
                   ]}
                 >
-                  {t(tab)}
+                  {tab.label}
                 </Text>
               </TouchableOpacity>
             ))}
@@ -1503,7 +1521,7 @@ export default function ChallengesScreen() {
         }}
         onBackHome={() => {
           setRestrictedSection('');
-          router.replace('/(tabs)');
+          replaceRoute(router, '/(tabs)');
         }}
       />
 

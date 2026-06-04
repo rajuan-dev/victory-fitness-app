@@ -22,6 +22,7 @@ import { BodyMetrics, clearAuthTokens, fetchCurrentUser, fetchCurrentUserBodyMet
 import { canAccessFeature, canAccessPlanRoute } from '../../lib/access';
 import { useLanguage } from '../../lib/i18n';
 import { useModuleAccessGuard } from '../../lib/useModuleAccessGuard';
+import { replaceRoute } from '../../lib/navigation';
 
 function getRankIcon(rank: string) {
   const normalized = rank.trim().toLowerCase();
@@ -142,7 +143,7 @@ function getSubscriptionTierBadgeStyle(tier: string) {
 }
 
 export default function ProfileScreen() {
-  useModuleAccessGuard('/profile');
+  const checkingAccess = useModuleAccessGuard('/profile');
   const router = useRouter();
   const { language, setLanguage, t } = useLanguage();
   const [me, setMe] = React.useState<{
@@ -184,6 +185,7 @@ export default function ProfileScreen() {
   const [showGenderModal, setShowGenderModal] = React.useState(false);
   const [refreshing, setRefreshing] = React.useState(false);
   const [restrictedSection, setRestrictedSection] = React.useState('');
+
   const bodyMetricsSummary = React.useMemo(() => {
     const parts = [
       bodyMetrics.age ? `${bodyMetrics.age}${t('y')}` : '',
@@ -315,6 +317,10 @@ export default function ProfileScreen() {
     { label: t('Points'), value: String(points), icon: '\u26A1' },
     { label: t('Rank'), value: rank.toUpperCase(), icon: rankIcon },
   ];
+
+  if (checkingAccess) {
+    return null;
+  }
 
   const openMetricsModal = () => {
     setMetricsDraft(bodyMetrics);
@@ -556,7 +562,7 @@ export default function ProfileScreen() {
           activeOpacity={0.7}
           onPress={async () => {
             await clearAuthTokens();
-            router.replace('/login');
+            replaceRoute(router, '/login');
           }}
         >
           <Ionicons name="log-out-outline" size={20} color="#EF4444" />
@@ -576,7 +582,7 @@ export default function ProfileScreen() {
         }}
         onBackHome={() => {
           setRestrictedSection('');
-          router.replace('/(tabs)');
+          replaceRoute(router, '/(tabs)');
         }}
       />
 

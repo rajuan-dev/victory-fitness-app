@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -21,6 +21,8 @@ import {
 } from '../../lib/workout-plans';
 import { useLanguage } from '../../lib/i18n';
 import { useModuleAccessGuard } from '../../lib/useModuleAccessGuard';
+import { ScreenState } from '../../components/ScreenState';
+import { useAsyncScreenData } from '../../hooks/useAsyncScreenData';
 
 const { width } = Dimensions.get('window');
 
@@ -29,36 +31,23 @@ export default function WorkoutPlanScreen() {
   const router = useRouter();
   const { t } = useLanguage();
   const [isModalVisible, setIsModalVisible] = useState(false);
-  const [loading, setLoading] = useState(true);
-  const [strengthPlan, setStrengthPlan] = useState<StrengthPlanResponse | null>(null);
-  const [videoPlan, setVideoPlan] = useState<VideoPlanResponse | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    const loadPlans = async () => {
-      try {
-        const [latestStrength, latestVideo] = await Promise.all([
-          fetchLatestStrengthWorkoutPlan().catch(() => null),
-          loadLatestVideoWorkoutPlan().catch(() => null),
-        ]);
-        if (!cancelled) {
-          setStrengthPlan(latestStrength);
-          setVideoPlan(latestVideo);
-        }
-      } finally {
-        if (!cancelled) {
-          setLoading(false);
-        }
-      }
-    };
-
-    void loadPlans();
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  const {
+    data: plans,
+    loading,
+  } = useAsyncScreenData<{
+    strengthPlan: StrengthPlanResponse | null;
+    videoPlan: VideoPlanResponse | null;
+  }>({
+    initialData: { strengthPlan: null, videoPlan: null },
+    load: async () => {
+      const [strengthPlan, videoPlan] = await Promise.all([
+        fetchLatestStrengthWorkoutPlan().catch(() => null),
+        loadLatestVideoWorkoutPlan().catch(() => null),
+      ]);
+      return { strengthPlan, videoPlan };
+    },
+  });
+  const { strengthPlan, videoPlan } = plans;
 
   const hasSavedPlan = Boolean(strengthPlan || videoPlan);
 
@@ -82,10 +71,7 @@ export default function WorkoutPlanScreen() {
       }} />
 
       {loading ? (
-        <View style={styles.centerContent}>
-          <ActivityIndicator size="large" color={Colors.accentBlue} />
-          <Text style={styles.loadingText}>{t('Loading saved workout plans...')}</Text>
-        </View>
+        <ScreenState mode="loading" message={t('Loading saved workout plans...')} />
       ) : hasSavedPlan ? (
         <ScrollView contentContainerStyle={styles.savedContent} showsVerticalScrollIndicator={false}>
           <Text style={styles.savedHeading}>{t('Saved Workout Plans')}</Text>
@@ -219,12 +205,6 @@ const styles = StyleSheet.create({
     paddingTop: 120,
     paddingBottom: 60,
     gap: 16,
-  },
-  loadingText: {
-    color: 'rgba(255,255,255,0.55)',
-    fontSize: 14,
-    fontFamily: 'Inter_400Regular',
-    marginTop: 14,
   },
   savedHeading: {
     color: '#fff',

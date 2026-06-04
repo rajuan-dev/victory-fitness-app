@@ -24,6 +24,7 @@ import { canAccessFeature, getPostAuthRoute } from '../../lib/access';
 import { formatAppError } from '../../lib/error';
 import { useLanguage } from '../../lib/i18n';
 import { getFirebaseGoogleConfig, signInWithFirebaseGoogle } from '../../lib/firebaseGoogleAuth';
+import { replaceRoute } from '../../lib/navigation';
 
 const { height } = Dimensions.get('window');
 
@@ -37,6 +38,7 @@ export default function LoginScreen() {
   const [errorDialog, setErrorDialog] = useState<{ title: string; message: string } | null>(null);
   const firebaseGoogleConfig = getFirebaseGoogleConfig();
   const [googleRequest, , googlePromptAsync] = Google.useAuthRequest({
+    clientId: firebaseGoogleConfig.googleClientId || undefined,
     androidClientId: firebaseGoogleConfig.androidClientId || firebaseGoogleConfig.googleClientId || undefined,
     webClientId: firebaseGoogleConfig.googleClientId || undefined,
     redirectUri: makeRedirectUri({ scheme: 'victoryfitness', path: 'auth/google' }),
@@ -55,7 +57,7 @@ export default function LoginScreen() {
       if (tokens) {
         try {
           const user = await fetchCurrentUser();
-          router.replace(getPostAuthRoute(user));
+          replaceRoute(router, getPostAuthRoute(user));
         } catch {
           setCheckingAuth(false);
         }
@@ -89,7 +91,7 @@ export default function LoginScreen() {
         body: { email: normalizedEmail, password },
       });
       await setAuthTokens(auth);
-      router.replace(getPostAuthRoute(auth.user));
+      replaceRoute(router, getPostAuthRoute(auth.user));
     } catch (error) {
       setErrorDialog(formatAppError(error));
     } finally {
@@ -118,7 +120,7 @@ export default function LoginScreen() {
         accessToken: result.authentication?.accessToken || null,
       });
       await setAuthTokens(auth);
-      router.replace(getPostAuthRoute(auth.user));
+      replaceRoute(router, getPostAuthRoute(auth.user));
     } catch (error) {
       setErrorDialog(formatAppError(error));
     } finally {

@@ -23,6 +23,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Colors } from '../../constants/Colors';
+import { ScreenState } from '../../components/ScreenState';
 import VictoryHeader from '../../components/VictoryHeader';
 import {
   connectLongevityLocalProvider,
@@ -816,12 +817,7 @@ function SectionTitle({ children }: { children: React.ReactNode }) {
 }
 
 function LoadingState({ t }: { t: TFunction }) {
-  return (
-    <View style={styles.centerState}>
-      <ActivityIndicator size="large" color={Colors.primary} />
-      <Text style={styles.loadingText}>{t('Loading Longevity OS...')}</Text>
-    </View>
-  );
+  return <ScreenState mode="loading" message={t('Loading Longevity OS...')} />;
 }
 
 function EmptyState({ icon, title, subtitle }: { icon: any; title: string; subtitle: string }) {
@@ -835,7 +831,7 @@ function EmptyState({ icon, title, subtitle }: { icon: any; title: string; subti
 }
 
 export default function LongevityOS() {
-  useModuleAccessGuard('/profile/longevity-os');
+  const checkingAccess = useModuleAccessGuard('/profile/longevity-os');
   const router = useRouter();
   const { t, language } = useLanguage();
   const { width } = useWindowDimensions();
@@ -1302,7 +1298,7 @@ export default function LongevityOS() {
       recordRunLog({
         level: 'info',
         title: t('Device disconnected'),
-        message: `${getWearableDisplayName(t, device.id, device.name)} disconnected from Longevity OS.`,
+        message: t('{deviceName} disconnected from Longevity OS.', { deviceName: getWearableDisplayName(t, device.id, device.name) }),
       });
       if (nativeDisconnectTimerRef.current) {
         clearTimeout(nativeDisconnectTimerRef.current);
@@ -1414,7 +1410,7 @@ export default function LongevityOS() {
             { showSuccessAlert: false, showFailureAlert: false },
           );
         } catch (connectError) {
-          const message = connectError instanceof Error ? connectError.message : `Unable to connect ${device.name}.`;
+          const message = connectError instanceof Error ? connectError.message : t('Unable to connect {deviceName}.', { deviceName: device.name });
           await markNativeIntegrationConnected({
             provider: device.id as WearableProvider,
             permission_granted: false,
@@ -1475,7 +1471,7 @@ export default function LongevityOS() {
       if (error instanceof Error && error.message === '__NATIVE_CONNECT_FAILED__') {
         return;
       }
-      const message = error instanceof Error ? error.message : `Unable to add ${device.name}.`;
+      const message = error instanceof Error ? error.message : t('Unable to add {deviceName}.', { deviceName: device.name });
       showScreenError(t('Add wearable failed'), message);
     } finally {
       setConnectingDeviceId(null);
@@ -1523,7 +1519,7 @@ export default function LongevityOS() {
       });
       Alert.alert(t('Weekly plan ready'), t('Your AI weekly plan has been generated and saved in Healthy Food Library.'));
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unable to generate weekly plan.';
+      const message = error instanceof Error ? error.message : t('Unable to generate weekly plan.');
       const timedOut = message.toLowerCase().includes('timed out');
       if (timedOut) {
         let recovered = false;
@@ -1984,6 +1980,10 @@ export default function LongevityOS() {
         return renderOverview();
     }
   };
+
+  if (checkingAccess) {
+    return <LoadingState t={t} />;
+  }
 
   return (
     <SafeAreaView style={styles.safeContainer}>
