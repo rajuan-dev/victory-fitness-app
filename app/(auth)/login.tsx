@@ -12,6 +12,8 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { useRouter } from 'expo-router';
+import * as Google from 'expo-auth-session/providers/google';
+import { makeRedirectUri } from 'expo-auth-session';
 import { Colors } from '../../constants/Colors';
 import { AuthInput } from '../../components/AuthInput';
 import { AuthButton } from '../../components/AuthButton';
@@ -21,6 +23,7 @@ import { apiRequest, AuthResponse, fetchCurrentUser, getValidAuthTokens, setAuth
 import { canAccessFeature, getPostAuthRoute } from '../../lib/access';
 import { formatAppError } from '../../lib/error';
 import { useLanguage } from '../../lib/i18n';
+import { getFirebaseGoogleConfig, signInWithFirebaseGoogle } from '../../lib/firebaseGoogleAuth';
 
 const { height } = Dimensions.get('window');
 
@@ -32,6 +35,13 @@ export default function LoginScreen() {
   const [loading, setLoading] = useState(false);
   const [checkingAuth, setCheckingAuth] = useState(true);
   const [errorDialog, setErrorDialog] = useState<{ title: string; message: string } | null>(null);
+  const firebaseGoogleConfig = getFirebaseGoogleConfig();
+  const [googleRequest, , googlePromptAsync] = Google.useAuthRequest({
+    androidClientId: firebaseGoogleConfig.androidClientId || firebaseGoogleConfig.googleClientId || undefined,
+    webClientId: firebaseGoogleConfig.googleClientId || undefined,
+    redirectUri: makeRedirectUri({ scheme: 'victoryfitness', path: 'auth/google' }),
+    scopes: ['openid', 'profile', 'email'],
+  });
 
   useEffect(() => {
     let cancelled = false;
@@ -87,9 +97,33 @@ export default function LoginScreen() {
     }
   };
 
-  const handleGoogleSignIn = () => {
-    // TODO: Implement Google sign-in auth
-    console.log('Google Sign In');
+  const handleGoogleSignIn = async () => {
+    if (!googleRequest) {
+      setErrorDialog({
+        title: t('Sign in unavailable'),
+        message: t('Google sign-in is not configured yet.'),
+      });
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const result = await googlePromptAsync();
+      if (result.type !== 'success') {
+        return;
+      }
+
+      const auth = await signInWithFirebaseGoogle({
+        idToken: result.authentication?.idToken || null,
+        accessToken: result.authentication?.accessToken || null,
+      });
+      await setAuthTokens(auth);
+      router.replace(getPostAuthRoute(auth.user));
+    } catch (error) {
+      setErrorDialog(formatAppError(error));
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleForgotPassword = () => {
