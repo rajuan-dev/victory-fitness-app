@@ -84,7 +84,9 @@ export function useAsyncScreenData<T>({
       return;
     }
 
-    void run();
+    void run().catch(() => {
+      // The hook already stores the error in state; swallow the effect-level rejection.
+    });
   }, [run, skipInitialLoad]);
 
   return {

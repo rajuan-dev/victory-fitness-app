@@ -32,6 +32,7 @@ const CHALLENGE_TABS = [
   { id: 'CHALLENGES', labelKey: 'CHALLENGES', restrictedSectionKey: 'Challenges' },
   { id: 'COMMUNITY', labelKey: 'COMMUNITY', restrictedSectionKey: 'Community' },
 ] as const;
+const COMMUNITY_AUDIENCE_FILTERS = ['ALL', 'SILVER', 'GOLD', 'PLATINUM', 'INNER_CIRCLE'] as const;
 const CHALLENGE_DURATION_ORDER = [3, 5, 7, 14, 21];
 const CHALLENGE_FILTER_ALL = 'ALL';
 
@@ -291,6 +292,9 @@ export default function ChallengesScreen() {
     profileImage: '',
   });
   const [subscriptionTier, setSubscriptionTier] = useState('NONE');
+  const [isCommunityAdmin, setIsCommunityAdmin] = useState(false);
+  const [selectedCommunityFilter, setSelectedCommunityFilter] = useState<(typeof COMMUNITY_AUDIENCE_FILTERS)[number]>('ALL');
+  const [communityFilterPickerOpen, setCommunityFilterPickerOpen] = useState(false);
 
   const [restrictedSection, setRestrictedSection] = useState('');
   const [selectedDurationDays, setSelectedDurationDays] = useState<number | typeof CHALLENGE_FILTER_ALL>(CHALLENGE_FILTER_ALL);
@@ -339,10 +343,27 @@ export default function ChallengesScreen() {
   const hasCompletedChallenges = false;
   const hasVisibleChallengeSections =
     challengeOverview.ready_to_start.length > 0 || challengeOverview.active_challenges.length > 0 || challengeOverview.completed_challenges.length > 0;
-  const isSilverUser = subscriptionTier === 'SILVER';
-  const silverChallengeLimit = 5;
-  const silverChallengesUsed = Math.min(challengeOverview.active_challenges.length, silverChallengeLimit);
-
+  const allowedCommunityAudiences = useMemo(() => {
+    if (!canAccessCommunity) {
+      return [] as string[];
+    }
+    if (isCommunityAdmin) {
+      return [...COMMUNITY_AUDIENCE_FILTERS];
+    }
+    const hierarchy: Record<string, string[]> = {
+      SILVER: ['ALL', 'SILVER'],
+      GOLD: ['ALL', 'SILVER', 'GOLD'],
+      PLATINUM: ['ALL', 'SILVER', 'GOLD', 'PLATINUM'],
+      INNER_CIRCLE: ['ALL', 'SILVER', 'GOLD', 'PLATINUM', 'INNER_CIRCLE'],
+    };
+    return hierarchy[subscriptionTier] ?? ['ALL'];
+  }, [canAccessCommunity, isCommunityAdmin, subscriptionTier]);
+  const filteredCommunityPosts = useMemo(() => {
+    if (selectedCommunityFilter === 'ALL') {
+      return communityPosts;
+    }
+    return communityPosts.filter((post) => String(post.audience || '').toUpperCase() === selectedCommunityFilter);
+  }, [communityPosts, selectedCommunityFilter]);
   useEffect(() => {
     let isMounted = true;
 
@@ -356,6 +377,7 @@ export default function ChallengesScreen() {
         setCanAccessChallenges(canAccessFeature('challenge', currentUser));
         setCanAccessCommunity(canAccessFeature('community', currentUser));
         setSubscriptionTier(normalizeSubscriptionTier(currentUser?.subscription_tier));
+        setIsCommunityAdmin(Boolean(currentUser?.is_admin));
         setCurrentCommunityUser({
           name: authUser?.name || currentUser?.name || t('You'),
           profileImage: authUser?.profileImage || currentUser?.profileImage || '',
@@ -367,6 +389,7 @@ export default function ChallengesScreen() {
 
         setCanAccessChallenges(false);
         setCanAccessCommunity(false);
+        setIsCommunityAdmin(false);
       }
     };
 
@@ -473,6 +496,12 @@ export default function ChallengesScreen() {
       setActiveTab('COMMUNITY');
     }
   }, [activeTab, canAccessCommunity, params.tab]);
+
+  useEffect(() => {
+    if (!allowedCommunityAudiences.includes(selectedCommunityFilter)) {
+      setSelectedCommunityFilter('ALL');
+    }
+  }, [allowedCommunityAudiences, selectedCommunityFilter]);
 
   useEffect(() => {
     const source = Array.isArray(params.prefillSource) ? params.prefillSource[0] : params.prefillSource;
@@ -965,25 +994,6 @@ export default function ChallengesScreen() {
         {/* ── CHALLENGES TAB ── */}
         {activeTab === 'CHALLENGES' && (
           <View style={styles.section}>
-            {isSilverUser ? (
-              <View style={styles.challengeLimitCard}>
-                <View style={styles.challengeLimitHeader}>
-                  <Text style={styles.challengeLimitTitle}>{t('Silver Challenge Access')}</Text>
-                  <Text style={styles.challengeLimitCount}>{silverChallengesUsed} / {silverChallengeLimit}</Text>
-                </View>
-                <Text style={styles.challengeLimitText}>
-                  {t('Your current plan allows up to 5 active challenges at the same time.')}
-                </Text>
-                <View style={styles.challengeLimitBarTrack}>
-                  <View
-                    style={[
-                      styles.challengeLimitBarFill,
-                      { width: `${(silverChallengesUsed / silverChallengeLimit) * 100}%` as any },
-                    ]}
-                  />
-                </View>
-              </View>
-            ) : null}
             {challengeError ? (
               <View style={styles.challengeStatusCard}>
                 <Text style={styles.challengeStatusText}>{challengeError}</Text>
@@ -1102,7 +1112,7 @@ export default function ChallengesScreen() {
 
             {(hasReadyToStartChallenges || hasUpcomingChallenges || hasCompletedChallenges || challengeOverview.active_challenges.length > 0) ? (
               <>
-                <View style={[styles.subSectionHeader, { marginTop: 24 }]}>
+                <View style={[styles.subSectionHeader, { marginTop: 4 }]}>
                   <Ionicons name="rocket" size={16} color="#4F8EF7" />
                   <Text style={[styles.subSectionTitle, { color: '#4F8EF7' }]}>{t('Challenge Library')}</Text>
                 </View>
@@ -1304,6 +1314,66 @@ export default function ChallengesScreen() {
         {/* ── COMMUNITY TAB ── */}
         {activeTab === 'COMMUNITY' && (
           <View style={styles.section}>
+            <View style={styles.communityFilterTrigger}>
+              <View style={styles.communityFilterTriggerSpacer} />
+              <TouchableOpacity
+                style={styles.communityFilterIconWrap}
+                activeOpacity={0.88}
+                onPress={() => setCommunityFilterPickerOpen(true)}
+              >
+                <Ionicons name="filter" size={14} color="rgba(255,255,255,0.78)" />
+              </TouchableOpacity>
+            </View>
+
+            <Modal
+              visible={communityFilterPickerOpen}
+              transparent
+              animationType="fade"
+              onRequestClose={() => setCommunityFilterPickerOpen(false)}
+            >
+              <TouchableOpacity
+                style={styles.communityFilterModalBackdrop}
+                activeOpacity={1}
+                onPress={() => setCommunityFilterPickerOpen(false)}
+              >
+                <View style={styles.communityFilterModalCard}>
+                  {COMMUNITY_AUDIENCE_FILTERS.map((filterKey) => {
+                    const isAllowed = allowedCommunityAudiences.includes(filterKey);
+                    const isActive = selectedCommunityFilter === filterKey;
+                    return (
+                      <TouchableOpacity
+                        key={filterKey}
+                        style={styles.communityFilterOption}
+                        activeOpacity={0.88}
+                        onPress={() => {
+                          setCommunityFilterPickerOpen(false);
+                          if (!isAllowed) {
+                            setRestrictedSection(`Community ${filterKey}`);
+                            return;
+                          }
+                          setSelectedCommunityFilter(filterKey);
+                        }}
+                      >
+                        <Text
+                          style={[
+                            styles.communityFilterOptionText,
+                            isActive && styles.communityFilterOptionTextActive,
+                            !isAllowed && styles.communityFilterOptionTextLocked,
+                          ]}
+                        >
+                          {filterKey}
+                        </Text>
+                        {!isAllowed ? (
+                          <Ionicons name="lock-closed" size={12} color="#F5D0FE" />
+                        ) : isActive ? (
+                          <Ionicons name="checkmark" size={14} color={Colors.primary} />
+                        ) : null}
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </TouchableOpacity>
+            </Modal>
 
             {/* Post Composer */}
             <View style={styles.composerCard}>
@@ -1391,7 +1461,7 @@ export default function ChallengesScreen() {
             {communityLoading ? renderCommunitySkeleton() : null}
 
             {/* Community Posts */}
-            {!communityLoading && communityPosts.map((post) => (
+            {!communityLoading && filteredCommunityPosts.map((post) => (
               <View key={post.id} style={styles.postCard}>
                 <TouchableOpacity activeOpacity={0.92} onPress={() => setSelectedCommunityPost(post)}>
                   <View style={styles.postHeader}>
@@ -1506,6 +1576,12 @@ export default function ChallengesScreen() {
                 ) : null}
               </View>
             ))}
+
+            {!communityLoading && filteredCommunityPosts.length === 0 ? (
+              <View style={styles.challengeEmptyCard}>
+                <Text style={styles.challengeEmptyText}>No community posts available for this filter.</Text>
+              </View>
+            ) : null}
 
           </View>
         )}
@@ -1697,7 +1773,7 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   subSectionTitle: {
-    fontSize: 15,
+    fontSize: 13,
     fontWeight: '800',
     color: Colors.primary,
     letterSpacing: 0.5,
@@ -1755,7 +1831,7 @@ const styles = StyleSheet.create({
   },
   challengeStatusText: {
     color: '#FCA5A5',
-    fontSize: 13,
+    fontSize: 12,
     fontFamily: 'Inter_400Regular',
   },
   challengeLoadingWrap: {
@@ -1767,7 +1843,7 @@ const styles = StyleSheet.create({
   },
   challengeLoadingText: {
     color: Colors.textMuted,
-    fontSize: 13,
+    fontSize: 12,
     fontFamily: 'Inter_400Regular',
   },
   skeletonBlock: {
@@ -1806,25 +1882,25 @@ const styles = StyleSheet.create({
   },
   challengeEmptyText: {
     color: Colors.textMuted,
-    fontSize: 13,
+    fontSize: 12,
     fontFamily: 'Inter_400Regular',
   },
   challengeLibraryLead: {
     color: '#D5DEF0',
-    fontSize: 22,
-    lineHeight: 28,
+    fontSize: 16,
+    lineHeight: 22,
     fontFamily: 'Inter_700Bold',
-    marginBottom: 16,
+    marginBottom: 6,
   },
   durationTabsRow: {
     gap: 10,
-    paddingBottom: 6,
-    marginBottom: 18,
+    paddingBottom: 0,
+    marginBottom: 8,
   },
   durationTabPill: {
-    minWidth: 74,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    minWidth: 58,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
     borderRadius: 14,
     backgroundColor: '#1F2940',
     borderWidth: 1,
@@ -1843,7 +1919,7 @@ const styles = StyleSheet.create({
   },
   durationTabText: {
     color: '#C7D2E5',
-    fontSize: 13,
+    fontSize: 11,
     fontFamily: 'Inter_700Bold',
   },
   durationTabTextActive: {
@@ -1852,62 +1928,66 @@ const styles = StyleSheet.create({
   challengeLibraryCard: {
     backgroundColor: '#343B4D',
     borderRadius: 18,
-    padding: 14,
-    marginBottom: 14,
+    paddingHorizontal: 5,
+    paddingTop: 4,
+    paddingBottom: 4,
+    marginBottom: 6,
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.05)',
   },
   challengeLibraryImage: {
     width: '100%',
-    height: 164,
-    borderRadius: 14,
-    marginBottom: 14,
+    height: 82,
+    borderRadius: 10,
+    marginBottom: 3,
     backgroundColor: '#1F2937',
   },
   challengeLibraryCardHeader: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    gap: 12,
-    marginBottom: 10,
+    gap: 8,
+    marginBottom: 3,
   },
   challengeLibraryTitleWrap: {
     flex: 1,
+    minWidth: 0,
   },
   challengeLibraryTitle: {
     color: '#fff',
-    fontSize: 17,
-    lineHeight: 23,
+    fontSize: 14,
+    lineHeight: 18,
     fontFamily: 'Inter_700Bold',
   },
   challengeLibraryCategory: {
-    marginTop: 4,
+    marginTop: 0,
     color: '#F5A43C',
-    fontSize: 12,
+    fontSize: 9,
     textTransform: 'uppercase',
     fontFamily: 'Inter_700Bold',
   },
   challengeLibraryPointsBadge: {
     backgroundColor: '#FFC233',
     borderRadius: 999,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
   },
   challengeLibraryPointsText: {
     color: '#4C2A00',
-    fontSize: 12,
+    fontSize: 10,
     fontFamily: 'Inter_700Bold',
   },
   challengeLibraryDescription: {
     color: '#E5E7EB',
-    fontSize: 14,
-    lineHeight: 20,
+    fontSize: 10,
+    lineHeight: 13,
     fontFamily: 'Inter_400Regular',
+    marginTop: 1,
   },
   challengeLibraryProgressRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
-    marginTop: 14,
+    gap: 8,
+    marginTop: 6,
   },
   challengeLibraryProgressTrack: {
     flex: 1,
@@ -1923,24 +2003,25 @@ const styles = StyleSheet.create({
   },
   challengeLibraryProgressText: {
     color: '#D5DEF0',
-    fontSize: 12,
-    minWidth: 42,
+    fontSize: 10,
+    minWidth: 32,
     textAlign: 'right',
     fontFamily: 'Inter_700Bold',
   },
   challengeLibraryFooter: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     justifyContent: 'space-between',
-    gap: 10,
-    marginTop: 18,
+    marginTop: 4,
+    gap: 3,
   },
   challengeLibraryMetaRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    flexWrap: 'wrap',
-    gap: 14,
+    flexWrap: 'nowrap',
+    gap: 8,
     flex: 1,
+    minWidth: 0,
   },
   challengeLibraryMetaItem: {
     flexDirection: 'row',
@@ -1949,35 +2030,39 @@ const styles = StyleSheet.create({
   },
   challengeLibraryMetaText: {
     color: 'rgba(255,255,255,0.65)',
-    fontSize: 13,
+    fontSize: 10,
     fontFamily: 'Inter_500Medium',
   },
   challengeLibraryActionRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    flexWrap: 'nowrap',
+    justifyContent: 'flex-end',
+    flexShrink: 1,
+    gap: 6,
+    marginTop: 0,
   },
   challengeInviteBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: 4,
     backgroundColor: '#2F7CF8',
     borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 11,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
   },
   challengeInviteBtnText: {
     color: '#EAF4FF',
-    fontSize: 13,
+    fontSize: 10,
     fontFamily: 'Inter_700Bold',
   },
   challengeStatusBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: 4,
     borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 11,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
   },
   challengeStatusBtnActive: {
     backgroundColor: '#22C55E',
@@ -1993,7 +2078,7 @@ const styles = StyleSheet.create({
   },
   challengeStatusBtnText: {
     color: '#052E16',
-    fontSize: 13,
+    fontSize: 10,
     fontFamily: 'Inter_700Bold',
   },
   challengeStatusBtnTextLocked: {
@@ -2410,6 +2495,65 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.08)',
     overflow: 'hidden',
+  },
+  communityFilterTrigger: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+    paddingHorizontal: 0,
+    paddingVertical: 0,
+  },
+  communityFilterTriggerSpacer: {
+    flex: 1,
+  },
+  communityFilterIconWrap: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+  },
+  communityFilterModalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(3,8,20,0.5)',
+    justifyContent: 'flex-start',
+    alignItems: 'flex-end',
+    paddingTop: 160,
+  },
+  communityFilterModalCard: {
+    backgroundColor: '#13132A',
+    width: '52%',
+    minWidth: 190,
+    borderTopLeftRadius: 18,
+    borderBottomLeftRadius: 18,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+    paddingTop: 8,
+    paddingBottom: 8,
+    paddingHorizontal: 16,
+    overflow: 'hidden',
+  },
+  communityFilterOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  communityFilterOptionText: {
+    color: '#D7E0F0',
+    fontSize: 11,
+    fontFamily: 'Inter_700Bold',
+  },
+  communityFilterOptionTextActive: {
+    color: Colors.primary,
+  },
+  communityFilterOptionTextLocked: {
+    color: '#F5D0FE',
   },
   searchInput: {
     color: '#fff',

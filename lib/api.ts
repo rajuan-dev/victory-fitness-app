@@ -678,6 +678,12 @@ export async function fetchCurrentUser() {
         await persistAuthUser(authUser);
         return authUser;
       })
+      .catch((error) => {
+        if (authUser) {
+          return authUser;
+        }
+        throw error;
+      })
       .finally(() => {
         currentUserRequestPromise = null;
       });
