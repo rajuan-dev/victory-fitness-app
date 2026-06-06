@@ -63,7 +63,7 @@ const styles = StyleSheet.create({
     marginBottom: 24,
   },
   sectionTitle: {
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: '700',
     color: Colors.accentBlue,
     letterSpacing: 1.5,
@@ -81,7 +81,7 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255,255,255,0.08)',
   },
   workoutHeading: {
-    fontSize: 22,
+    fontSize: 20,
     fontWeight: '700',
     color: '#fff',
     textAlign: 'center',
@@ -90,11 +90,11 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
   },
   workoutDesc: {
-    fontSize: 14,
+    fontSize: 13,
     color: Colors.textSecondary,
     textAlign: 'center',
     marginBottom: 24,
-    lineHeight: 20,
+    lineHeight: 21,
     fontFamily: 'Inter_400Regular',
   },
   workoutBtnPrimary: {
@@ -108,7 +108,7 @@ const styles = StyleSheet.create({
   workoutBtnPrimaryText: {
     color: '#fff',
     fontWeight: '700',
-    fontSize: 14,
+    fontSize: 13,
     letterSpacing: 1,
     fontFamily: 'Inter_700Bold',
   },
@@ -122,7 +122,7 @@ const styles = StyleSheet.create({
   workoutBtnOutlineText: {
     color: '#fff',
     fontWeight: '700',
-    fontSize: 14,
+    fontSize: 13,
     letterSpacing: 1,
     fontFamily: 'Inter_700Bold',
   },

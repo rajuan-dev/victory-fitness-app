@@ -351,12 +351,12 @@ export default function ChallengesScreen() {
       return [...COMMUNITY_AUDIENCE_FILTERS];
     }
     const hierarchy: Record<string, string[]> = {
-      SILVER: ['ALL', 'SILVER'],
-      GOLD: ['ALL', 'SILVER', 'GOLD'],
-      PLATINUM: ['ALL', 'SILVER', 'GOLD', 'PLATINUM'],
+      SILVER: ['SILVER'],
+      GOLD: ['SILVER', 'GOLD'],
+      PLATINUM: ['SILVER', 'GOLD', 'PLATINUM'],
       INNER_CIRCLE: ['ALL', 'SILVER', 'GOLD', 'PLATINUM', 'INNER_CIRCLE'],
     };
-    return hierarchy[subscriptionTier] ?? ['ALL'];
+    return hierarchy[subscriptionTier] ?? [];
   }, [canAccessCommunity, isCommunityAdmin, subscriptionTier]);
   const filteredCommunityPosts = useMemo(() => {
     if (selectedCommunityFilter === 'ALL') {
@@ -499,7 +499,7 @@ export default function ChallengesScreen() {
 
   useEffect(() => {
     if (!allowedCommunityAudiences.includes(selectedCommunityFilter)) {
-      setSelectedCommunityFilter('ALL');
+      setSelectedCommunityFilter((allowedCommunityAudiences[0] as (typeof COMMUNITY_AUDIENCE_FILTERS)[number]) ?? 'ALL');
     }
   }, [allowedCommunityAudiences, selectedCommunityFilter]);
 

@@ -59,16 +59,16 @@ const styles = StyleSheet.create({
   },
   goldBadgeText: { color: '#000', fontSize: 13, fontWeight: '800' },
   premiumInviteTitle: {
-    fontSize: 20,
+    fontSize: 19,
     fontWeight: '800',
     color: '#fff',
     marginBottom: 10,
     fontFamily: 'Inter_700Bold',
   },
   premiumInviteDesc: {
-    fontSize: 14,
+    fontSize: 13,
     color: 'rgba(255,255,255,0.8)',
-    lineHeight: 21,
+    lineHeight: 20,
     marginBottom: 20,
     fontFamily: 'Inter_400Regular',
   },
@@ -84,5 +84,5 @@ const styles = StyleSheet.create({
     shadowRadius: 10,
     elevation: 6,
   },
-  premiumInviteBtnText: { color: '#fff', fontSize: 16, fontWeight: '800', fontFamily: 'Inter_700Bold' },
+  premiumInviteBtnText: { color: '#fff', fontSize: 13, fontWeight: '800', fontFamily: 'Inter_700Bold' },
 });
