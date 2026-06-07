@@ -80,7 +80,7 @@ function ChallengeCard({
   const { t } = useLanguage();
   return (
     <View style={styles.challengeLibraryCard}>
-      {thumbnail ? <Image source={{ uri: thumbnail }} style={styles.challengeLibraryImage} /> : null}
+      {thumbnail ? <Image source={{ uri: thumbnail }} style={styles.challengeLibraryImage} resizeMode="contain" /> : null}
       <View style={styles.challengeLibraryCardHeader}>
         <View style={styles.challengeLibraryTitleWrap}>
           <Text style={styles.challengeLibraryTitle}>{title}</Text>
@@ -291,8 +291,6 @@ export default function ChallengesSection({ refreshToken = 0 }: { refreshToken?:
         </TouchableOpacity>
       </View>
 
-      <Text style={styles.challengeLibraryLead}>{t('Grow through out of the Comfort zone')}</Text>
-
       {loading ? (
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.challengesScroll}>
           <ChallengeSkeletonCard />
@@ -332,7 +330,7 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   sectionTitle: {
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: '700',
     color: Colors.accentBlue,
     letterSpacing: 1.5,
@@ -354,8 +352,8 @@ const styles = StyleSheet.create({
   },
   challengeLibraryLead: {
     color: '#D5DEF0',
-    fontSize: 20,
-    lineHeight: 26,
+    fontSize: 18,
+    lineHeight: 24,
     fontFamily: 'Inter_700Bold',
     marginBottom: 14,
   },
@@ -381,22 +379,23 @@ const styles = StyleSheet.create({
   challengeLibraryCardHeader: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    gap: 12,
-    marginBottom: 10,
+    gap: 8,
+    marginBottom: 3,
   },
   challengeLibraryTitleWrap: {
     flex: 1,
+    minWidth: 0,
   },
   challengeLibraryTitle: {
     color: '#fff',
-    fontSize: 17,
-    lineHeight: 23,
+    fontSize: 14,
+    lineHeight: 18,
     fontFamily: 'Inter_700Bold',
   },
   challengeLibraryCategory: {
-    marginTop: 4,
+    marginTop: 0,
     color: '#F5A43C',
-    fontSize: 12,
+    fontSize: 9,
     textTransform: 'uppercase',
     fontFamily: 'Inter_700Bold',
   },
@@ -413,8 +412,8 @@ const styles = StyleSheet.create({
   },
   challengeLibraryDescription: {
     color: '#E5E7EB',
-    fontSize: 14,
-    lineHeight: 20,
+    fontSize: 10,
+    lineHeight: 13,
     fontFamily: 'Inter_400Regular',
   },
   challengeLibraryProgressRow: {
@@ -463,7 +462,7 @@ const styles = StyleSheet.create({
   },
   challengeLibraryMetaText: {
     color: 'rgba(255,255,255,0.65)',
-    fontSize: 13,
+    fontSize: 12,
     fontFamily: 'Inter_500Medium',
   },
   challengeLibraryActionRow: {
@@ -482,7 +481,7 @@ const styles = StyleSheet.create({
   },
   challengeInviteBtnText: {
     color: '#EAF4FF',
-    fontSize: 13,
+    fontSize: 12,
     fontFamily: 'Inter_700Bold',
   },
   challengeStatusBtn: {
@@ -504,7 +503,7 @@ const styles = StyleSheet.create({
   },
   challengeStatusBtnText: {
     color: '#052E16',
-    fontSize: 13,
+    fontSize: 12,
     fontFamily: 'Inter_700Bold',
   },
   challengeStatusBtnTextLocked: {
@@ -517,13 +516,13 @@ const styles = StyleSheet.create({
   },
   emptyTitle: {
     color: '#fff',
-    fontSize: 16,
+    fontSize: 15,
     fontFamily: 'Inter_700Bold',
   },
   emptyText: {
     color: '#A8B4CC',
-    fontSize: 13,
-    lineHeight: 20,
+    fontSize: 12,
+    lineHeight: 18,
     marginTop: 6,
     fontFamily: 'Inter_400Regular',
   },

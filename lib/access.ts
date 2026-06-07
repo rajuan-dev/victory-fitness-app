@@ -25,7 +25,7 @@ const INNER_CIRCLE_FEATURE_ACCESS = [...PLATINUM_FEATURE_ACCESS, 'application', 
 const SILVER_TAB_ACCESS = ['index', 'workout', 'challenge', 'profile'] as const;
 const GOLD_AND_ABOVE_TAB_ACCESS = ['index', 'workout', 'challenge', 'mealPlan', 'profile'] as const;
 
-const SILVER_ROUTE_ACCESS = ['/', '/workout', '/challenge', '/challenges', '/profile'] as const;
+const SILVER_ROUTE_ACCESS = ['/', '/workout', '/challenge', '/challenges', '/profile', '/journal'] as const;
 const GOLD_ROUTE_ACCESS = [...SILVER_ROUTE_ACCESS, '/mealPlan'] as const;
 const PLATINUM_ROUTE_ACCESS = [...GOLD_ROUTE_ACCESS, '/workoutplan', '/profile/longevity-os'] as const;
 const INNER_CIRCLE_ROUTE_ACCESS = [...PLATINUM_ROUTE_ACCESS, '/profile/application', '/community', '/chat'] as const;
@@ -37,7 +37,7 @@ export const PLAN_CARDS: AppPlanCard[] = [
     monthlyPrice: 'EUR 19 / month',
     yearlyPrice: 'EUR 199 / year',
     description: 'Good start, with core training access and basic accountability.',
-    features: ['Workout Library', 'Basic Programs', 'Limited Challenges'],
+    features: ['Workout Library', 'Basic Programs', 'Community Challenges'],
     accent: '#A3A3A3',
     featureAccess: [...SILVER_FEATURE_ACCESS],
     tabAccess: [...SILVER_TAB_ACCESS],
@@ -82,6 +82,7 @@ export const PLAN_CARDS: AppPlanCard[] = [
 ];
 
 const ALLOWED_PUBLIC_PATHS = ['/login', '/register', '/verification', '/onboarding', '/splash'];
+const ALLOWED_AUTHENTICATED_PATHS = ['/journal'] as const;
 const PLAN_PATH = '/plan';
 
 export function normalizeSubscriptionTier(value?: string | null): SubscriptionTier {
@@ -147,6 +148,10 @@ export function getPostAuthRoute(user?: Pick<AuthUser, 'is_admin' | 'subscriptio
 
 export function isRouteAllowedForPlan(pathname: string, user?: Pick<AuthUser, 'is_admin' | 'subscription_tier' | 'subscription_status'> | null): boolean {
   if (isPublicRoute(pathname) || isPlanSelectionRoute(pathname)) {
+    return true;
+  }
+
+  if (user && ALLOWED_AUTHENTICATED_PATHS.some((route) => pathname === route || pathname.startsWith(`${route}/`))) {
     return true;
   }
 

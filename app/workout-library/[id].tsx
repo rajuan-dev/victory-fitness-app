@@ -13,6 +13,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { WebView } from 'react-native-webview';
 import { Colors } from '../../constants/Colors';
 import { useLanguage } from '../../lib/i18n';
+import { goBackOrReplace } from '../../lib/navigation';
 
 const DEFAULT_THUMBNAIL =
   'https://images.unsplash.com/photo-1517836357463-d25dfeac3438?q=80&w=300&auto=format&fit=crop';
@@ -122,7 +123,7 @@ export default function WorkoutPlayerScreen() {
       />
 
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.headerButton}>
+        <TouchableOpacity onPress={() => goBackOrReplace(router, '/workout-library/categories')} style={styles.headerButton}>
           <Ionicons name="arrow-back" size={22} color="#fff" />
         </TouchableOpacity>
         <View style={styles.headerCopy}>

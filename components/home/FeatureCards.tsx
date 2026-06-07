@@ -97,7 +97,7 @@ const styles = StyleSheet.create({
     marginRight: 20,
   },
   featureTitle: {
-    fontSize: 18,
+    fontSize: 17,
     fontWeight: '700',
     color: '#fff',
     letterSpacing: 1,
@@ -107,7 +107,7 @@ const styles = StyleSheet.create({
   featureDesc: {
     fontSize: 12,
     color: 'rgba(255,255,255,0.9)',
-    lineHeight: 18,
+    lineHeight: 19,
     marginBottom: 12,
     maxWidth: width * 0.6,
     fontFamily: 'Inter_400Regular',
@@ -116,7 +116,7 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-start',
   },
   featureLink: {
-    fontSize: 14,
+    fontSize: 13,
     color: '#fff',
     fontWeight: '700',
     fontFamily: 'Inter_700Bold',

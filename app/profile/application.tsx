@@ -15,6 +15,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../constants/Colors';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { fetchCurrentUser, submitCoachingApplication } from '../../lib/api';
+import { goBackOrReplace } from '../../lib/navigation';
 import { useModuleAccessGuard } from '../../lib/useModuleAccessGuard';
 
 export default function ApplicationScreen() {
@@ -99,7 +100,7 @@ export default function ApplicationScreen() {
         agreement_accepted: true,
       });
       Alert.alert('Application sent', 'Your application has been submitted successfully.');
-      router.back();
+      goBackOrReplace(router, '/profile');
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unable to submit your application right now.';
       Alert.alert('Submission failed', message);
@@ -129,7 +130,7 @@ export default function ApplicationScreen() {
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
       {/* Dynamic Header */}
       <View style={styles.header}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
+        <TouchableOpacity style={styles.backBtn} onPress={() => goBackOrReplace(router, '/profile')}>
           <Ionicons name="arrow-back" size={24} color="#FACC15" />
         </TouchableOpacity>
       </View>

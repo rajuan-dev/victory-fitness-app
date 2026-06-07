@@ -23,6 +23,7 @@ import { useLanguage } from '../../lib/i18n';
 import { useModuleAccessGuard } from '../../lib/useModuleAccessGuard';
 import { ScreenState } from '../../components/ScreenState';
 import { useAsyncScreenData } from '../../hooks/useAsyncScreenData';
+import { goBackOrReplace } from '../../lib/navigation';
 
 const { width } = Dimensions.get('window');
 
@@ -64,7 +65,7 @@ export default function WorkoutPlanScreen() {
         headerTintColor: '#fff',
         headerTitleStyle: { fontFamily: 'Inter_700Bold', fontSize: 16, letterSpacing: 2 } as any,
         headerLeft: () => (
-          <TouchableOpacity onPress={() => router.back()} style={{ marginLeft: 8 }}>
+          <TouchableOpacity onPress={() => goBackOrReplace(router, '/profile')} style={{ marginLeft: 8 }}>
             <Ionicons name="chevron-back" size={28} color="#fff" />
           </TouchableOpacity>
         ),

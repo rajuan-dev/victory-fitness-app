@@ -14,6 +14,7 @@ import { Colors } from '../../constants/Colors';
 import { formatAppError } from '../../lib/error';
 import { fetchWorkoutLibrary, WorkoutLibraryCategory } from '../../lib/workouts';
 import { useLanguage } from '../../lib/i18n';
+import { goBackOrReplace } from '../../lib/navigation';
 import { ScreenState } from '../../components/ScreenState';
 import { useAsyncScreenData } from '../../hooks/useAsyncScreenData';
 
@@ -69,7 +70,7 @@ export default function WorkoutCategoriesScreen() {
       />
 
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.headerButton}>
+        <TouchableOpacity onPress={() => goBackOrReplace(router, '/workout')} style={styles.headerButton}>
           <Ionicons name="arrow-back" size={22} color="#fff" />
         </TouchableOpacity>
         <View style={styles.headerCopy}>

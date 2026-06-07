@@ -159,14 +159,14 @@ const styles = StyleSheet.create({
   },
   lockedSectionTitle: {
     color: '#fff',
-    fontSize: 20,
+    fontSize: 18,
     fontFamily: 'Inter_700Bold',
     marginBottom: 8,
   },
   lockedSectionText: {
     color: Colors.textSecondary,
-    fontSize: 14,
-    lineHeight: 21,
+    fontSize: 13,
+    lineHeight: 19,
     fontFamily: 'Inter_400Regular',
     marginBottom: 16,
   },

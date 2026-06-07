@@ -49,15 +49,15 @@ const styles = StyleSheet.create({
   },
   moodTitle: {
     color: Colors.accentBlue,
-    fontSize: 20,
+    fontSize: 19,
     fontWeight: '700',
     fontFamily: 'Inter_700Bold',
     marginBottom: 12,
   },
   moodSubtitle: {
     color: Colors.textSecondary,
-    fontSize: 15,
-    lineHeight: 22,
+    fontSize: 14,
+    lineHeight: 21,
     fontFamily: 'Inter_400Regular',
     marginBottom: 24,
   },
@@ -71,7 +71,7 @@ const styles = StyleSheet.create({
   journalActionText: {
     color: '#fff',
     fontWeight: '700',
-    fontSize: 16,
+    fontSize: 14,
     fontFamily: 'Inter_700Bold',
   },
   moodDivider: {
@@ -81,7 +81,8 @@ const styles = StyleSheet.create({
   },
   moodPromptText: {
     color: Colors.textMuted,
-    fontSize: 14,
+    fontSize: 13,
+    lineHeight: 18,
     textAlign: 'center',
     marginBottom: 20,
     fontFamily: 'Inter_400Regular',

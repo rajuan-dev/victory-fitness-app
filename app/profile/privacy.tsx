@@ -12,6 +12,7 @@ import { Stack, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../constants/Colors';
 import { apiRequest } from '../../lib/api';
+import { goBackOrReplace } from '../../lib/navigation';
 
 type PrivacyPolicyPayload = {
   title: string;
@@ -76,7 +77,7 @@ export default function PrivacyScreen() {
         headerTintColor: '#fff',
         headerTitleStyle: { fontFamily: 'Inter_700Bold', fontSize: 16, letterSpacing: 2 } as any,
         headerLeft: () => (
-          <TouchableOpacity onPress={() => router.back()} style={{ marginLeft: 8 }}>
+          <TouchableOpacity onPress={() => goBackOrReplace(router, '/profile')} style={{ marginLeft: 8 }}>
             <Ionicons name="chevron-back" size={28} color="#fff" />
           </TouchableOpacity>
         ),

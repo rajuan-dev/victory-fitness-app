@@ -5,7 +5,7 @@ import { Colors } from '../../constants/Colors';
 import { Image, StyleSheet, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import AccessRestrictionModal from '../../components/AccessRestrictionModal';
-import { fetchCurrentUser, getValidAuthTokens } from '../../lib/api';
+import { fetchCurrentUser, getAuthUser, getValidAuthTokens } from '../../lib/api';
 import { getAllowedTabNames, isSubscriptionActive } from '../../lib/access';
 import { useLanguage } from '../../lib/i18n';
 import { replaceRoute } from '../../lib/navigation';
@@ -31,6 +31,23 @@ export default function TabsLayout() {
         if (!tokens) {
           replaceRoute(router, '/login');
           return;
+        }
+
+        const cachedUser = await getAuthUser();
+        if (cancelled) {
+          return;
+        }
+
+        if (cachedUser) {
+          setProfileImage(String(cachedUser.profileImage || '').trim());
+
+          if (!isSubscriptionActive(cachedUser)) {
+            replaceRoute(router, '/plan');
+            return;
+          }
+
+          setAllowedTabs(getAllowedTabNames(cachedUser));
+          setCheckingAuth(false);
         }
 
         const authUser = await fetchCurrentUser();

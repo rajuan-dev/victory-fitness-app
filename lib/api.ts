@@ -381,6 +381,7 @@ const AUTH_USER_STORAGE_KEY = 'victory-auth-user';
 let authTokens: AuthTokens | null = null;
 let authTokensLoaded = false;
 let authTokensLoadPromise: Promise<void> | null = null;
+let authRefreshPromise: Promise<AuthTokens | null> | null = null;
 let authUser: AuthUser | null = null;
 let authUserLoaded = false;
 let authUserLoadPromise: Promise<void> | null = null;
@@ -649,6 +650,23 @@ export async function clearAuthTokens() {
   clearDerivedUserCaches();
 }
 
+export async function logout() {
+  try {
+    await fetchWithTimeout(`${API_URL}/auth/logout`, {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+      },
+      credentials: 'include',
+    });
+  } catch {
+    // Local logout should still succeed if the network request fails.
+  } finally {
+    await clearAuthTokens();
+  }
+}
+
 export function setAuthFailureHandler(handler: (() => void) | null) {
   authFailureHandler = handler;
 }
@@ -677,6 +695,12 @@ export async function fetchCurrentUser() {
         currentUserFetchedAt = Date.now();
         await persistAuthUser(authUser);
         return authUser;
+      })
+      .catch((error) => {
+        if (authUser) {
+          return authUser;
+        }
+        throw error;
       })
       .finally(() => {
         currentUserRequestPromise = null;
@@ -1048,6 +1072,35 @@ async function refreshWithSessionToken(sessionToken: string): Promise<AuthTokens
   };
 }
 
+async function refreshAuthTokens(): Promise<AuthTokens | null> {
+  await ensureAuthTokensLoaded();
+
+  if (!authTokens?.session_token || isJwtExpired(authTokens.session_token)) {
+    await clearAuthTokens();
+    authFailureHandler?.();
+    return null;
+  }
+
+  if (!authRefreshPromise) {
+    authRefreshPromise = refreshWithSessionToken(authTokens.session_token)
+      .then(async (refreshed) => {
+        if (!refreshed) {
+          await clearAuthTokens();
+          authFailureHandler?.();
+          return null;
+        }
+
+        await setAuthTokens(refreshed);
+        return refreshed;
+      })
+      .finally(() => {
+        authRefreshPromise = null;
+      });
+  }
+
+  return authRefreshPromise;
+}
+
 function isInvalidSessionError(detail: string, status: number): boolean {
   const normalized = detail.toLowerCase();
   return (
@@ -1075,21 +1128,7 @@ export async function getValidAuthTokens() {
     return authTokens;
   }
 
-  if (!authTokens.session_token || isJwtExpired(authTokens.session_token)) {
-    await clearAuthTokens();
-    authFailureHandler?.();
-    return null;
-  }
-
-  const refreshed = await refreshWithSessionToken(authTokens.session_token);
-  if (!refreshed) {
-    await clearAuthTokens();
-    authFailureHandler?.();
-    return null;
-  }
-
-  await setAuthTokens(refreshed);
-  return refreshed;
+  return refreshAuthTokens();
 }
 
 export async function apiRequest<T>(
@@ -1097,15 +1136,17 @@ export async function apiRequest<T>(
   options: RequestOptions = {},
   retryOnUnauthorized = true
 ): Promise<T> {
-  await ensureAuthTokensLoaded();
+  const requestTokens = path === '/auth/refresh'
+    ? await getAuthTokens()
+    : await getValidAuthTokens();
 
   const headers: Record<string, string> = {
     Accept: 'application/json',
     'Content-Type': 'application/json',
   };
 
-  if (authTokens?.access_token) {
-    headers.Authorization = `Bearer ${authTokens.access_token}`;
+  if (requestTokens?.access_token) {
+    headers.Authorization = `Bearer ${requestTokens.access_token}`;
   }
 
   const requestLanguage = options.language ?? apiLanguage;
@@ -1122,17 +1163,12 @@ export async function apiRequest<T>(
 
   const data = await response.json().catch(() => ({}));
 
-  if (response.status === 401 && retryOnUnauthorized && authTokens?.session_token) {
+  if (response.status === 401 && retryOnUnauthorized && path !== '/auth/refresh') {
     try {
-      const refreshed = await apiRequest<AuthResponse>(
-        '/auth/refresh',
-        {
-          method: 'POST',
-          body: { session_token: authTokens.session_token },
-        },
-        false
-      );
-      await setAuthTokens(refreshed);
+      const refreshed = await refreshAuthTokens();
+      if (!refreshed) {
+        throw new ApiError(401, 'Invalid session token');
+      }
       return apiRequest<T>(path, options, false);
     } catch (refreshError) {
       if (refreshError instanceof ApiError && isInvalidSessionError(refreshError.detail, refreshError.status)) {

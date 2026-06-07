@@ -36,6 +36,14 @@ export default function JournalScreen() {
   const [errorDialog, setErrorDialog] = useState<{ title: string; message: string } | null>(null);
   const selectedMood = useMemo(() => MOODS[mood] ?? MOODS[3], [mood]);
 
+  const handleBackPress = () => {
+    if (router.canGoBack()) {
+      router.back();
+      return;
+    }
+    router.replace("/(tabs)");
+  };
+
   const handleSecureLog = async () => {
     const content = entry.trim();
     if (!content || saving) {
@@ -96,25 +104,17 @@ export default function JournalScreen() {
       />
       <Stack.Screen
         options={{
-          headerShown: true,
-          title: t("JOURNAL"),
-          headerTransparent: true,
-          headerTintColor: "#fff",
-          headerTitleStyle: {
-            fontFamily: "Inter_700Bold",
-            fontSize: 16,
-            letterSpacing: 4,
-          } as any,
-          headerLeft: () => (
-            <TouchableOpacity
-              onPress={() => router.back()}
-              style={{ marginLeft: 8 }}
-            >
-              <Ionicons name="chevron-back" size={28} color="#fff" />
-            </TouchableOpacity>
-          ),
+          headerShown: false,
         }}
       />
+
+      <View style={styles.screenHeader}>
+        <TouchableOpacity onPress={handleBackPress} style={styles.backButton} activeOpacity={0.8}>
+          <Ionicons name="chevron-back" size={28} color="#fff" />
+        </TouchableOpacity>
+        <Text style={styles.screenTitle}>{t("JOURNAL")}</Text>
+        <View style={styles.headerSpacer} />
+      </View>
 
       <ScrollView
         contentContainerStyle={styles.scrollContent}
@@ -223,8 +223,32 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "#0F0F0F", // Deeper background
   },
+  screenHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 12,
+    paddingTop: 8,
+    paddingBottom: 12,
+  },
+  backButton: {
+    width: 44,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  screenTitle: {
+    color: '#fff',
+    fontSize: 16,
+    letterSpacing: 4,
+    fontFamily: 'Inter_700Bold',
+  },
+  headerSpacer: {
+    width: 44,
+    height: 44,
+  },
   scrollContent: {
-    paddingTop: 110,
+    paddingTop: 32,
     paddingHorizontal: 20,
     paddingBottom: 40,
   },

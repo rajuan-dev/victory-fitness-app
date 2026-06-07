@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -11,7 +11,7 @@ import {
   RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Stack, useFocusEffect, useRouter } from 'expo-router';
+import { Stack, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../constants/Colors';
 import { ErrorPopupModal } from '../../components/ErrorPopupModal';
@@ -19,7 +19,6 @@ import { apiRequest } from '../../lib/api';
 import { formatAppError } from '../../lib/error';
 import { useLanguage } from '../../lib/i18n';
 import { ScreenState } from '../../components/ScreenState';
-import { useAsyncScreenData } from '../../hooks/useAsyncScreenData';
 
 type JournalEntry = {
   id: string;
@@ -126,28 +125,69 @@ export default function JournalHistoryScreen() {
   const { t } = useLanguage();
   const [errorDialog, setErrorDialog] = useState<{ title: string; message: string } | null>(null);
   const [selectedEntry, setSelectedEntry] = useState<JournalEntry | null>(null);
+  const [entries, setEntries] = useState<JournalEntry[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState('');
   const formattedSelectedEntry = selectedEntry ? formatJournalContent(selectedEntry.content) : [];
 
-  const {
-    data: entries,
-    loading,
-    refreshing,
-    error,
-    reload,
-  } = useAsyncScreenData<JournalEntry[]>({
-    initialData: [],
-    load: async () => {
-      const response = await apiRequest<{ entries: JournalEntry[] }>('/journal/entries');
-      return response.entries;
-    },
-    getErrorMessage: (loadError) => formatAppError(loadError, t('Unable to load journal history right now.')).message,
-  });
+  const handleBackPress = useCallback(() => {
+    setSelectedEntry(null);
+    if (router.canGoBack()) {
+      router.back();
+      return;
+    }
+    router.replace('/journal');
+  }, [router]);
 
-  useFocusEffect(
-    useCallback(() => {
-      void reload().catch(() => null);
-    }, [reload])
-  );
+  const loadEntries = useCallback(async (isRefresh = false) => {
+    if (isRefresh) {
+      setRefreshing(true);
+    } else {
+      setLoading(true);
+    }
+    setError('');
+
+    try {
+      const response = await apiRequest<{ entries: JournalEntry[] }>('/journal/entries');
+      setEntries(Array.isArray(response.entries) ? response.entries : []);
+    } catch (loadError) {
+      setError(formatAppError(loadError, t('Unable to load journal history right now.')).message);
+      throw loadError;
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, [t]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    void (async () => {
+      try {
+        const response = await apiRequest<{ entries: JournalEntry[] }>('/journal/entries');
+        if (cancelled) {
+          return;
+        }
+        setEntries(Array.isArray(response.entries) ? response.entries : []);
+        setError('');
+      } catch (loadError) {
+        if (cancelled) {
+          return;
+        }
+        setError(formatAppError(loadError, t('Unable to load journal history right now.')).message);
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+          setRefreshing(false);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [t]);
 
   const renderItem = ({ item }: { item: JournalEntry }) => {
     const moodEmoji = MOOD_EMOJI[item.mood] ?? '\u{1F4DD}';
@@ -258,18 +298,17 @@ export default function JournalHistoryScreen() {
       </Modal>
       <Stack.Screen
         options={{
-          headerShown: true,
-          title: t('JOURNAL HISTORY'),
-          headerTransparent: true,
-          headerTintColor: '#fff',
-          headerTitleStyle: { fontFamily: 'Inter_700Bold', fontSize: 16, letterSpacing: 2 } as any,
-          headerLeft: () => (
-            <TouchableOpacity onPress={() => router.back()} style={{ marginLeft: 8 }}>
-              <Ionicons name="chevron-back" size={28} color="#fff" />
-            </TouchableOpacity>
-          ),
+          headerShown: false,
         }}
       />
+
+      <View style={styles.screenHeader}>
+        <TouchableOpacity onPress={handleBackPress} style={styles.backButton} activeOpacity={0.8}>
+          <Ionicons name="chevron-back" size={28} color="#fff" />
+        </TouchableOpacity>
+        <Text style={styles.screenTitle}>{t('JOURNAL HISTORY')}</Text>
+        <View style={styles.headerSpacer} />
+      </View>
 
       {loading ? (
         <ScreenState mode="loading" message={t('Loading saved journal entries...')} />
@@ -279,7 +318,7 @@ export default function JournalHistoryScreen() {
           message={error}
           actionLabel={t('Try Again')}
           onAction={() => {
-            void reload().catch((loadError) => {
+            void loadEntries().catch((loadError) => {
               setErrorDialog(formatAppError(loadError, t('Unable to load journal history right now.')));
             });
           }}
@@ -303,7 +342,7 @@ export default function JournalHistoryScreen() {
             <RefreshControl
               refreshing={refreshing}
               onRefresh={() => {
-                void reload().catch((loadError) => {
+                void loadEntries(true).catch((loadError) => {
                   setErrorDialog(formatAppError(loadError, t('Unable to load journal history right now.')));
                 });
               }}
@@ -325,6 +364,30 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingBottom: 40,
     flexGrow: 1,
+  },
+  screenHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 12,
+    paddingTop: 8,
+    paddingBottom: 12,
+  },
+  backButton: {
+    width: 44,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  screenTitle: {
+    color: '#fff',
+    fontSize: 16,
+    letterSpacing: 2,
+    fontFamily: 'Inter_700Bold',
+  },
+  headerSpacer: {
+    width: 44,
+    height: 44,
   },
   emptyState: {
     flex: 1,
