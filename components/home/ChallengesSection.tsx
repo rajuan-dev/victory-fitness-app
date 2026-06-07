@@ -187,6 +187,11 @@ export default function ChallengesSection({ refreshToken = 0 }: { refreshToken?:
   const router = useRouter();
   const { t } = useLanguage();
   const cachedOverview = getCachedResourceSnapshot<ChallengeOverview>(CHALLENGE_OVERVIEW_CACHE_KEY);
+  const hasCachedCards = Boolean(
+    cachedOverview &&
+      ((Array.isArray(cachedOverview.active_challenges) && cachedOverview.active_challenges.length > 0) ||
+        (Array.isArray(cachedOverview.ready_to_start) && cachedOverview.ready_to_start.length > 0)),
+  );
   const [cards, setCards] = React.useState<HomeChallengeCard[]>([]);
   const [loading, setLoading] = React.useState(!cachedOverview);
   const [loadError, setLoadError] = React.useState('');
@@ -205,7 +210,7 @@ export default function ChallengesSection({ refreshToken = 0 }: { refreshToken?:
       const activeChallenges = Array.isArray(response.active_challenges) ? response.active_challenges : [];
       const readyChallenges = Array.isArray(response.ready_to_start) ? response.ready_to_start : [];
 
-      const activeCards: HomeChallengeCard[] = activeChallenges.slice(0, 4).map((challenge) => ({
+      const activeCards: HomeChallengeCard[] = activeChallenges.map((challenge) => ({
         id: challenge.id,
         challengeId: challenge.challenge_id,
         title: challenge.title,
@@ -222,7 +227,7 @@ export default function ChallengesSection({ refreshToken = 0 }: { refreshToken?:
         onSecondaryPress: () => router.push(`/challenges/chat/${challenge.challenge_id}` as any),
       }));
 
-      const readyCards: HomeChallengeCard[] = readyChallenges.slice(0, 4).map((challenge) => ({
+      const readyCards: HomeChallengeCard[] = readyChallenges.map((challenge) => ({
         id: challenge.id,
         challengeId: challenge.id,
         title: challenge.title,
@@ -263,8 +268,12 @@ export default function ChallengesSection({ refreshToken = 0 }: { refreshToken?:
           } as any),
       }));
 
-      setCards(activeCards.length > 0 ? activeCards : readyCards);
+      setCards([...activeCards, ...readyCards]);
     } catch (error) {
+      if (cards.length > 0 || hasCachedCards) {
+        setLoadError('');
+        return;
+      }
       const message = error instanceof Error ? error.message : '';
       const normalizedMessage = message.toLowerCase();
       setLoadError(
@@ -277,7 +286,7 @@ export default function ChallengesSection({ refreshToken = 0 }: { refreshToken?:
         setLoading(false);
       }
     }
-  }, [cachedOverview, joiningId, router]);
+  }, [cards.length, hasCachedCards, cachedOverview, joiningId, router, t]);
 
   React.useEffect(() => {
     if (!cachedOverview) {
@@ -287,7 +296,7 @@ export default function ChallengesSection({ refreshToken = 0 }: { refreshToken?:
     const activeChallenges = Array.isArray(cachedOverview.active_challenges) ? cachedOverview.active_challenges : [];
     const readyChallenges = Array.isArray(cachedOverview.ready_to_start) ? cachedOverview.ready_to_start : [];
 
-    const activeCards: HomeChallengeCard[] = activeChallenges.slice(0, 4).map((challenge) => ({
+    const activeCards: HomeChallengeCard[] = activeChallenges.map((challenge) => ({
       id: challenge.id,
       challengeId: challenge.challenge_id,
       title: challenge.title,
@@ -304,7 +313,7 @@ export default function ChallengesSection({ refreshToken = 0 }: { refreshToken?:
       onSecondaryPress: () => router.push(`/challenges/chat/${challenge.challenge_id}` as any),
     }));
 
-    const readyCards: HomeChallengeCard[] = readyChallenges.slice(0, 4).map((challenge) => ({
+    const readyCards: HomeChallengeCard[] = readyChallenges.map((challenge) => ({
       id: challenge.id,
       challengeId: challenge.id,
       title: challenge.title,
@@ -317,12 +326,36 @@ export default function ChallengesSection({ refreshToken = 0 }: { refreshToken?:
       progress: 0,
       daysLeftLabel: challenge.can_start ? 'Ready' : 'Locked',
       isJoining: joiningId === challenge.id,
-      onPrimaryPress: async () => {},
-      onSecondaryPress: () => {},
+      onPrimaryPress: async () => {
+        if (!challenge.can_start || joiningId === challenge.id) {
+          return;
+        }
+        setJoiningId(challenge.id);
+        try {
+          await apiRequest(`/challenges/${encodeURIComponent(challenge.id)}/start`, {
+            method: 'POST',
+          });
+          await loadChallenges(false);
+        } catch (error) {
+          Alert.alert('Join failed', error instanceof Error ? error.message : 'Failed to join challenge');
+        } finally {
+          setJoiningId('');
+        }
+      },
+      onSecondaryPress: () =>
+        router.push({
+          pathname: '/challenge',
+          params: {
+            tab: 'COMMUNITY',
+            prefillSource: 'challenge_invite',
+            prefillChallengeId: challenge.id,
+            prefillStatus: `Join me in ${challenge.title}. ${challenge.description}`,
+          },
+        } as any),
     }));
 
-    setCards(activeCards.length > 0 ? activeCards : readyCards);
-  }, [cachedOverview, joiningId, router]);
+    setCards([...activeCards, ...readyCards]);
+  }, [cachedOverview, joiningId, loadChallenges, router]);
 
   useFocusEffect(
     React.useCallback(() => {
@@ -369,6 +402,8 @@ export default function ChallengesSection({ refreshToken = 0 }: { refreshToken?:
           horizontal
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.challengesScroll}
+          bounces
+          alwaysBounceHorizontal
           snapToInterval={width - 56}
           decelerationRate="fast"
           snapToAlignment="start"
