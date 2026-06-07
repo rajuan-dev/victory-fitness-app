@@ -18,7 +18,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../constants/Colors';
 import VictoryHeader from '../../components/VictoryHeader';
 import AccessRestrictionModal from '../../components/AccessRestrictionModal';
-import { BodyMetrics, clearAuthTokens, fetchCurrentUser, fetchCurrentUserBodyMetrics, updateCurrentUserBodyMetrics } from '../../lib/api';
+import { BodyMetrics, fetchCurrentUser, fetchCurrentUserBodyMetrics, logout, updateCurrentUserBodyMetrics } from '../../lib/api';
 import { canAccessFeature, canAccessPlanRoute } from '../../lib/access';
 import { useLanguage } from '../../lib/i18n';
 import { useModuleAccessGuard } from '../../lib/useModuleAccessGuard';
@@ -561,7 +561,7 @@ export default function ProfileScreen() {
           style={styles.logoutBtn}
           activeOpacity={0.7}
           onPress={async () => {
-            await clearAuthTokens();
+            await logout();
             replaceRoute(router, '/login');
           }}
         >
