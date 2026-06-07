@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import {
   View,
   Text,
@@ -15,19 +15,11 @@ import { Stack, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../constants/Colors';
 import { ErrorPopupModal } from '../../components/ErrorPopupModal';
-import { apiRequest } from '../../lib/api';
 import { formatAppError } from '../../lib/error';
 import { useLanguage } from '../../lib/i18n';
 import { ScreenState } from '../../components/ScreenState';
-
-type JournalEntry = {
-  id: string;
-  user_id: string;
-  mood: string;
-  content: string;
-  created_at: string;
-  updated_at: string;
-};
+import { useAsyncScreenData } from '../../hooks/useAsyncScreenData';
+import { fetchJournalEntries, JOURNAL_ENTRIES_CACHE_KEY, JournalEntry } from '../../lib/screenData';
 
 const MOOD_EMOJI: Record<string, string> = {
   ANGRY: '\u{1F621}',
@@ -125,10 +117,19 @@ export default function JournalHistoryScreen() {
   const { t } = useLanguage();
   const [errorDialog, setErrorDialog] = useState<{ title: string; message: string } | null>(null);
   const [selectedEntry, setSelectedEntry] = useState<JournalEntry | null>(null);
-  const [entries, setEntries] = useState<JournalEntry[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState('');
+  const {
+    data: journalData,
+    loading,
+    refreshing,
+    error,
+    reload,
+  } = useAsyncScreenData({
+    initialData: { entries: [] as JournalEntry[] },
+    cacheKey: JOURNAL_ENTRIES_CACHE_KEY,
+    load: fetchJournalEntries,
+    getErrorMessage: (loadError) => formatAppError(loadError, t('Unable to load journal history right now.')).message,
+  });
+  const entries = journalData.entries;
   const formattedSelectedEntry = selectedEntry ? formatJournalContent(selectedEntry.content) : [];
 
   const handleBackPress = useCallback(() => {
@@ -139,55 +140,6 @@ export default function JournalHistoryScreen() {
     }
     router.replace('/journal');
   }, [router]);
-
-  const loadEntries = useCallback(async (isRefresh = false) => {
-    if (isRefresh) {
-      setRefreshing(true);
-    } else {
-      setLoading(true);
-    }
-    setError('');
-
-    try {
-      const response = await apiRequest<{ entries: JournalEntry[] }>('/journal/entries');
-      setEntries(Array.isArray(response.entries) ? response.entries : []);
-    } catch (loadError) {
-      setError(formatAppError(loadError, t('Unable to load journal history right now.')).message);
-      throw loadError;
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  }, [t]);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    void (async () => {
-      try {
-        const response = await apiRequest<{ entries: JournalEntry[] }>('/journal/entries');
-        if (cancelled) {
-          return;
-        }
-        setEntries(Array.isArray(response.entries) ? response.entries : []);
-        setError('');
-      } catch (loadError) {
-        if (cancelled) {
-          return;
-        }
-        setError(formatAppError(loadError, t('Unable to load journal history right now.')).message);
-      } finally {
-        if (!cancelled) {
-          setLoading(false);
-          setRefreshing(false);
-        }
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [t]);
 
   const renderItem = ({ item }: { item: JournalEntry }) => {
     const moodEmoji = MOOD_EMOJI[item.mood] ?? '\u{1F4DD}';
@@ -318,7 +270,7 @@ export default function JournalHistoryScreen() {
           message={error}
           actionLabel={t('Try Again')}
           onAction={() => {
-            void loadEntries().catch((loadError) => {
+            void reload().catch((loadError) => {
               setErrorDialog(formatAppError(loadError, t('Unable to load journal history right now.')));
             });
           }}
@@ -342,7 +294,7 @@ export default function JournalHistoryScreen() {
             <RefreshControl
               refreshing={refreshing}
               onRefresh={() => {
-                void loadEntries(true).catch((loadError) => {
+                void reload().catch((loadError) => {
                   setErrorDialog(formatAppError(loadError, t('Unable to load journal history right now.')));
                 });
               }}

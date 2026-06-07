@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { fetchCachedResource, getCachedResourceSnapshot, hydrateCachedResource } from '../lib/resourceCache';
 
 type UseAsyncScreenDataOptions<T> = {
   initialData: T;
@@ -6,6 +7,8 @@ type UseAsyncScreenDataOptions<T> = {
   getErrorMessage?: (error: unknown) => string;
   onSuccess?: (data: T) => void;
   skipInitialLoad?: boolean;
+  cacheKey?: string;
+  persistCachedData?: boolean;
 };
 
 export function useAsyncScreenData<T>({
@@ -14,12 +17,15 @@ export function useAsyncScreenData<T>({
   getErrorMessage,
   onSuccess,
   skipInitialLoad = false,
+  cacheKey,
+  persistCachedData = true,
 }: UseAsyncScreenDataOptions<T>) {
-  const [data, setData] = useState<T>(initialData);
-  const [loading, setLoading] = useState(!skipInitialLoad);
+  const cachedSnapshot = cacheKey ? getCachedResourceSnapshot<T>(cacheKey) : undefined;
+  const [data, setData] = useState<T>(cachedSnapshot ?? initialData);
+  const [loading, setLoading] = useState(!skipInitialLoad && !cachedSnapshot);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
-  const hasLoadedRef = useRef(false);
+  const hasLoadedRef = useRef(Boolean(cachedSnapshot));
   const mountedRef = useRef(true);
   const loadRef = useRef(load);
   const getErrorMessageRef = useRef(getErrorMessage);
@@ -36,20 +42,22 @@ export function useAsyncScreenData<T>({
   }, []);
 
   const run = useCallback(
-    async (isRefresh = false) => {
+    async (isRefresh = false, silent = false) => {
       if (!mountedRef.current) {
         return initialData;
       }
 
-      if (isRefresh && hasLoadedRef.current) {
+      if (!silent && isRefresh && hasLoadedRef.current) {
         setRefreshing(true);
-      } else {
+      } else if (!silent) {
         setLoading(true);
       }
       setError('');
 
       try {
-        const nextData = await loadRef.current();
+        const nextData = cacheKey
+          ? await fetchCachedResource(cacheKey, loadRef.current, { persist: persistCachedData })
+          : await loadRef.current();
         if (!mountedRef.current) {
           return nextData;
         }
@@ -59,7 +67,7 @@ export function useAsyncScreenData<T>({
         onSuccessRef.current?.(nextData);
         return nextData;
       } catch (loadError) {
-        if (mountedRef.current) {
+        if (mountedRef.current && !silent) {
           setError(
             getErrorMessageRef.current
               ? getErrorMessageRef.current(loadError)
@@ -76,7 +84,7 @@ export function useAsyncScreenData<T>({
         }
       }
     },
-    [initialData]
+    [cacheKey, initialData, persistCachedData]
   );
 
   useEffect(() => {
@@ -84,10 +92,35 @@ export function useAsyncScreenData<T>({
       return;
     }
 
-    void run().catch(() => {
-      // The hook already stores the error in state; swallow the effect-level rejection.
-    });
-  }, [run, skipInitialLoad]);
+    let cancelled = false;
+
+    void (async () => {
+      let hasHydratedCache = false;
+
+      if (cacheKey) {
+        const hydratedData = await hydrateCachedResource<T>(cacheKey);
+        if (cancelled || !mountedRef.current) {
+          return;
+        }
+
+        if (hydratedData !== null) {
+          hasHydratedCache = true;
+          hasLoadedRef.current = true;
+          setData(hydratedData);
+          setLoading(false);
+          onSuccessRef.current?.(hydratedData);
+        }
+      }
+
+      void run(false, Boolean(cachedSnapshot) || hasHydratedCache).catch(() => {
+        // The hook already stores the error in state; swallow the effect-level rejection.
+      });
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [cacheKey, cachedSnapshot, run, skipInitialLoad]);
 
   return {
     data,

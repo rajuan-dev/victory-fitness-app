@@ -5,6 +5,8 @@ import { useRouter } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
 import { Colors } from '../../constants/Colors';
 import { apiRequest } from '../../lib/api';
+import { fetchChallengeOverviewData, CHALLENGE_OVERVIEW_CACHE_KEY } from '../../lib/screenData';
+import { getCachedResourceSnapshot } from '../../lib/resourceCache';
 import { useLanguage } from '../../lib/i18n';
 
 const { width } = Dimensions.get('window');
@@ -184,19 +186,22 @@ function ChallengeSkeletonCard() {
 export default function ChallengesSection({ refreshToken = 0 }: { refreshToken?: number }) {
   const router = useRouter();
   const { t } = useLanguage();
+  const cachedOverview = getCachedResourceSnapshot<ChallengeOverview>(CHALLENGE_OVERVIEW_CACHE_KEY);
   const [cards, setCards] = React.useState<HomeChallengeCard[]>([]);
-  const [loading, setLoading] = React.useState(true);
+  const [loading, setLoading] = React.useState(!cachedOverview);
+  const [loadError, setLoadError] = React.useState('');
   const [joiningId, setJoiningId] = React.useState('');
   const hasMountedRef = React.useRef(false);
 
   const loadChallenges = React.useCallback(async (showLoader = true) => {
 
-    if (showLoader) {
+    if (showLoader && !cachedOverview) {
       setLoading(true);
     }
 
     try {
-      const response = await apiRequest<ChallengeOverview>('/challenges/overview');
+      setLoadError('');
+      const response = await fetchChallengeOverviewData() as ChallengeOverview;
       const activeChallenges = Array.isArray(response.active_challenges) ? response.active_challenges : [];
       const readyChallenges = Array.isArray(response.ready_to_start) ? response.ready_to_start : [];
 
@@ -259,14 +264,65 @@ export default function ChallengesSection({ refreshToken = 0 }: { refreshToken?:
       }));
 
       setCards(activeCards.length > 0 ? activeCards : readyCards);
-    } catch {
-      setCards([]);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '';
+      const normalizedMessage = message.toLowerCase();
+      setLoadError(
+        normalizedMessage.includes('timed out') || normalizedMessage.includes('timeout')
+          ? t('Challenge request timed out. Please try again.')
+          : t('Unable to load challenges right now.'),
+      );
     } finally {
       if (showLoader) {
         setLoading(false);
       }
     }
-  }, [joiningId, router]);
+  }, [cachedOverview, joiningId, router]);
+
+  React.useEffect(() => {
+    if (!cachedOverview) {
+      return;
+    }
+
+    const activeChallenges = Array.isArray(cachedOverview.active_challenges) ? cachedOverview.active_challenges : [];
+    const readyChallenges = Array.isArray(cachedOverview.ready_to_start) ? cachedOverview.ready_to_start : [];
+
+    const activeCards: HomeChallengeCard[] = activeChallenges.slice(0, 4).map((challenge) => ({
+      id: challenge.id,
+      challengeId: challenge.challenge_id,
+      title: challenge.title,
+      category: challenge.type,
+      description: challenge.description || challenge.plan_text || `${challenge.days_left} days left in this challenge.`,
+      points: challenge.points,
+      participants: challenge.participants,
+      thumbnail: challenge.thumbnail,
+      state: 'ACTIVE',
+      progress: challenge.progress,
+      daysLeftLabel: `${challenge.days_left} days left`,
+      isJoining: false,
+      onPrimaryPress: () => router.push(`/challenges/progress/${challenge.challenge_id}` as any),
+      onSecondaryPress: () => router.push(`/challenges/chat/${challenge.challenge_id}` as any),
+    }));
+
+    const readyCards: HomeChallengeCard[] = readyChallenges.slice(0, 4).map((challenge) => ({
+      id: challenge.id,
+      challengeId: challenge.id,
+      title: challenge.title,
+      category: challenge.type,
+      description: challenge.description || `${challenge.duration_days} day challenge ready to start.`,
+      points: challenge.points,
+      participants: challenge.participants,
+      thumbnail: challenge.thumbnail,
+      state: challenge.can_start ? 'READY' : 'UPCOMING',
+      progress: 0,
+      daysLeftLabel: challenge.can_start ? 'Ready' : 'Locked',
+      isJoining: joiningId === challenge.id,
+      onPrimaryPress: async () => {},
+      onSecondaryPress: () => {},
+    }));
+
+    setCards(activeCards.length > 0 ? activeCards : readyCards);
+  }, [cachedOverview, joiningId, router]);
 
   useFocusEffect(
     React.useCallback(() => {
@@ -290,6 +346,13 @@ export default function ChallengesSection({ refreshToken = 0 }: { refreshToken?:
           <Text style={styles.headerInviteBtnText}>{t('View All')}</Text>
         </TouchableOpacity>
       </View>
+
+      {loadError ? (
+        <View style={styles.errorBanner}>
+          <Ionicons name="alert-circle-outline" size={16} color="#FCA5A5" />
+          <Text style={styles.errorBannerText}>{loadError}</Text>
+        </View>
+      ) : null}
 
       {loading ? (
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.challengesScroll}>
@@ -350,6 +413,25 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontFamily: 'Inter_700Bold',
   },
+  errorBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: 'rgba(127,29,29,0.25)',
+    borderWidth: 1,
+    borderColor: 'rgba(248,113,113,0.4)',
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    marginBottom: 12,
+  },
+  errorBannerText: {
+    flex: 1,
+    color: '#FECACA',
+    fontSize: 12,
+    lineHeight: 18,
+    fontFamily: 'Inter_500Medium',
+  },
   challengeLibraryLead: {
     color: '#D5DEF0',
     fontSize: 18,
@@ -357,15 +439,20 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter_700Bold',
     marginBottom: 14,
   },
-  challengesScroll: { paddingRight: 20, marginBottom: 8 },
+  challengesScroll: {
+    paddingVertical: 4,
+    marginBottom: 8,
+  },
   cardWrap: {
     width: width - 56,
-    marginRight: 16,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    marginRight: 4,
   },
   challengeLibraryCard: {
     backgroundColor: '#343B4D',
     borderRadius: 18,
-    padding: 14,
+    padding: 16,
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.05)',
   },
@@ -529,9 +616,11 @@ const styles = StyleSheet.create({
   skeletonCard: {
     backgroundColor: '#343B4D',
     borderRadius: 18,
-    padding: 14,
+    padding: 16,
     width: width - 56,
-    marginRight: 16,
+    marginRight: 4,
+    marginHorizontal: 12,
+    marginVertical: 8,
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.05)',
   },

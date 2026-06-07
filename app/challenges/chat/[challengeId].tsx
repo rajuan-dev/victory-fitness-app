@@ -22,6 +22,8 @@ import { apiRequest, fetchCurrentUser, getValidAuthTokens } from '../../../lib/a
 import { ErrorPopupModal } from '../../../components/ErrorPopupModal';
 import { formatAppError } from '../../../lib/error';
 import { useLanguage } from '../../../lib/i18n';
+import { getCachedResourceSnapshot } from '../../../lib/resourceCache';
+import { fetchChallengeChatData, getChallengeChatCacheKey } from '../../../lib/screenData';
 
 type ChallengeReaction = {
   emoji: string;
@@ -294,9 +296,10 @@ export default function ChallengeChatScreen() {
   const params = useLocalSearchParams<{ challengeId?: string }>();
   const challengeId = Array.isArray(params.challengeId) ? params.challengeId[0] : params.challengeId;
   const socketRef = useRef<WebSocket | null>(null);
+  const cachedThread = challengeId ? getCachedResourceSnapshot<ChallengeChatThread>(getChallengeChatCacheKey(challengeId)) : null;
 
-  const [thread, setThread] = useState<ChallengeChatThread | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [thread, setThread] = useState<ChallengeChatThread | null>(cachedThread ?? null);
+  const [loading, setLoading] = useState(!cachedThread);
   const [refreshing, setRefreshing] = useState(false);
   const [sending, setSending] = useState(false);
   const [inputText, setInputText] = useState('');
@@ -348,14 +351,14 @@ export default function ChallengeChatScreen() {
       return;
     }
 
-    if (showLoader) {
+    if (showLoader && !cachedThread) {
       setLoading(true);
     } else {
       setRefreshing(true);
     }
 
     try {
-      const response = await apiRequest<ChallengeChatThread>(`/challenges/${encodeURIComponent(challengeId)}/chat`);
+      const response = await fetchChallengeChatData<ChallengeChatThread>(challengeId);
       setThread(response);
     } catch (error) {
       setErrorDialog(formatAppError(error, t('Failed to load challenge chat.')));
@@ -363,7 +366,7 @@ export default function ChallengeChatScreen() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [challengeId]);
+  }, [cachedThread, challengeId, t]);
 
   useEffect(() => {
     void loadThread(true);

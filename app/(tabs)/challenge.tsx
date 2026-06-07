@@ -23,6 +23,13 @@ import AccessRestrictionModal from '../../components/AccessRestrictionModal';
 import { apiRequest, fetchCurrentUser, getAuthUser, resolveRemoteAssetUrl } from '../../lib/api';
 import { canAccessFeature, normalizeSubscriptionTier } from '../../lib/access';
 import { useLanguage } from '../../lib/i18n';
+import { getCachedResourceSnapshot } from '../../lib/resourceCache';
+import {
+  CHALLENGE_OVERVIEW_CACHE_KEY,
+  COMMUNITY_POSTS_CACHE_KEY,
+  fetchChallengeOverviewData,
+  fetchCommunityPostsData,
+} from '../../lib/screenData';
 import { useModuleAccessGuard } from '../../lib/useModuleAccessGuard';
 import { replaceRoute } from '../../lib/navigation';
 
@@ -261,22 +268,26 @@ export default function ChallengesScreen() {
       })),
     [t]
   );
+  const cachedChallengeOverview = getCachedResourceSnapshot<ChallengeOverview>(CHALLENGE_OVERVIEW_CACHE_KEY);
+  const cachedCommunityPosts = getCachedResourceSnapshot<{ posts: CommunityPost[] }>(COMMUNITY_POSTS_CACHE_KEY);
   const [activeTab, setActiveTab] = useState('CHALLENGES');
   const [canAccessChallenges, setCanAccessChallenges] = useState(true);
   const [canAccessCommunity, setCanAccessCommunity] = useState(true);
-  const [challengeOverview, setChallengeOverview] = useState<ChallengeOverview>({
-    active_chats: [],
-    active_challenges: [],
-    completed_challenges: [],
-    ready_to_start: [],
-  });
-  const [challengeLoading, setChallengeLoading] = useState(false);
+  const [challengeOverview, setChallengeOverview] = useState<ChallengeOverview>(
+    cachedChallengeOverview ?? {
+      active_chats: [],
+      active_challenges: [],
+      completed_challenges: [],
+      ready_to_start: [],
+    }
+  );
+  const [challengeLoading, setChallengeLoading] = useState(!cachedChallengeOverview);
   const [challengeError, setChallengeError] = useState('');
   const [challengeStarting, setChallengeStarting] = useState<Record<string, boolean>>({});
   const [challengeDayCompleting, setChallengeDayCompleting] = useState<Record<string, boolean>>({});
-  const [communityPosts, setCommunityPosts] = useState<CommunityPost[]>([]);
+  const [communityPosts, setCommunityPosts] = useState<CommunityPost[]>(cachedCommunityPosts?.posts ?? []);
   const [communityDraft, setCommunityDraft] = useState('');
-  const [communityLoading, setCommunityLoading] = useState(false);
+  const [communityLoading, setCommunityLoading] = useState(!cachedCommunityPosts);
   const [communityPosting, setCommunityPosting] = useState(false);
   const [communityError, setCommunityError] = useState('');
   const [screenRefreshing, setScreenRefreshing] = useState(false);
@@ -421,12 +432,12 @@ export default function ChallengesScreen() {
       });
       return;
     }
-    if (showLoading) {
+    if (showLoading && !cachedChallengeOverview) {
       setChallengeLoading(true);
     }
     setChallengeError('');
     try {
-      const response = await apiRequest<ChallengeOverview>('/challenges/overview');
+      const response = await fetchChallengeOverviewData() as ChallengeOverview;
       setChallengeOverview({
         active_chats: Array.isArray(response.active_chats) ? response.active_chats : [],
         active_challenges: Array.isArray(response.active_challenges) ? response.active_challenges : [],
@@ -449,12 +460,12 @@ export default function ChallengesScreen() {
       setCommunityPosts([]);
       return;
     }
-    if (showLoading) {
+    if (showLoading && !cachedCommunityPosts) {
       setCommunityLoading(true);
     }
     setCommunityError('');
     try {
-      const response = await apiRequest<{ posts: CommunityPost[] }>('/community/posts');
+      const response = await fetchCommunityPostsData() as { posts: CommunityPost[] };
       setCommunityPosts(Array.isArray(response.posts) ? response.posts : []);
     } catch (error) {
       setCommunityError(error instanceof Error ? error.message : t('Failed to load community posts.'));

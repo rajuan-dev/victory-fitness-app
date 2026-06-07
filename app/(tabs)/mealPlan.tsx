@@ -28,6 +28,8 @@ import { apiRequest, fetchCurrentUser } from '../../lib/api';
 import { canAccessFeature } from '../../lib/access';
 import { formatAppError } from '../../lib/error';
 import { useLanguage } from '../../lib/i18n';
+import { getCachedResourceSnapshot, primeCachedResource } from '../../lib/resourceCache';
+import { fetchLatestNutritionPlanData, NUTRITION_PLAN_LATEST_CACHE_KEY } from '../../lib/screenData';
 import { useModuleAccessGuard } from '../../lib/useModuleAccessGuard';
 import { replaceRoute } from '../../lib/navigation';
 import {
@@ -1223,6 +1225,10 @@ export default function JournalScreen() {
   const { t } = useLanguage();
   const genderOptions = React.useMemo(() => getGenderOptions(t), [t]);
   const planLoadingMessages = React.useMemo(() => getPlanLoadingMessages(t), [t]);
+  const cachedLatestPlan = React.useMemo(
+    () => getCachedResourceSnapshot<NutritionPlanApiResponse>(NUTRITION_PLAN_LATEST_CACHE_KEY) ?? null,
+    []
+  );
   const [step, setStep] = useState(1);
   const [generating, setGenerating] = useState(false);
   const [generationSuccess, setGenerationSuccess] = useState(false);
@@ -1230,10 +1236,10 @@ export default function JournalScreen() {
   const [done, setDone] = useState(false);
   const [hasSavedPlan, setHasSavedPlan] = useState(false);
   const [creatingNewPlan, setCreatingNewPlan] = useState(false);
-  const [loadingSavedPlan, setLoadingSavedPlan] = useState(true);
+  const [loadingSavedPlan, setLoadingSavedPlan] = useState(!cachedLatestPlan);
   const [errorDialog, setErrorDialog] = useState<{ title: string; message: string } | null>(null);
   const successScale = useState(new Animated.Value(0))[0];
-  const [generatedPlan, setGeneratedPlan] = useState<NutritionPlanApiResponse | null>(null);
+  const [generatedPlan, setGeneratedPlan] = useState<NutritionPlanApiResponse | null>(cachedLatestPlan);
   const [loadingMessageIndex, setLoadingMessageIndex] = useState(0);
   const successPlayer = useAudioPlayer(PLAN_SUCCESS_SOUND);
 
@@ -1251,9 +1257,14 @@ export default function JournalScreen() {
   const [healthConditions, setHealthConditions] = useState<Set<string>>(new Set());
 
   const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+  const syncLatestNutritionPlanCache = React.useCallback(async (plan: NutritionPlanApiResponse | null) => {
+    if (!plan) {
+      return;
+    }
+    await primeCachedResource(NUTRITION_PLAN_LATEST_CACHE_KEY, plan);
+  }, []);
 
-  const loadLatestNutritionPlan = async () => {
-    const latestPlan = await apiRequest<NutritionPlanApiResponse>('/ai/nutrition/plan/latest');
+  const applyLatestNutritionPlan = React.useCallback((latestPlan: NutritionPlanApiResponse) => {
     setGeneratedPlan(latestPlan);
     setHasSavedPlan(true);
     const mappedProfile = mapPlanProfile(latestPlan);
@@ -1271,6 +1282,12 @@ export default function JournalScreen() {
       setHealthConditions(new Set(mappedProfile.healthConditions));
     }
     setDone(true);
+  }, []);
+
+  const loadLatestNutritionPlan = async () => {
+    const latestPlan = await fetchLatestNutritionPlanData() as NutritionPlanApiResponse;
+    await syncLatestNutritionPlanCache(latestPlan);
+    applyLatestNutritionPlan(latestPlan);
     return latestPlan;
   };
 
@@ -1328,7 +1345,15 @@ export default function JournalScreen() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [applyLatestNutritionPlan]);
+
+  useEffect(() => {
+    if (!cachedLatestPlan) {
+      return;
+    }
+
+    applyLatestNutritionPlan(cachedLatestPlan);
+  }, [applyLatestNutritionPlan, cachedLatestPlan]);
 
   useEffect(() => {
     if (!generating) {
@@ -1450,6 +1475,7 @@ export default function JournalScreen() {
       }
 
       setGeneratedPlan(savedPlan);
+      await syncLatestNutritionPlanCache(savedPlan);
 
       setGenerating(false);
       setGenerationStage(null);
