@@ -270,6 +270,13 @@ export default function ChallengesScreen() {
   );
   const cachedChallengeOverview = getCachedResourceSnapshot<ChallengeOverview>(CHALLENGE_OVERVIEW_CACHE_KEY);
   const cachedCommunityPosts = getCachedResourceSnapshot<{ posts: CommunityPost[] }>(COMMUNITY_POSTS_CACHE_KEY);
+  const hasCachedChallengeOverview = Boolean(
+    cachedChallengeOverview &&
+      ((Array.isArray(cachedChallengeOverview.active_challenges) && cachedChallengeOverview.active_challenges.length > 0) ||
+        (Array.isArray(cachedChallengeOverview.ready_to_start) && cachedChallengeOverview.ready_to_start.length > 0) ||
+        (Array.isArray(cachedChallengeOverview.completed_challenges) && cachedChallengeOverview.completed_challenges.length > 0)),
+  );
+  const hasCachedCommunityPosts = Boolean(cachedCommunityPosts && Array.isArray(cachedCommunityPosts.posts) && cachedCommunityPosts.posts.length > 0);
   const [activeTab, setActiveTab] = useState('CHALLENGES');
   const [canAccessChallenges, setCanAccessChallenges] = useState(true);
   const [canAccessCommunity, setCanAccessCommunity] = useState(true);
@@ -445,13 +452,27 @@ export default function ChallengesScreen() {
         ready_to_start: Array.isArray(response.ready_to_start) ? response.ready_to_start : [],
       });
     } catch (error) {
-      setChallengeError(error instanceof Error ? error.message : t('Failed to load challenges.'));
+      const hasVisibleChallenges =
+        challengeOverview.active_challenges.length > 0 ||
+        challengeOverview.ready_to_start.length > 0 ||
+        challengeOverview.completed_challenges.length > 0;
+      if (hasVisibleChallenges || hasCachedChallengeOverview) {
+        setChallengeError('');
+        return;
+      }
+      const message = error instanceof Error ? error.message : '';
+      const normalizedMessage = message.toLowerCase();
+      setChallengeError(
+        normalizedMessage.includes('timed out') || normalizedMessage.includes('timeout')
+          ? t('Unable to load challenges right now.')
+          : message || t('Failed to load challenges.'),
+      );
     } finally {
       if (showLoading) {
         setChallengeLoading(false);
       }
     }
-  }, [canAccessChallenges]);
+  }, [canAccessChallenges, challengeOverview.active_challenges.length, challengeOverview.completed_challenges.length, challengeOverview.ready_to_start.length, hasCachedChallengeOverview, t]);
 
   const loadCommunityPosts = useCallback(async (showLoading = true) => {
     if (!canAccessCommunity) {
@@ -468,13 +489,23 @@ export default function ChallengesScreen() {
       const response = await fetchCommunityPostsData() as { posts: CommunityPost[] };
       setCommunityPosts(Array.isArray(response.posts) ? response.posts : []);
     } catch (error) {
-      setCommunityError(error instanceof Error ? error.message : t('Failed to load community posts.'));
+      if (communityPosts.length > 0 || hasCachedCommunityPosts) {
+        setCommunityError('');
+        return;
+      }
+      const message = error instanceof Error ? error.message : '';
+      const normalizedMessage = message.toLowerCase();
+      setCommunityError(
+        normalizedMessage.includes('timed out') || normalizedMessage.includes('timeout')
+          ? t('Unable to load community posts right now.')
+          : message || t('Failed to load community posts.'),
+      );
     } finally {
       if (showLoading) {
         setCommunityLoading(false);
       }
     }
-  }, [canAccessCommunity]);
+  }, [canAccessCommunity, communityPosts.length, hasCachedCommunityPosts, t]);
 
   useEffect(() => {
     if (activeTab !== 'CHALLENGES') {
@@ -1005,11 +1036,6 @@ export default function ChallengesScreen() {
         {/* ── CHALLENGES TAB ── */}
         {activeTab === 'CHALLENGES' && (
           <View style={styles.section}>
-            {challengeError ? (
-              <View style={styles.challengeStatusCard}>
-                <Text style={styles.challengeStatusText}>{challengeError}</Text>
-              </View>
-            ) : null}
             {challengeLoading ? renderChallengeSkeleton() : null}
 
             {/* ─ Active Challenge Chats ─ */}
