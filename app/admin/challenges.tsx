@@ -23,6 +23,7 @@ import {
   fetchAdminChallenges,
   fetchCurrentUser,
 } from '../../lib/api';
+import { goBackOrReplace } from '../../lib/navigation';
 
 const DURATION_OPTIONS = [3, 5, 7, 14, 21];
 const INITIAL_FORM: AdminChallengePayload = {
@@ -131,7 +132,7 @@ export default function AdminChallengesScreen() {
     <View style={styles.screen}>
       <Stack.Screen options={{ headerShown: false }} />
       <View style={styles.header}>
-        <TouchableOpacity style={styles.backButton} activeOpacity={0.88} onPress={() => router.back()}>
+        <TouchableOpacity style={styles.backButton} activeOpacity={0.88} onPress={() => goBackOrReplace(router, '/profile')}>
           <Ionicons name="chevron-back" size={22} color="#fff" />
         </TouchableOpacity>
         <View style={styles.headerTextWrap}>

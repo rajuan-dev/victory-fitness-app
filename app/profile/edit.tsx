@@ -20,6 +20,7 @@ import { fetchCurrentUser, updateCurrentUserProfile, uploadCurrentUserProfileIma
 import { formatAppError } from '../../lib/error';
 import { useLanguage } from '../../lib/i18n';
 import { useAsyncScreenData } from '../../hooks/useAsyncScreenData';
+import { goBackOrReplace } from '../../lib/navigation';
 
 export default function EditProfileScreen() {
   const router = useRouter();
@@ -61,7 +62,7 @@ export default function EditProfileScreen() {
         country: location.trim(),
         profileImage: profileImage.trim() || undefined,
       });
-      router.back();
+      goBackOrReplace(router, '/profile');
     } catch (error) {
       setErrorDialog(formatAppError(error, t('Unable to save profile changes.')));
     } finally {
@@ -133,7 +134,7 @@ export default function EditProfileScreen() {
         headerTintColor: '#fff',
         headerTitleStyle: { fontFamily: 'Inter_700Bold', fontSize: 16, letterSpacing: 2 } as any,
         headerLeft: () => (
-          <TouchableOpacity onPress={() => router.back()} style={{ marginLeft: 8 }}>
+          <TouchableOpacity onPress={() => goBackOrReplace(router, '/profile')} style={{ marginLeft: 8 }}>
             <Ionicons name="chevron-back" size={28} color="#fff" />
           </TouchableOpacity>
         ),

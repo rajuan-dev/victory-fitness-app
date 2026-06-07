@@ -133,6 +133,10 @@ export default function JournalHistoryScreen() {
 
   const handleBackPress = useCallback(() => {
     setSelectedEntry(null);
+    if (router.canGoBack()) {
+      router.back();
+      return;
+    }
     router.replace('/journal');
   }, [router]);
 

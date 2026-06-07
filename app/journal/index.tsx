@@ -37,6 +37,10 @@ export default function JournalScreen() {
   const selectedMood = useMemo(() => MOODS[mood] ?? MOODS[3], [mood]);
 
   const handleBackPress = () => {
+    if (router.canGoBack()) {
+      router.back();
+      return;
+    }
     router.replace("/(tabs)");
   };
 

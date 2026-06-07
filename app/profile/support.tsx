@@ -16,6 +16,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../constants/Colors';
 import { submitSupportMessage } from '../../lib/api';
 import { useLanguage } from '../../lib/i18n';
+import { goBackOrReplace } from '../../lib/navigation';
 
 export default function ContactUsScreen() {
   const router = useRouter();
@@ -63,7 +64,7 @@ export default function ContactUsScreen() {
         headerTintColor: '#fff',
         headerTitleStyle: { fontFamily: 'Inter_700Bold', fontSize: 16, letterSpacing: 2 } as any,
         headerLeft: () => (
-          <TouchableOpacity onPress={() => router.back()} style={{ marginLeft: 8 }}>
+          <TouchableOpacity onPress={() => goBackOrReplace(router, '/profile')} style={{ marginLeft: 8 }}>
             <Ionicons name="chevron-back" size={28} color="#fff" />
           </TouchableOpacity>
         ),
