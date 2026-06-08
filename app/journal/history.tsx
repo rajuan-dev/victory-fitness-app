@@ -15,11 +15,13 @@ import { Stack, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../constants/Colors';
 import { ErrorPopupModal } from '../../components/ErrorPopupModal';
+import { apiRequest } from '../../lib/api';
 import { formatAppError } from '../../lib/error';
 import { useLanguage } from '../../lib/i18n';
 import { ScreenState } from '../../components/ScreenState';
 import { useAsyncScreenData } from '../../hooks/useAsyncScreenData';
 import { fetchJournalEntries, JOURNAL_ENTRIES_CACHE_KEY, JournalEntry } from '../../lib/screenData';
+import { primeCachedResource } from '../../lib/resourceCache';
 
 const MOOD_EMOJI: Record<string, string> = {
   ANGRY: '\u{1F621}',
@@ -117,12 +119,15 @@ export default function JournalHistoryScreen() {
   const { t } = useLanguage();
   const [errorDialog, setErrorDialog] = useState<{ title: string; message: string } | null>(null);
   const [selectedEntry, setSelectedEntry] = useState<JournalEntry | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<JournalEntry | null>(null);
+  const [deleting, setDeleting] = useState(false);
   const {
     data: journalData,
     loading,
     refreshing,
     error,
     reload,
+    setData,
   } = useAsyncScreenData({
     initialData: { entries: [] as JournalEntry[] },
     cacheKey: JOURNAL_ENTRIES_CACHE_KEY,
@@ -134,12 +139,36 @@ export default function JournalHistoryScreen() {
 
   const handleBackPress = useCallback(() => {
     setSelectedEntry(null);
+    setDeleteTarget(null);
     if (router.canGoBack()) {
       router.back();
       return;
     }
     router.replace('/journal');
   }, [router]);
+
+  const handleDeleteEntry = useCallback(async () => {
+    if (!deleteTarget || deleting) {
+      return;
+    }
+
+    setDeleting(true);
+    setErrorDialog(null);
+    try {
+      await apiRequest(`/journal/entries/${encodeURIComponent(deleteTarget.id)}`, {
+        method: 'DELETE',
+      });
+      const nextEntries = entries.filter((item) => item.id !== deleteTarget.id);
+      setData({ entries: nextEntries });
+      await primeCachedResource(JOURNAL_ENTRIES_CACHE_KEY, { entries: nextEntries }, true);
+      setSelectedEntry(null);
+      setDeleteTarget(null);
+    } catch (deleteError) {
+      setErrorDialog(formatAppError(deleteError, t('Unable to delete this journal entry right now.')));
+    } finally {
+      setDeleting(false);
+    }
+  }, [deleteTarget, deleting, entries, setData, t]);
 
   const renderItem = ({ item }: { item: JournalEntry }) => {
     const moodEmoji = MOOD_EMOJI[item.mood] ?? '\u{1F4DD}';
@@ -245,8 +274,73 @@ export default function JournalHistoryScreen() {
                 )
               )}
             </ScrollView>
+            <TouchableOpacity
+              style={[styles.deleteButton, deleting && styles.deleteButtonDisabled]}
+              activeOpacity={0.85}
+              onPress={() => {
+                if (selectedEntry && !deleting) {
+                  setDeleteTarget(selectedEntry);
+                }
+              }}
+              disabled={deleting}
+            >
+              <Ionicons name="trash-outline" size={18} color="#F87171" />
+              <Text style={styles.deleteButtonText}>{t('Delete Journal')}</Text>
+            </TouchableOpacity>
           </Pressable>
         </Pressable>
+      </Modal>
+      <Modal
+        visible={Boolean(deleteTarget)}
+        transparent
+        animationType="fade"
+        onRequestClose={() => {
+          if (!deleting) {
+            setDeleteTarget(null);
+          }
+        }}
+      >
+        <View style={styles.confirmOverlay}>
+          <Pressable
+            style={StyleSheet.absoluteFill}
+            onPress={() => {
+              if (!deleting) {
+                setDeleteTarget(null);
+              }
+            }}
+          />
+          <View style={styles.confirmCard}>
+            <View style={styles.confirmIconWrap}>
+              <Ionicons name="trash-outline" size={24} color="#F87171" />
+            </View>
+            <Text style={styles.confirmTitle}>{t('Delete journal entry?')}</Text>
+            <Text style={styles.confirmText}>{t('This will permanently remove the selected journal entry from your history.')}</Text>
+            <View style={styles.confirmActions}>
+              <TouchableOpacity
+                style={styles.confirmCancelButton}
+                activeOpacity={0.85}
+                onPress={() => setDeleteTarget(null)}
+                disabled={deleting}
+              >
+                <Text style={styles.confirmCancelText}>{t('Cancel')}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.confirmDeleteButton, deleting && styles.deleteButtonDisabled]}
+                activeOpacity={0.85}
+                onPress={() => {
+                  void handleDeleteEntry();
+                }}
+                disabled={deleting}
+              >
+                {deleting ? (
+                  <Ionicons name="hourglass-outline" size={18} color="#fff" />
+                ) : (
+                  <Text style={styles.confirmDeleteText}>{t('Delete')}</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
       </Modal>
       <Stack.Screen
         options={{
@@ -506,6 +600,26 @@ const styles = StyleSheet.create({
   modalBody: {
     maxHeight: 380,
   },
+  deleteButton: {
+    marginTop: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    height: 52,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(248,113,113,0.28)',
+    backgroundColor: 'rgba(248,113,113,0.08)',
+  },
+  deleteButtonDisabled: {
+    opacity: 0.55,
+  },
+  deleteButtonText: {
+    color: '#F87171',
+    fontSize: 14,
+    fontFamily: 'Inter_700Bold',
+  },
   modalEntryText: {
     color: 'rgba(255,255,255,0.82)',
     fontSize: 16,
@@ -536,5 +650,81 @@ const styles = StyleSheet.create({
     borderRadius: 3,
     backgroundColor: Colors.accentBlue,
     marginTop: 10,
+  },
+  confirmOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.78)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  confirmCard: {
+    width: '100%',
+    maxWidth: 340,
+    backgroundColor: '#101827',
+    borderRadius: 22,
+    paddingHorizontal: 20,
+    paddingTop: 22,
+    paddingBottom: 18,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+  },
+  confirmIconWrap: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    alignSelf: 'center',
+    backgroundColor: 'rgba(248,113,113,0.12)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 14,
+  },
+  confirmTitle: {
+    color: '#fff',
+    fontSize: 20,
+    fontFamily: 'Inter_700Bold',
+    textAlign: 'center',
+    marginBottom: 10,
+  },
+  confirmText: {
+    color: Colors.textSecondary,
+    fontSize: 14,
+    lineHeight: 21,
+    fontFamily: 'Inter_400Regular',
+    textAlign: 'center',
+    marginBottom: 18,
+  },
+  confirmActions: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 12,
+  },
+  confirmCancelButton: {
+    minWidth: 110,
+    minHeight: 44,
+    paddingHorizontal: 16,
+    borderRadius: 14,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.08)',
+  },
+  confirmCancelText: {
+    color: '#fff',
+    fontSize: 14,
+    fontFamily: 'Inter_700Bold',
+  },
+  confirmDeleteButton: {
+    minWidth: 110,
+    minHeight: 44,
+    paddingHorizontal: 16,
+    borderRadius: 14,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#DC2626',
+  },
+  confirmDeleteText: {
+    color: '#fff',
+    fontSize: 14,
+    fontFamily: 'Inter_700Bold',
   },
 });
