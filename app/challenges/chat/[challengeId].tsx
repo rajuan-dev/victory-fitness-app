@@ -135,13 +135,15 @@ declare const process: {
   env?: Record<string, string | undefined>;
 };
 
+const PRODUCTION_WEB_API_URL = 'https://victory-fitness-backend-gamma.vercel.app';
+
 function getDefaultApiUrl(): string {
   if (Platform.OS === 'android') {
     return 'http://10.0.2.2:8000';
   }
 
   if (Platform.OS === 'web') {
-    return '';
+    return PRODUCTION_WEB_API_URL;
   }
 
   return 'http://localhost:8000';
@@ -162,10 +164,6 @@ function resolveApiUrl(url: string): string {
 }
 
 function buildChallengeChatSocketUrl(challengeId: string, token: string) {
-  if (!RAW_API_URL) {
-    throw new Error('EXPO_PUBLIC_API_URL is not configured for this web build.');
-  }
-
   const apiUrl = resolveApiUrl(RAW_API_URL).replace(/^http/, 'ws').replace(/\/$/, '');
   return `${apiUrl}/ws/challenges/${encodeURIComponent(challengeId)}/chat?token=${encodeURIComponent(token)}`;
 }
