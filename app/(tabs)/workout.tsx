@@ -18,7 +18,7 @@ import { Colors } from '../../constants/Colors';
 import { fetchCurrentUser } from '../../lib/api';
 import { canAccessFeature } from '../../lib/access';
 import VictoryHeader from '../../components/VictoryHeader';
-import { fetchWorkoutLibrary, WorkoutLibraryCategory, WorkoutLibraryItem } from '../../lib/workouts';
+import { fetchWorkoutLibrary, getCachedWorkoutLibrary, WorkoutLibraryCategory, WorkoutLibraryItem } from '../../lib/workouts';
 import { formatAppError } from '../../lib/error';
 import { useDebouncedValue } from '../../hooks/useDebouncedValue';
 import {
@@ -53,24 +53,34 @@ export default function WorkoutScreen() {
   const router = useRouter();
   const { t } = useLanguage();
   const hasLoadedLibraryRef = React.useRef(false);
+  const initialLibrary = React.useMemo(
+    () =>
+      getCachedWorkoutLibrary() ?? {
+        featuredWorkout: null,
+        workouts: [],
+        categories: [],
+      },
+    []
+  );
   const [searchQuery, setSearchQuery] = useState('');
   const debouncedSearchQuery = useDebouncedValue(searchQuery, 350);
   const [library, setLibrary] = useState<{
     featuredWorkout: WorkoutLibraryItem | null;
     workouts: WorkoutLibraryItem[];
     categories: WorkoutLibraryCategory[];
-  }>({
-    featuredWorkout: null,
-    workouts: [],
-    categories: [],
-  });
-  const [loading, setLoading] = useState(true);
+  }>(initialLibrary);
+  const [loading, setLoading] = useState(!initialLibrary.featuredWorkout && initialLibrary.workouts.length === 0 && initialLibrary.categories.length === 0);
   const [refreshing, setRefreshing] = useState(false);
   const [searching, setSearching] = useState(false);
   const [error, setError] = useState('');
   const [strengthPlan, setStrengthPlan] = useState<StrengthPlanResponse | null>(null);
   const [videoPlan, setVideoPlan] = useState<VideoPlanResponse | null>(null);
   const [canAccessWorkoutPlans, setCanAccessWorkoutPlans] = useState(true);
+
+  useEffect(() => {
+    hasLoadedLibraryRef.current =
+      Boolean(initialLibrary.featuredWorkout) || initialLibrary.workouts.length > 0 || initialLibrary.categories.length > 0;
+  }, [initialLibrary]);
 
   useEffect(() => {
     let cancelled = false;
@@ -99,11 +109,18 @@ export default function WorkoutScreen() {
     let isMounted = true;
 
     const loadLibrary = async () => {
-      const shouldShowFullScreenLoader = !hasLoadedLibraryRef.current;
+      const cachedLibrary = debouncedSearchQuery ? null : getCachedWorkoutLibrary();
+      if (cachedLibrary && isMounted) {
+        setLibrary(cachedLibrary);
+        hasLoadedLibraryRef.current = true;
+        setLoading(false);
+      }
+
+      const shouldShowFullScreenLoader = !hasLoadedLibraryRef.current && !cachedLibrary;
 
       if (shouldShowFullScreenLoader) {
         setLoading(true);
-      } else {
+      } else if (hasLoadedLibraryRef.current) {
         setSearching(true);
       }
       setError('');

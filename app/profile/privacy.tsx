@@ -11,47 +11,17 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Stack, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../constants/Colors';
-import { apiRequest } from '../../lib/api';
 import { goBackOrReplace } from '../../lib/navigation';
-
-type PrivacyPolicyPayload = {
-  title: string;
-  plain_text: string;
-  updated_at: string;
-};
+import { useAsyncScreenData } from '../../hooks/useAsyncScreenData';
+import { fetchPrivacyPolicy, PRIVACY_POLICY_CACHE_KEY } from '../../lib/screenData';
 
 export default function PrivacyScreen() {
   const router = useRouter();
-  const [loading, setLoading] = React.useState(true);
-  const [policy, setPolicy] = React.useState<PrivacyPolicyPayload | null>(null);
-
-  React.useEffect(() => {
-    let cancelled = false;
-
-    const loadPrivacyPolicy = async () => {
-      setLoading(true);
-      try {
-        const response = await apiRequest<PrivacyPolicyPayload>('/content/privacy-policy');
-        if (!cancelled) {
-          setPolicy(response);
-        }
-      } catch {
-        if (!cancelled) {
-          setPolicy(null);
-        }
-      } finally {
-        if (!cancelled) {
-          setLoading(false);
-        }
-      }
-    };
-
-    loadPrivacyPolicy();
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  const { data: policy, loading } = useAsyncScreenData({
+    initialData: null as Awaited<ReturnType<typeof fetchPrivacyPolicy>> | null,
+    cacheKey: PRIVACY_POLICY_CACHE_KEY,
+    load: fetchPrivacyPolicy,
+  });
 
   const sections = (policy?.plain_text || '')
     .split(/\n{2,}/)

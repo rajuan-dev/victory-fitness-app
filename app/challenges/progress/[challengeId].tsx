@@ -20,6 +20,8 @@ import { Colors } from '../../../constants/Colors';
 import { apiRequest } from '../../../lib/api';
 import { ErrorPopupModal } from '../../../components/ErrorPopupModal';
 import { formatAppError } from '../../../lib/error';
+import { getCachedResourceSnapshot } from '../../../lib/resourceCache';
+import { fetchChallengeProgressData, getChallengeProgressCacheKey } from '../../../lib/screenData';
 
 type ChallengePlanExercise = {
   id: string;
@@ -541,9 +543,10 @@ export default function ChallengeProgressScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<{ challengeId?: string }>();
   const challengeId = Array.isArray(params.challengeId) ? params.challengeId[0] : params.challengeId;
+  const cachedThread = challengeId ? getCachedResourceSnapshot<ChallengeProgressThread>(getChallengeProgressCacheKey(challengeId)) : null;
 
-  const [thread, setThread] = useState<ChallengeProgressThread | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [thread, setThread] = useState<ChallengeProgressThread | null>(cachedThread ?? null);
+  const [loading, setLoading] = useState(!cachedThread);
   const [refreshing, setRefreshing] = useState(false);
   const [completionUpdatingKey, setCompletionUpdatingKey] = useState('');
   const [expandedDays, setExpandedDays] = useState<Record<number, boolean>>({});
@@ -583,14 +586,14 @@ export default function ChallengeProgressScreen() {
       return;
     }
 
-    if (showLoader) {
+    if (showLoader && !cachedThread) {
       setLoading(true);
     } else {
       setRefreshing(true);
     }
 
     try {
-      const response = await apiRequest<ChallengeProgressThread>(`/challenges/${encodeURIComponent(challengeId)}/chat`);
+      const response = await fetchChallengeProgressData<ChallengeProgressThread>(challengeId);
       setThread(response);
       setExpandedDays((current) => {
         if (Object.keys(current).length > 0) {
@@ -605,7 +608,7 @@ export default function ChallengeProgressScreen() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [challengeId]);
+  }, [cachedThread, challengeId]);
 
   useEffect(() => {
     void loadThread(true);

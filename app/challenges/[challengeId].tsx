@@ -21,6 +21,8 @@ import { apiRequest } from '../../lib/api';
 import { ErrorPopupModal } from '../../components/ErrorPopupModal';
 import { formatAppError } from '../../lib/error';
 import { useLanguage } from '../../lib/i18n';
+import { getCachedResourceSnapshot } from '../../lib/resourceCache';
+import { fetchChallengeDetailData, getChallengeDetailCacheKey } from '../../lib/screenData';
 
 type ChallengePlanDayProgress = {
   day_number: number;
@@ -107,8 +109,9 @@ export default function ChallengeDetailScreen() {
   const { t } = useLanguage();
   const params = useLocalSearchParams<{ challengeId?: string }>();
   const challengeId = Array.isArray(params.challengeId) ? params.challengeId[0] : params.challengeId;
-  const [detail, setDetail] = useState<ChallengeDetail | null>(null);
-  const [loading, setLoading] = useState(true);
+  const cachedDetail = challengeId ? getCachedResourceSnapshot<ChallengeDetail>(getChallengeDetailCacheKey(challengeId)) : null;
+  const [detail, setDetail] = useState<ChallengeDetail | null>(cachedDetail ?? null);
+  const [loading, setLoading] = useState(!cachedDetail);
   const [refreshing, setRefreshing] = useState(false);
   const [starting, setStarting] = useState(false);
   const [completingToday, setCompletingToday] = useState(false);
@@ -120,13 +123,13 @@ export default function ChallengeDetailScreen() {
     if (!challengeId) {
       return;
     }
-    if (showLoader) {
+    if (showLoader && !cachedDetail) {
       setLoading(true);
     } else {
       setRefreshing(true);
     }
     try {
-      const response = await apiRequest<ChallengeDetail>(`/challenges/${encodeURIComponent(challengeId)}`);
+      const response = await fetchChallengeDetailData<ChallengeDetail>(challengeId);
       setDetail(response);
     } catch (error) {
       setErrorDialog(formatAppError(error, t('Failed to load challenge details.')));
@@ -134,7 +137,7 @@ export default function ChallengeDetailScreen() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [challengeId]);
+  }, [cachedDetail, challengeId, t]);
 
   useEffect(() => {
     void loadDetail(true);

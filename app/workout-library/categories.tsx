@@ -12,7 +12,7 @@ import { Stack, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../constants/Colors';
 import { formatAppError } from '../../lib/error';
-import { fetchWorkoutLibrary, WorkoutLibraryCategory } from '../../lib/workouts';
+import { fetchWorkoutLibrary, getWorkoutLibraryCacheKey, WorkoutLibraryCategory } from '../../lib/workouts';
 import { useLanguage } from '../../lib/i18n';
 import { goBackOrReplace } from '../../lib/navigation';
 import { ScreenState } from '../../components/ScreenState';
@@ -43,6 +43,7 @@ export default function WorkoutCategoriesScreen() {
     reload,
   } = useAsyncScreenData<WorkoutLibraryCategory[]>({
     initialData: [],
+    cacheKey: getWorkoutLibraryCacheKey(),
     load: async () => {
       const response = await fetchWorkoutLibrary();
       return response.categories;

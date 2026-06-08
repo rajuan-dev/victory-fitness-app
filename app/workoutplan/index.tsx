@@ -40,6 +40,7 @@ export default function WorkoutPlanScreen() {
     videoPlan: VideoPlanResponse | null;
   }>({
     initialData: { strengthPlan: null, videoPlan: null },
+    cacheKey: 'workout-plan-overview',
     load: async () => {
       const [strengthPlan, videoPlan] = await Promise.all([
         fetchLatestStrengthWorkoutPlan().catch(() => null),

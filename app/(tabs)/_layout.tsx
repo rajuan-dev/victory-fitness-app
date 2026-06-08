@@ -7,6 +7,7 @@ import { useRouter } from 'expo-router';
 import AccessRestrictionModal from '../../components/AccessRestrictionModal';
 import { fetchCurrentUser, getAuthUser, getValidAuthTokens } from '../../lib/api';
 import { getAllowedTabNames, isSubscriptionActive } from '../../lib/access';
+import { preloadAppData } from '../../lib/appPreload';
 import { useLanguage } from '../../lib/i18n';
 import { replaceRoute } from '../../lib/navigation';
 
@@ -17,6 +18,7 @@ export default function TabsLayout() {
   const [profileImage, setProfileImage] = useState('');
   const [allowedTabs, setAllowedTabs] = useState<string[] | null>(null);
   const [restrictedSection, setRestrictedSection] = useState('');
+  const hasStartedPreloadRef = React.useRef(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -64,6 +66,11 @@ export default function TabsLayout() {
 
         setAllowedTabs(getAllowedTabNames(authUser));
         setCheckingAuth(false);
+
+        if (!hasStartedPreloadRef.current) {
+          hasStartedPreloadRef.current = true;
+          void preloadAppData();
+        }
       } catch {
         if (!cancelled) {
           replaceRoute(router, '/login');

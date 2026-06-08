@@ -1,5 +1,12 @@
 import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { clearAllCachedResources, fetchCachedResource, getCachedResourceSnapshot, primeCachedResource } from './resourceCache';
+import {
+  getLongevityDashboardCacheKey,
+  getLongevityHealthRecordsCacheKey,
+  getLongevityHealthSummaryCacheKey,
+  INTEGRATIONS_CACHE_KEY,
+} from './screenData';
 
 declare const process: {
   env?: Record<string, string | undefined>;
@@ -394,6 +401,7 @@ let bodyMetricsCache: BodyMetrics | null = null;
 
 const CURRENT_USER_CACHE_TTL_MS = 30_000;
 const BODY_METRICS_CACHE_TTL_MS = 30_000;
+const BODY_METRICS_RESOURCE_KEY = 'me-body-metrics';
 
 function normalizeAuthUser(user: Partial<AuthUser> & { id?: string; name?: string; email?: string; is_verified?: boolean }): AuthUser {
   const normalizedSubscription = user.subscription && typeof user.subscription === 'object' ? user.subscription : undefined;
@@ -648,6 +656,7 @@ export async function clearAuthTokens() {
   authUserLoaded = true;
   await persistAuthUser(null);
   clearDerivedUserCaches();
+  await clearAllCachedResources();
 }
 
 export async function logout() {
@@ -776,8 +785,16 @@ export async function fetchCurrentUserBodyMetrics() {
     return bodyMetricsCache;
   }
 
+  const cachedMetrics = getCachedResourceSnapshot<BodyMetrics>(BODY_METRICS_RESOURCE_KEY);
+  if (cachedMetrics && !bodyMetricsCache) {
+    bodyMetricsCache = normalizeBodyMetrics(cachedMetrics);
+    bodyMetricsFetchedAt = 0;
+  }
+
   if (!bodyMetricsRequestPromise) {
-    bodyMetricsRequestPromise = apiRequest<BodyMetrics>('/me/body-metrics')
+    bodyMetricsRequestPromise = fetchCachedResource(BODY_METRICS_RESOURCE_KEY, async () => {
+      return apiRequest<BodyMetrics>('/me/body-metrics');
+    })
       .then((metrics) => {
         bodyMetricsCache = normalizeBodyMetrics(metrics);
         bodyMetricsFetchedAt = Date.now();
@@ -786,6 +803,13 @@ export async function fetchCurrentUserBodyMetrics() {
       .finally(() => {
         bodyMetricsRequestPromise = null;
       });
+  }
+
+  if (bodyMetricsCache) {
+    void bodyMetricsRequestPromise.catch(() => {
+      // Keep rendering cached metrics when the background refresh fails.
+    });
+    return bodyMetricsCache;
   }
 
   return bodyMetricsRequestPromise;
@@ -798,6 +822,7 @@ export async function updateCurrentUserBodyMetrics(payload: Partial<BodyMetrics>
   });
   bodyMetricsCache = normalizeBodyMetrics(metrics);
   bodyMetricsFetchedAt = Date.now();
+  await primeCachedResource(BODY_METRICS_RESOURCE_KEY, bodyMetricsCache);
   return bodyMetricsCache;
 }
 
@@ -816,52 +841,54 @@ export async function submitSupportMessage(payload: SupportMessagePayload) {
 }
 
 export async function fetchLongevityDashboard(language?: string) {
-  const response = await apiRequest<LongevityDashboard>('/longevity-os/dashboard', {
-    timeoutMs: 30_000,
-    language,
+  return fetchCachedResource(getLongevityDashboardCacheKey(language), async () => {
+    const response = await apiRequest<LongevityDashboard>('/longevity-os/dashboard', {
+      timeoutMs: 30_000,
+      language,
+    });
+    const overview = response?.overview && typeof response.overview === 'object' ? response.overview : {} as LongevityOverview;
+    const wearables = response?.wearables && typeof response.wearables === 'object' ? response.wearables : {} as LongevityWearables;
+    const habits = response?.habits && typeof response.habits === 'object' ? response.habits : {} as LongevityHabits;
+    const weeklyPlan = response?.weekly_plan && typeof response.weekly_plan === 'object' ? response.weekly_plan : null;
+    return {
+      overview: {
+        biological_age: String(overview.biological_age ?? 'N/A'),
+        chronological_age: String(overview.chronological_age ?? 'N/A'),
+        trending_years_younger: Number(overview.trending_years_younger ?? 0) || 0,
+        recovery_score: Number(overview.recovery_score ?? 0) || 0,
+        hrv_ms: Number(overview.hrv_ms ?? 0) || 0,
+        sleep_score: Number(overview.sleep_score ?? 0) || 0,
+      },
+      quick_actions: Array.isArray(response?.quick_actions)
+        ? response.quick_actions.map((item) => ({
+            id: String(item.id ?? ''),
+            label: String(item.label ?? ''),
+            subtitle: String(item.subtitle ?? ''),
+            image: String(item.image ?? ''),
+            color: String(item.color ?? ''),
+          }))
+        : [],
+      wearables: {
+        devices: Array.isArray(wearables.devices) ? wearables.devices : [],
+        last_synced_at: wearables.last_synced_at ?? null,
+        has_data: Boolean(wearables.has_data),
+        sync_message: String(wearables.sync_message ?? ''),
+      },
+      habits: {
+        streak_days: Number(habits.streak_days ?? 0) || 0,
+        habits: Array.isArray(habits.habits) ? habits.habits : [],
+      },
+      heal_categories: Array.isArray(response?.heal_categories) ? response.heal_categories : [],
+      weekly_plan: weeklyPlan ? {
+        status: String(weeklyPlan.status ?? 'success'),
+        message: String(weeklyPlan.message ?? ''),
+        plan_sections: Array.isArray(weeklyPlan.plan_sections) ? weeklyPlan.plan_sections : [],
+        generated_at: String(weeklyPlan.generated_at ?? ''),
+      } : null,
+      masterclasses: Array.isArray(response?.masterclasses) ? response.masterclasses : [],
+      circles: Array.isArray(response?.circles) ? response.circles : [],
+    };
   });
-  const overview = response?.overview && typeof response.overview === 'object' ? response.overview : {} as LongevityOverview;
-  const wearables = response?.wearables && typeof response.wearables === 'object' ? response.wearables : {} as LongevityWearables;
-  const habits = response?.habits && typeof response.habits === 'object' ? response.habits : {} as LongevityHabits;
-  const weeklyPlan = response?.weekly_plan && typeof response.weekly_plan === 'object' ? response.weekly_plan : null;
-  return {
-    overview: {
-      biological_age: String(overview.biological_age ?? 'N/A'),
-      chronological_age: String(overview.chronological_age ?? 'N/A'),
-      trending_years_younger: Number(overview.trending_years_younger ?? 0) || 0,
-      recovery_score: Number(overview.recovery_score ?? 0) || 0,
-      hrv_ms: Number(overview.hrv_ms ?? 0) || 0,
-      sleep_score: Number(overview.sleep_score ?? 0) || 0,
-    },
-    quick_actions: Array.isArray(response?.quick_actions)
-      ? response.quick_actions.map((item) => ({
-          id: String(item.id ?? ''),
-          label: String(item.label ?? ''),
-          subtitle: String(item.subtitle ?? ''),
-          image: String(item.image ?? ''),
-          color: String(item.color ?? ''),
-        }))
-      : [],
-    wearables: {
-      devices: Array.isArray(wearables.devices) ? wearables.devices : [],
-      last_synced_at: wearables.last_synced_at ?? null,
-      has_data: Boolean(wearables.has_data),
-      sync_message: String(wearables.sync_message ?? ''),
-    },
-    habits: {
-      streak_days: Number(habits.streak_days ?? 0) || 0,
-      habits: Array.isArray(habits.habits) ? habits.habits : [],
-    },
-    heal_categories: Array.isArray(response?.heal_categories) ? response.heal_categories : [],
-    weekly_plan: weeklyPlan ? {
-      status: String(weeklyPlan.status ?? 'success'),
-      message: String(weeklyPlan.message ?? ''),
-      plan_sections: Array.isArray(weeklyPlan.plan_sections) ? weeklyPlan.plan_sections : [],
-      generated_at: String(weeklyPlan.generated_at ?? ''),
-    } : null,
-    masterclasses: Array.isArray(response?.masterclasses) ? response.masterclasses : [],
-    circles: Array.isArray(response?.circles) ? response.circles : [],
-  };
 }
 
 export async function syncLongevityWearables(provider?: WearableProvider | WearableProvider[] | null, language?: string) {
@@ -883,7 +910,9 @@ export async function connectWearableProvider(provider: Extract<WearableProvider
 }
 
 export async function fetchIntegrationConnections() {
-  return apiRequest<IntegrationListResponse>('/integrations');
+  return fetchCachedResource(INTEGRATIONS_CACHE_KEY, async () => {
+    return apiRequest<IntegrationListResponse>('/integrations');
+  });
 }
 
 export async function connectLongevityDemoProvider(provider: WearableProvider) {
@@ -979,7 +1008,9 @@ export async function syncLongevityHealthConnect(payload: MobileHealthSyncPayloa
 }
 
 export async function fetchLongevityHealthSummary() {
-  return apiRequest<HealthMetricSummaryResponse>('/health-data/me/summary');
+  return fetchCachedResource(getLongevityHealthSummaryCacheKey(), async () => {
+    return apiRequest<HealthMetricSummaryResponse>('/health-data/me/summary');
+  });
 }
 
 export async function fetchLongevityHealthRecords(params?: {
@@ -1002,7 +1033,9 @@ export async function fetchLongevityHealthRecords(params?: {
     query.set('end_date', params.end_date);
   }
   const path = query.toString() ? `/health-data/me?${query.toString()}` : '/health-data/me';
-  return apiRequest<HealthMetricListResponse>(path, { language });
+  return fetchCachedResource(getLongevityHealthRecordsCacheKey(params, language), async () => {
+    return apiRequest<HealthMetricListResponse>(path, { language });
+  });
 }
 
 export async function updateLongevityHabit(habitId: string, done: boolean, language?: string) {

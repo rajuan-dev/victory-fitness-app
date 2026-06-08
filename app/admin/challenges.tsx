@@ -214,7 +214,7 @@ export default function AdminChallengesScreen() {
         )}
       </ScrollView>
 
-      <Modal visible={showCreateModal} transparent animationType="slide" onRequestClose={() => setShowCreateModal(false)}>
+      <Modal visible={showCreateModal} transparent animationType="fade" onRequestClose={() => setShowCreateModal(false)}>
         <View style={styles.modalBackdrop}>
           <View style={styles.modalCard}>
             <View style={styles.modalHeader}>
@@ -472,15 +472,18 @@ const styles = StyleSheet.create({
   modalBackdrop: {
     flex: 1,
     backgroundColor: 'rgba(3,7,18,0.76)',
-    justifyContent: 'flex-end',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 20,
   },
   modalCard: {
-    maxHeight: '88%',
+    width: '100%',
+    maxWidth: 560,
+    maxHeight: '82%',
     backgroundColor: '#111827',
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
+    borderRadius: 24,
     padding: 20,
-    borderTopWidth: 1,
+    borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.06)',
   },
   modalHeader: {

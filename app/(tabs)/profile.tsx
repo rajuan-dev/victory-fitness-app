@@ -277,13 +277,13 @@ export default function ProfileScreen() {
         if (cancelled) {
           return;
         }
-        await loadProfileData(true);
+        await loadProfileData(!me);
       })();
 
       return () => {
         cancelled = true;
       };
-    }, [loadProfileData]),
+    }, [loadProfileData, me]),
   );
 
   const handleRefresh = React.useCallback(async () => {

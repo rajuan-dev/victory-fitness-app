@@ -1,4 +1,5 @@
 import { apiRequest } from './api';
+import { fetchCachedResource, getCachedResourceSnapshot } from './resourceCache';
 
 export type WorkoutLibraryItem = {
   id: string;
@@ -21,6 +22,10 @@ export type WorkoutLibraryResponse = {
   workouts: WorkoutLibraryItem[];
   categories: WorkoutLibraryCategory[];
 };
+
+export function getWorkoutLibraryCacheKey(query = '') {
+  return `workout-library:${query.trim().toLowerCase() || 'default'}`;
+}
 
 function normalizeWorkoutItem(value: unknown): WorkoutLibraryItem | null {
   if (!value || typeof value !== 'object') {
@@ -88,6 +93,13 @@ export async function fetchWorkoutLibrary(query = '') {
   }
 
   const suffix = params.toString() ? `?${params.toString()}` : '';
-  const response = await apiRequest<WorkoutLibraryResponse>(`/workouts/library${suffix}`);
-  return normalizeWorkoutLibraryResponse(response);
+  const cacheKey = getWorkoutLibraryCacheKey(query);
+  return fetchCachedResource(cacheKey, async () => {
+    const response = await apiRequest<WorkoutLibraryResponse>(`/workouts/library${suffix}`);
+    return normalizeWorkoutLibraryResponse(response);
+  });
+}
+
+export function getCachedWorkoutLibrary(query = '') {
+  return getCachedResourceSnapshot<WorkoutLibraryResponse>(getWorkoutLibraryCacheKey(query));
 }

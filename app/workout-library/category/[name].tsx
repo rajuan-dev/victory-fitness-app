@@ -12,7 +12,7 @@ import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../../constants/Colors';
 import { formatAppError } from '../../../lib/error';
-import { fetchWorkoutLibrary, WorkoutLibraryItem } from '../../../lib/workouts';
+import { fetchWorkoutLibrary, getWorkoutLibraryCacheKey, WorkoutLibraryItem } from '../../../lib/workouts';
 import { useLanguage } from '../../../lib/i18n';
 import { goBackOrReplace } from '../../../lib/navigation';
 import { ScreenState } from '../../../components/ScreenState';
@@ -37,6 +37,7 @@ export default function WorkoutCategoryScreen() {
     reload,
   } = useAsyncScreenData<WorkoutLibraryItem[]>({
     initialData: [],
+    cacheKey: getWorkoutLibraryCacheKey(categoryName),
     load: async () => {
       const response = await fetchWorkoutLibrary(categoryName);
       const normalizedCategory = categoryName.trim().toLowerCase();

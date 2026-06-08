@@ -18,6 +18,7 @@ import { ErrorPopupModal } from '../../components/ErrorPopupModal';
 import { apiRequest } from '../../lib/api';
 import { formatAppError } from '../../lib/error';
 import { goBackOrReplace } from '../../lib/navigation';
+import { fetchCoachVictorHistoryData } from '../../lib/screenData';
 import { useModuleAccessGuard } from '../../lib/useModuleAccessGuard';
 
 interface Message {
@@ -87,7 +88,7 @@ export default function ChatScreen() {
     const loadHistory = async () => {
       setLoadingHistory(true);
       try {
-        const response = await apiRequest<{ messages: ChatHistoryItem[] }>('/ai/coach-victor/history');
+        const response = await fetchCoachVictorHistoryData() as { messages: ChatHistoryItem[] };
         if (cancelled) {
           return;
         }

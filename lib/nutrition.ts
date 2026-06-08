@@ -1,4 +1,5 @@
 import { apiRequest } from './api';
+import { fetchCachedResource, getCachedResourceSnapshot, primeCachedResource } from './resourceCache';
 
 export type NutritionMealEntry = {
   name: string;
@@ -62,6 +63,8 @@ export type MealImageAnalysisResponse = {
   created_at?: string | null;
 };
 
+const MEAL_ANALYSIS_HISTORY_CACHE_KEY = 'meal-analysis-history';
+
 export async function startNutritionPlanJob(payload: Record<string, unknown>) {
   return apiRequest<NutritionPlanJobResponse>('/ai/nutrition/plan/jobs', {
     method: 'POST',
@@ -100,10 +103,11 @@ export async function updateNutritionMealCompletion(payload: {
   meal_key: string;
   completed: boolean;
 }) {
-  return apiRequest<NutritionPlanApiResponse>('/ai/nutrition/plan/latest/completions', {
+  const updated = await apiRequest<NutritionPlanApiResponse>('/ai/nutrition/plan/latest/completions', {
     method: 'PATCH',
     body: payload,
   });
+  return updated;
 }
 
 export async function updateProgressiveNutritionMealCompletion(payload: {
@@ -129,5 +133,20 @@ export async function analyzeMealImage(payload: {
 }
 
 export async function getMealAnalysisHistory() {
-  return apiRequest<{ analyses: MealImageAnalysisResponse[] }>('/ai/meal-analysis');
+  return fetchCachedResource(MEAL_ANALYSIS_HISTORY_CACHE_KEY, async () => {
+    const response = await apiRequest<{ analyses: MealImageAnalysisResponse[] }>('/ai/meal-analysis');
+    return {
+      analyses: Array.isArray(response.analyses) ? response.analyses : [],
+    };
+  });
+}
+
+export function getCachedMealAnalysisHistory() {
+  return getCachedResourceSnapshot<{ analyses: MealImageAnalysisResponse[] }>(MEAL_ANALYSIS_HISTORY_CACHE_KEY);
+}
+
+export async function primeMealAnalysisHistory(history: { analyses: MealImageAnalysisResponse[] }) {
+  await primeCachedResource(MEAL_ANALYSIS_HISTORY_CACHE_KEY, {
+    analyses: Array.isArray(history.analyses) ? history.analyses : [],
+  });
 }
