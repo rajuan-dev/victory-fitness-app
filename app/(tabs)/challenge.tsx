@@ -1965,9 +1965,9 @@ const styles = StyleSheet.create({
   challengeLibraryCard: {
     backgroundColor: '#343B4D',
     borderRadius: 18,
-    paddingHorizontal: 5,
-    paddingTop: 4,
-    paddingBottom: 4,
+    paddingHorizontal: 14,
+    paddingTop: 8,
+    paddingBottom: 8,
     marginBottom: 6,
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.05)',
