@@ -8,6 +8,8 @@ import {
   ScrollView,
   StatusBar,
   ActivityIndicator,
+  Modal,
+  Pressable,
 } from "react-native";
 import { Stack, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
@@ -17,6 +19,8 @@ import { ErrorPopupModal } from "../../components/ErrorPopupModal";
 import { apiRequest } from "../../lib/api";
 import { formatAppError } from "../../lib/error";
 import { useLanguage } from "../../lib/i18n";
+import { getCachedResourceSnapshot, primeCachedResource } from "../../lib/resourceCache";
+import { JOURNAL_ENTRIES_CACHE_KEY, JournalEntry } from "../../lib/screenData";
 
 const MOODS = [
   { emoji: "😡", label: "ANGRY" },
@@ -34,6 +38,7 @@ export default function JournalScreen() {
   const [saving, setSaving] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
   const [errorDialog, setErrorDialog] = useState<{ title: string; message: string } | null>(null);
+  const [analysisModal, setAnalysisModal] = useState<{ source: JournalEntry; summary: string } | null>(null);
   const selectedMood = useMemo(() => MOODS[mood] ?? MOODS[3], [mood]);
 
   const handleBackPress = () => {
@@ -53,13 +58,21 @@ export default function JournalScreen() {
     setSaving(true);
     setErrorDialog(null);
     try {
-      await apiRequest("/journal/entries", {
+      const response = await apiRequest<JournalEntry>("/journal/entries", {
         method: "POST",
         body: {
           mood: selectedMood.label,
           content,
         },
       });
+      const cachedJournalData = getCachedResourceSnapshot<{ entries: JournalEntry[] }>(JOURNAL_ENTRIES_CACHE_KEY);
+      await primeCachedResource(
+        JOURNAL_ENTRIES_CACHE_KEY,
+        {
+          entries: [response, ...(cachedJournalData?.entries ?? [])],
+        },
+        true
+      );
       setEntry("");
       router.push("/journal/history");
     } catch (error) {
@@ -70,22 +83,20 @@ export default function JournalScreen() {
   };
 
   const handleAnalyzeWithAi = async () => {
-    const content = entry.trim();
-    if (!content || analyzing) {
+    if (analyzing) {
       return;
     }
 
     setAnalyzing(true);
     setErrorDialog(null);
     try {
-      const response = await apiRequest<{ analysis: string }>("/journal/analyze", {
+      const response = await apiRequest<{ entry: JournalEntry; analysis: string }>("/journal/analyze/latest", {
         method: "POST",
-        body: {
-          mood: selectedMood.label,
-          content,
-        },
       });
-      setEntry(response.analysis);
+      setAnalysisModal({
+        source: response.entry,
+        summary: response.analysis,
+      });
     } catch (error) {
       setErrorDialog(formatAppError(error, t("Unable to analyze your journal entry right now.")));
     } finally {
@@ -102,6 +113,44 @@ export default function JournalScreen() {
         message={errorDialog?.message ?? ""}
         onClose={() => setErrorDialog(null)}
       />
+      <Modal
+        visible={Boolean(analysisModal)}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setAnalysisModal(null)}
+      >
+        <View style={styles.modalBackdrop}>
+          <Pressable style={StyleSheet.absoluteFill} onPress={() => setAnalysisModal(null)} />
+          <View style={styles.modalCard}>
+            <View style={styles.modalHeader}>
+              <View style={styles.modalTitleWrap}>
+                <Text style={styles.modalEyebrow}>{t("LATEST JOURNAL ANALYSIS")}</Text>
+                <Text style={styles.modalTitle}>{t("AI Summary")}</Text>
+              </View>
+              <TouchableOpacity
+                style={styles.modalCloseButton}
+                onPress={() => setAnalysisModal(null)}
+                activeOpacity={0.85}
+              >
+                <Ionicons name="close" size={20} color="#fff" />
+              </TouchableOpacity>
+            </View>
+            <View style={styles.modalMetaRow}>
+              <Text style={styles.modalMetaLabel}>{analysisModal?.source.mood ?? ""}</Text>
+            </View>
+            <ScrollView style={styles.modalScroll} showsVerticalScrollIndicator={false}>
+              <View style={styles.modalSection}>
+                <Text style={styles.modalSectionLabel}>{t("Latest Journal Entry")}</Text>
+                <Text style={styles.modalEntryText}>{analysisModal?.source.content ?? ""}</Text>
+              </View>
+              <View style={styles.modalSection}>
+                <Text style={styles.modalSectionLabel}>{t("AI Summary")}</Text>
+                <Text style={styles.modalSummary}>{analysisModal?.summary ?? ""}</Text>
+              </View>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
       <Stack.Screen
         options={{
           headerShown: false,
@@ -187,7 +236,7 @@ export default function JournalScreen() {
             style={[styles.aiAction, analyzing && styles.aiActionDisabled]}
             activeOpacity={0.8}
             onPress={handleAnalyzeWithAi}
-            disabled={!entry.trim() || analyzing}
+            disabled={analyzing}
           >
             {analyzing ? (
               <ActivityIndicator color={Colors.accentPurple} />
@@ -404,6 +453,95 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     fontFamily: "Inter_700Bold",
     letterSpacing: 2,
+  },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.76)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 24,
+  },
+  modalCard: {
+    width: "100%",
+    maxWidth: 360,
+    maxHeight: "88%",
+    backgroundColor: "#101827",
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.08)",
+    padding: 20,
+  },
+  modalHeader: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    gap: 12,
+    marginBottom: 14,
+  },
+  modalTitleWrap: {
+    flex: 1,
+  },
+  modalEyebrow: {
+    color: Colors.accentBlue,
+    fontSize: 11,
+    fontFamily: "Inter_700Bold",
+    letterSpacing: 1.6,
+    marginBottom: 6,
+  },
+  modalTitle: {
+    color: "#fff",
+    fontSize: 22,
+    fontFamily: "Inter_800ExtraBold",
+  },
+  modalCloseButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(255,255,255,0.06)",
+  },
+  modalMetaRow: {
+    alignSelf: "flex-start",
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 999,
+    backgroundColor: "rgba(6,182,212,0.14)",
+    borderWidth: 1,
+    borderColor: "rgba(6,182,212,0.28)",
+    marginBottom: 16,
+  },
+  modalMetaLabel: {
+    color: Colors.accentBlue,
+    fontSize: 12,
+    fontFamily: "Inter_700Bold",
+    letterSpacing: 1,
+  },
+  modalScroll: {
+    flexGrow: 0,
+  },
+  modalSection: {
+    marginBottom: 18,
+  },
+  modalSectionLabel: {
+    color: "rgba(255,255,255,0.55)",
+    fontSize: 11,
+    fontFamily: "Inter_700Bold",
+    letterSpacing: 1.4,
+    marginBottom: 8,
+    textTransform: "uppercase",
+  },
+  modalEntryText: {
+    color: "#fff",
+    fontSize: 15,
+    lineHeight: 24,
+    fontFamily: "Inter_400Regular",
+  },
+  modalSummary: {
+    color: "rgba(255,255,255,0.88)",
+    fontSize: 15,
+    lineHeight: 24,
+    fontFamily: "Inter_400Regular",
   },
   footer: {
     backgroundColor: "#161616",
