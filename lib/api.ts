@@ -12,7 +12,19 @@ declare const process: {
   env?: Record<string, string | undefined>;
 };
 
-const RAW_API_URL = process.env?.EXPO_PUBLIC_API_URL ?? 'http://10.0.2.2:8000';
+function getDefaultApiUrl(): string {
+  if (Platform.OS === 'android') {
+    return 'http://10.0.2.2:8000';
+  }
+
+  if (Platform.OS === 'web') {
+    return '';
+  }
+
+  return 'http://localhost:8000';
+}
+
+const RAW_API_URL = String(process.env?.EXPO_PUBLIC_API_URL ?? '').trim() || getDefaultApiUrl();
 
 function resolveApiUrl(url: string): string {
   if (Platform.OS !== 'android') {
@@ -1169,6 +1181,10 @@ export async function apiRequest<T>(
   options: RequestOptions = {},
   retryOnUnauthorized = true
 ): Promise<T> {
+  if (!API_URL) {
+    throw new Error('EXPO_PUBLIC_API_URL is not configured for this web build.');
+  }
+
   const requestTokens = path === '/auth/refresh'
     ? await getAuthTokens()
     : await getValidAuthTokens();

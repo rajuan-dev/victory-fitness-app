@@ -116,8 +116,8 @@ export default function LoginScreen() {
       }
 
       const auth = await signInWithFirebaseGoogle({
-        idToken: result.authentication?.idToken || null,
-        accessToken: result.authentication?.accessToken || null,
+        idToken: result.authentication?.idToken || result.params?.id_token || null,
+        accessToken: result.authentication?.accessToken || result.params?.access_token || null,
       });
       await setAuthTokens(auth);
       replaceRoute(router, getPostAuthRoute(auth.user));
