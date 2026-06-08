@@ -9,6 +9,8 @@ import {
   Pressable,
   ScrollView,
   RefreshControl,
+  TextInput,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Stack, useRouter } from 'expo-router';
@@ -121,6 +123,10 @@ export default function JournalHistoryScreen() {
   const [selectedEntry, setSelectedEntry] = useState<JournalEntry | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<JournalEntry | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [draftMood, setDraftMood] = useState('');
+  const [draftContent, setDraftContent] = useState('');
+  const [savingEdit, setSavingEdit] = useState(false);
   const {
     data: journalData,
     loading,
@@ -137,9 +143,17 @@ export default function JournalHistoryScreen() {
   const entries = journalData.entries;
   const formattedSelectedEntry = selectedEntry ? formatJournalContent(selectedEntry.content) : [];
 
+  const openEntry = useCallback((entry: JournalEntry) => {
+    setSelectedEntry(entry);
+    setIsEditing(false);
+    setDraftMood(entry.mood);
+    setDraftContent(entry.content);
+  }, []);
+
   const handleBackPress = useCallback(() => {
     setSelectedEntry(null);
     setDeleteTarget(null);
+    setIsEditing(false);
     if (router.canGoBack()) {
       router.back();
       return;
@@ -170,6 +184,41 @@ export default function JournalHistoryScreen() {
     }
   }, [deleteTarget, deleting, entries, setData, t]);
 
+  const handleSaveEdit = useCallback(async () => {
+    if (!selectedEntry || savingEdit) {
+      return;
+    }
+
+    const nextContent = draftContent.trim();
+    const nextMood = draftMood.trim();
+    if (!nextContent || !nextMood) {
+      return;
+    }
+
+    setSavingEdit(true);
+    setErrorDialog(null);
+    try {
+      const updatedEntry = await apiRequest<JournalEntry>(`/journal/entries/${encodeURIComponent(selectedEntry.id)}`, {
+        method: 'PATCH',
+        body: {
+          mood: nextMood,
+          content: nextContent,
+        },
+      });
+      const nextEntries = entries.map((item) => (item.id === updatedEntry.id ? updatedEntry : item));
+      setData({ entries: nextEntries });
+      await primeCachedResource(JOURNAL_ENTRIES_CACHE_KEY, { entries: nextEntries }, true);
+      setSelectedEntry(updatedEntry);
+      setDraftMood(updatedEntry.mood);
+      setDraftContent(updatedEntry.content);
+      setIsEditing(false);
+    } catch (saveError) {
+      setErrorDialog(formatAppError(saveError, t('Unable to update this journal entry right now.')));
+    } finally {
+      setSavingEdit(false);
+    }
+  }, [draftContent, draftMood, entries, savingEdit, selectedEntry, setData, t]);
+
   const renderItem = ({ item }: { item: JournalEntry }) => {
     const moodEmoji = MOOD_EMOJI[item.mood] ?? '\u{1F4DD}';
     const previewBlocks = formatJournalContent(item.content).slice(0, 2);
@@ -178,7 +227,7 @@ export default function JournalHistoryScreen() {
       <TouchableOpacity
         style={styles.entryCard}
         activeOpacity={0.7}
-        onPress={() => setSelectedEntry(item)}
+        onPress={() => openEntry(item)}
       >
         <View style={styles.cardHeader}>
           <View>
@@ -230,9 +279,22 @@ export default function JournalHistoryScreen() {
         visible={Boolean(selectedEntry)}
         transparent
         animationType="fade"
-        onRequestClose={() => setSelectedEntry(null)}
+        onRequestClose={() => {
+          if (!savingEdit) {
+            setSelectedEntry(null);
+            setIsEditing(false);
+          }
+        }}
       >
-        <Pressable style={styles.modalOverlay} onPress={() => setSelectedEntry(null)}>
+        <Pressable
+          style={styles.modalOverlay}
+          onPress={() => {
+            if (!savingEdit) {
+              setSelectedEntry(null);
+              setIsEditing(false);
+            }
+          }}
+        >
           <Pressable style={styles.modalCard} onPress={() => {}}>
             <View style={styles.modalHeader}>
               <View style={styles.modalTitleWrap}>
@@ -248,45 +310,117 @@ export default function JournalHistoryScreen() {
               </TouchableOpacity>
             </View>
 
-            <View style={styles.modalMoodRow}>
-              <Text style={styles.modalMoodEmoji}>
-                {selectedEntry ? MOOD_EMOJI[selectedEntry.mood] ?? '\u{1F4DD}' : ''}
-              </Text>
-              <Text style={styles.modalMoodLabel}>{selectedEntry?.mood ?? ''}</Text>
-            </View>
-
-            <ScrollView style={styles.modalBody} showsVerticalScrollIndicator={false}>
-              {formattedSelectedEntry.map((block, index) =>
-                block.type === 'bullet' ? (
-                  <View key={`${block.type}-${index}`} style={styles.bulletRow}>
-                    <View style={styles.bulletDot} />
-                    <Text style={styles.modalEntryText}>{block.content}</Text>
-                  </View>
-                ) : block.type === 'section' ? (
-                  <View key={`${block.type}-${index}`} style={styles.sectionBlock}>
-                    <Text style={styles.sectionTitle}>{block.title}</Text>
-                    {!!block.content && <Text style={styles.modalEntryText}>{block.content}</Text>}
-                  </View>
-                ) : (
-                  <Text key={`${block.type}-${index}`} style={styles.modalEntryText}>
-                    {block.content}
+            {isEditing ? (
+              <>
+                <View style={styles.moodPickerRow}>
+                  {Object.entries(MOOD_EMOJI).map(([label, emoji]) => (
+                    <TouchableOpacity
+                      key={label}
+                      style={[styles.moodOption, draftMood === label && styles.moodOptionActive]}
+                      activeOpacity={0.85}
+                      onPress={() => setDraftMood(label)}
+                      disabled={savingEdit}
+                    >
+                      <Text style={styles.moodOptionEmoji}>{emoji}</Text>
+                      <Text style={[styles.moodOptionLabel, draftMood === label && styles.moodOptionLabelActive]}>
+                        {label}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+                <TextInput
+                  style={styles.editInput}
+                  multiline
+                  value={draftContent}
+                  onChangeText={setDraftContent}
+                  placeholder={t('Update your journal entry...')}
+                  placeholderTextColor="rgba(255,255,255,0.25)"
+                  textAlignVertical="top"
+                  editable={!savingEdit}
+                />
+                <View style={styles.editActions}>
+                  <TouchableOpacity
+                    style={styles.cancelButton}
+                    activeOpacity={0.85}
+                    onPress={() => {
+                      setDraftMood(selectedEntry?.mood ?? '');
+                      setDraftContent(selectedEntry?.content ?? '');
+                      setIsEditing(false);
+                    }}
+                    disabled={savingEdit}
+                  >
+                    <Text style={styles.cancelButtonText}>{t('Cancel')}</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.saveButton, (!draftContent.trim() || !draftMood || savingEdit) && styles.deleteButtonDisabled]}
+                    activeOpacity={0.85}
+                    onPress={() => {
+                      void handleSaveEdit();
+                    }}
+                    disabled={!draftContent.trim() || !draftMood || savingEdit}
+                  >
+                    {savingEdit ? <ActivityIndicator color="#001311" /> : <Text style={styles.saveButtonText}>{t('Save')}</Text>}
+                  </TouchableOpacity>
+                </View>
+              </>
+            ) : (
+              <>
+                <View style={styles.modalMoodRow}>
+                  <Text style={styles.modalMoodEmoji}>
+                    {selectedEntry ? MOOD_EMOJI[selectedEntry.mood] ?? '\u{1F4DD}' : ''}
                   </Text>
-                )
-              )}
-            </ScrollView>
-            <TouchableOpacity
-              style={[styles.deleteButton, deleting && styles.deleteButtonDisabled]}
-              activeOpacity={0.85}
-              onPress={() => {
-                if (selectedEntry && !deleting) {
-                  setDeleteTarget(selectedEntry);
-                }
-              }}
-              disabled={deleting}
-            >
-              <Ionicons name="trash-outline" size={18} color="#F87171" />
-              <Text style={styles.deleteButtonText}>{t('Delete Journal')}</Text>
-            </TouchableOpacity>
+                  <Text style={styles.modalMoodLabel}>{selectedEntry?.mood ?? ''}</Text>
+                </View>
+
+                <ScrollView style={styles.modalBody} showsVerticalScrollIndicator={false}>
+                  {formattedSelectedEntry.map((block, index) =>
+                    block.type === 'bullet' ? (
+                      <View key={`${block.type}-${index}`} style={styles.bulletRow}>
+                        <View style={styles.bulletDot} />
+                        <Text style={styles.modalEntryText}>{block.content}</Text>
+                      </View>
+                    ) : block.type === 'section' ? (
+                      <View key={`${block.type}-${index}`} style={styles.sectionBlock}>
+                        <Text style={styles.sectionTitle}>{block.title}</Text>
+                        {!!block.content && <Text style={styles.modalEntryText}>{block.content}</Text>}
+                      </View>
+                    ) : (
+                      <Text key={`${block.type}-${index}`} style={styles.modalEntryText}>
+                        {block.content}
+                      </Text>
+                    )
+                  )}
+                </ScrollView>
+                <View style={styles.modalActionRow}>
+                  <TouchableOpacity
+                    style={styles.editButton}
+                    activeOpacity={0.85}
+                    onPress={() => {
+                      setDraftMood(selectedEntry?.mood ?? '');
+                      setDraftContent(selectedEntry?.content ?? '');
+                      setIsEditing(true);
+                    }}
+                    disabled={deleting}
+                  >
+                    <Ionicons name="create-outline" size={18} color={Colors.accentBlue} />
+                    <Text style={styles.editButtonText}>{t('Edit Journal')}</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.deleteButton, deleting && styles.deleteButtonDisabled]}
+                    activeOpacity={0.85}
+                    onPress={() => {
+                      if (selectedEntry && !deleting) {
+                        setDeleteTarget(selectedEntry);
+                      }
+                    }}
+                    disabled={deleting}
+                  >
+                    <Ionicons name="trash-outline" size={18} color="#F87171" />
+                    <Text style={styles.deleteButtonText}>{t('Delete Journal')}</Text>
+                  </TouchableOpacity>
+                </View>
+              </>
+            )}
           </Pressable>
         </Pressable>
       </Modal>
@@ -597,11 +731,112 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter_700Bold',
     letterSpacing: 1.2,
   },
+  moodPickerRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 16,
+  },
+  moodOption: {
+    minWidth: '30%',
+    paddingHorizontal: 10,
+    paddingVertical: 10,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    alignItems: 'center',
+    gap: 4,
+  },
+  moodOptionActive: {
+    borderColor: 'rgba(6,182,212,0.45)',
+    backgroundColor: 'rgba(6,182,212,0.14)',
+  },
+  moodOptionEmoji: {
+    fontSize: 22,
+  },
+  moodOptionLabel: {
+    color: 'rgba(255,255,255,0.68)',
+    fontSize: 11,
+    fontFamily: 'Inter_700Bold',
+    letterSpacing: 0.6,
+  },
+  moodOptionLabelActive: {
+    color: Colors.accentBlue,
+  },
   modalBody: {
     maxHeight: 380,
   },
-  deleteButton: {
+  editInput: {
+    minHeight: 260,
+    maxHeight: 420,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+    backgroundColor: '#111111',
+    color: '#fff',
+    fontSize: 16,
+    lineHeight: 24,
+    fontFamily: 'Inter_400Regular',
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    marginBottom: 16,
+    outlineStyle: 'none' as any,
+  },
+  editActions: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  cancelButton: {
+    flex: 1,
+    height: 52,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cancelButtonText: {
+    color: '#fff',
+    fontSize: 14,
+    fontFamily: 'Inter_700Bold',
+  },
+  saveButton: {
+    flex: 1,
+    height: 52,
+    borderRadius: 16,
+    backgroundColor: Colors.accentBlue,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  saveButtonText: {
+    color: '#001311',
+    fontSize: 14,
+    fontFamily: 'Inter_700Bold',
+  },
+  modalActionRow: {
+    flexDirection: 'row',
+    gap: 12,
     marginTop: 12,
+  },
+  editButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    height: 52,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(6,182,212,0.3)',
+    backgroundColor: 'rgba(6,182,212,0.08)',
+  },
+  editButtonText: {
+    color: Colors.accentBlue,
+    fontSize: 14,
+    fontFamily: 'Inter_700Bold',
+  },
+  deleteButton: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
