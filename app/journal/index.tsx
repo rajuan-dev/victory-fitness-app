@@ -39,7 +39,16 @@ export default function JournalScreen() {
   const [analyzing, setAnalyzing] = useState(false);
   const [errorDialog, setErrorDialog] = useState<{ title: string; message: string } | null>(null);
   const [analysisModal, setAnalysisModal] = useState<{ source: JournalEntry; summary: string } | null>(null);
+  const [showFullJournal, setShowFullJournal] = useState(false);
   const selectedMood = useMemo(() => MOODS[mood] ?? MOODS[3], [mood]);
+
+  const buildJournalPreview = (content: string) => {
+    const words = content.trim().split(/\s+/).filter(Boolean);
+    if (words.length <= 10) {
+      return { text: content.trim(), truncated: false };
+    }
+    return { text: words.slice(0, 10).join(" "), truncated: true };
+  };
 
   const handleBackPress = () => {
     if (router.canGoBack()) {
@@ -93,6 +102,7 @@ export default function JournalScreen() {
       const response = await apiRequest<{ entry: JournalEntry; analysis: string }>("/journal/analyze/latest", {
         method: "POST",
       });
+      setShowFullJournal(false);
       setAnalysisModal({
         source: response.entry,
         summary: response.analysis,
@@ -120,34 +130,56 @@ export default function JournalScreen() {
         onRequestClose={() => setAnalysisModal(null)}
       >
         <View style={styles.modalBackdrop}>
-          <Pressable style={StyleSheet.absoluteFill} onPress={() => setAnalysisModal(null)} />
+          <Pressable
+            style={StyleSheet.absoluteFill}
+            onPress={() => {
+              setAnalysisModal(null);
+              setShowFullJournal(false);
+            }}
+          />
           <View style={styles.modalCard}>
-            <View style={styles.modalHeader}>
-              <View style={styles.modalTitleWrap}>
-                <Text style={styles.modalEyebrow}>{t("LATEST JOURNAL ANALYSIS")}</Text>
-                <Text style={styles.modalTitle}>{t("AI Summary")}</Text>
+            <View style={styles.analysisHeader}>
+              <View style={styles.analysisTitleWrap}>
+                <Text style={styles.analysisEyebrow}>{t("LATEST JOURNAL ANALYSIS")}</Text>
+                <Text style={styles.analysisTitle}>{t("AI Summary")}</Text>
               </View>
               <TouchableOpacity
                 style={styles.modalCloseButton}
-                onPress={() => setAnalysisModal(null)}
                 activeOpacity={0.85}
+                onPress={() => {
+                  setAnalysisModal(null);
+                  setShowFullJournal(false);
+                }}
               >
                 <Ionicons name="close" size={20} color="#fff" />
               </TouchableOpacity>
             </View>
-            <View style={styles.modalMetaRow}>
-              <Text style={styles.modalMetaLabel}>{analysisModal?.source.mood ?? ""}</Text>
-            </View>
-            <ScrollView style={styles.modalScroll} showsVerticalScrollIndicator={false}>
-              <View style={styles.modalSection}>
-                <Text style={styles.modalSectionLabel}>{t("Latest Journal Entry")}</Text>
-                <Text style={styles.modalEntryText}>{analysisModal?.source.content ?? ""}</Text>
-              </View>
-              <View style={styles.modalSection}>
-                <Text style={styles.modalSectionLabel}>{t("AI Summary")}</Text>
-                <Text style={styles.modalSummary}>{analysisModal?.summary ?? ""}</Text>
-              </View>
-            </ScrollView>
+            {analysisModal ? (
+              <>
+                <View style={styles.analysisMoodPill}>
+                  <Text style={styles.analysisMoodText}>{analysisModal.source.mood}</Text>
+                </View>
+                <TouchableOpacity
+                  activeOpacity={0.85}
+                  onPress={() => setShowFullJournal((prev) => !prev)}
+                  style={styles.analysisJournalBlock}
+                >
+                  <Text style={styles.analysisSectionLabel}>{t("Latest Journal")}</Text>
+                  <Text style={styles.analysisBodyText}>
+                    {showFullJournal
+                      ? analysisModal.source.content
+                      : buildJournalPreview(analysisModal.source.content).text}
+                    {!showFullJournal && buildJournalPreview(analysisModal.source.content).truncated ? (
+                      <Text style={styles.inlineExpandText}>...</Text>
+                    ) : null}
+                  </Text>
+                </TouchableOpacity>
+                <ScrollView style={styles.analysisSummaryBlock} showsVerticalScrollIndicator={false}>
+                  <Text style={styles.analysisSectionLabel}>{t("AI Summary")}</Text>
+                  <Text style={styles.analysisBodyText}>{analysisModal.summary}</Text>
+                </ScrollView>
+              </>
+            ) : null}
           </View>
         </View>
       </Modal>
@@ -297,11 +329,29 @@ const styles = StyleSheet.create({
     height: 44,
   },
   scrollContent: {
-    paddingTop: 32,
-    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingHorizontal: 12,
     paddingBottom: 40,
   },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.76)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 14,
+  },
+  modalCard: {
+    width: "100%",
+    maxWidth: 420,
+    maxHeight: "88%",
+    backgroundColor: "#101827",
+    borderRadius: 28,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.08)",
+    padding: 20,
+  },
   welcomeSection: {
+    paddingHorizontal: 8,
     marginBottom: 32,
   },
   dateLabel: {
@@ -454,43 +504,26 @@ const styles = StyleSheet.create({
     fontFamily: "Inter_700Bold",
     letterSpacing: 2,
   },
-  modalBackdrop: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.76)",
-    justifyContent: "center",
-    alignItems: "center",
-    padding: 24,
-  },
-  modalCard: {
-    width: "100%",
-    maxWidth: 360,
-    maxHeight: "88%",
-    backgroundColor: "#101827",
-    borderRadius: 24,
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.08)",
-    padding: 20,
-  },
-  modalHeader: {
+  analysisHeader: {
     flexDirection: "row",
     alignItems: "flex-start",
     justifyContent: "space-between",
     gap: 12,
     marginBottom: 14,
   },
-  modalTitleWrap: {
+  analysisTitleWrap: {
     flex: 1,
   },
-  modalEyebrow: {
+  analysisEyebrow: {
     color: Colors.accentBlue,
     fontSize: 11,
     fontFamily: "Inter_700Bold",
     letterSpacing: 1.6,
     marginBottom: 6,
   },
-  modalTitle: {
+  analysisTitle: {
     color: "#fff",
-    fontSize: 22,
+    fontSize: 20,
     fontFamily: "Inter_800ExtraBold",
   },
   modalCloseButton: {
@@ -501,7 +534,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     backgroundColor: "rgba(255,255,255,0.06)",
   },
-  modalMetaRow: {
+  analysisMoodPill: {
     alignSelf: "flex-start",
     paddingHorizontal: 12,
     paddingVertical: 7,
@@ -509,21 +542,31 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(6,182,212,0.14)",
     borderWidth: 1,
     borderColor: "rgba(6,182,212,0.28)",
-    marginBottom: 16,
+    marginBottom: 14,
   },
-  modalMetaLabel: {
+  analysisMoodText: {
     color: Colors.accentBlue,
     fontSize: 12,
     fontFamily: "Inter_700Bold",
     letterSpacing: 1,
   },
-  modalScroll: {
-    flexGrow: 0,
+  analysisJournalBlock: {
+    marginBottom: 14,
+    borderRadius: 18,
+    backgroundColor: "rgba(255,255,255,0.04)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.06)",
+    padding: 16,
   },
-  modalSection: {
-    marginBottom: 18,
+  analysisSummaryBlock: {
+    maxHeight: 260,
+    borderRadius: 18,
+    backgroundColor: "rgba(255,255,255,0.04)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.06)",
+    padding: 16,
   },
-  modalSectionLabel: {
+  analysisSectionLabel: {
     color: "rgba(255,255,255,0.55)",
     fontSize: 11,
     fontFamily: "Inter_700Bold",
@@ -531,17 +574,17 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     textTransform: "uppercase",
   },
-  modalEntryText: {
-    color: "#fff",
-    fontSize: 15,
-    lineHeight: 24,
-    fontFamily: "Inter_400Regular",
-  },
-  modalSummary: {
+  analysisBodyText: {
     color: "rgba(255,255,255,0.88)",
     fontSize: 15,
     lineHeight: 24,
     fontFamily: "Inter_400Regular",
+  },
+  inlineExpandText: {
+    color: Colors.accentBlue,
+    fontSize: 15,
+    lineHeight: 24,
+    fontFamily: "Inter_700Bold",
   },
   footer: {
     backgroundColor: "#161616",
