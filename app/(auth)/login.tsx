@@ -216,16 +216,6 @@ export default function LoginScreen() {
               </TouchableOpacity>
             </View>
 
-            {/* Divider */}
-            <View style={styles.dividerContainer}>
-              <View style={styles.dividerLine} />
-              <Text style={styles.dividerText}>{t('or')}</Text>
-              <View style={styles.dividerLine} />
-            </View>
-
-            {/* Google Sign In */}
-            <GoogleSignInButton onPress={handleGoogleSignIn} />
-
             {/* Footer */}
             <View style={styles.footer}>
               <Text style={styles.footerText}>{t('Information for Developers')}</Text>

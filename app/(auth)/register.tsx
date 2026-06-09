@@ -165,16 +165,6 @@ export default function RegisterScreen() {
               </TouchableOpacity>
             </View>
 
-            {/* Divider */}
-            <View style={styles.dividerContainer}>
-              <View style={styles.dividerLine} />
-              <Text style={styles.dividerText}>or</Text>
-              <View style={styles.dividerLine} />
-            </View>
-
-            {/* Google Sign In */}
-            <GoogleSignInButton onPress={handleGoogleSignIn} />
-
             {/* Footer */}
             <View style={styles.footer}>
               <Text style={styles.footerText}>Information for Developers</Text>
