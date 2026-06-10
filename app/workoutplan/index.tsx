@@ -176,12 +176,14 @@ export default function WorkoutPlanScreen() {
               activeOpacity={0.7}
               onPress={() => {
                 setIsModalVisible(false);
-                router.push('/workoutplan/strength-wizard');
+                router.push(strengthPlan ? '/workoutplan/strength-plan' : '/workoutplan/strength-wizard');
               }}
             >
               <Text style={styles.optionTitle}>{t('CUSTOM STRENGTH PLAN')}</Text>
               <Text style={styles.optionDescription}>
-                {t('A detailed, periodized plan to maximize strength and muscle gain.')}
+                {strengthPlan
+                  ? t('Open your saved custom strength plan directly.')
+                  : t('A detailed, periodized plan to maximize strength and muscle gain.')}
               </Text>
             </TouchableOpacity>
           </View>

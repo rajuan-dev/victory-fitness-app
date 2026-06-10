@@ -1,8 +1,9 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Colors } from '../../constants/Colors';
 import { useLanguage } from '../../lib/i18n';
+import { fetchLatestStrengthWorkoutPlan, loadLatestStrengthWorkoutPlan } from '../../lib/workout-plans';
 
 type WorkoutSectionProps = {
   canAccessWorkoutPlans?: boolean;
@@ -15,6 +16,24 @@ export default function WorkoutSection({
 }: WorkoutSectionProps) {
   const router = useRouter();
   const { t } = useLanguage();
+  const [hasStrengthPlan, setHasStrengthPlan] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadStrengthPlan = async () => {
+      const plan = await fetchLatestStrengthWorkoutPlan().catch(() => loadLatestStrengthWorkoutPlan());
+      if (!cancelled) {
+        setHasStrengthPlan(Boolean(plan));
+      }
+    };
+
+    void loadStrengthPlan();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   return (
     <View style={styles.section}>
@@ -34,9 +53,11 @@ export default function WorkoutSection({
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.workoutBtnOutline}
-              onPress={() => router.push('/workoutplan/strength-wizard')}
+              onPress={() => router.push(hasStrengthPlan ? '/workoutplan/strength-plan' : '/workoutplan/strength-wizard')}
             >
-              <Text style={styles.workoutBtnOutlineText}>{t('CUSTOM STRENGTH PLAN')}</Text>
+              <Text style={styles.workoutBtnOutlineText}>
+                {hasStrengthPlan ? t('VIEW CUSTOM STRENGTH PLAN') : t('CUSTOM STRENGTH PLAN')}
+              </Text>
             </TouchableOpacity>
           </>
         ) : (

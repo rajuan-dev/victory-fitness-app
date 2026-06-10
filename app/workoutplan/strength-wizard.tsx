@@ -18,6 +18,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../constants/Colors';
 import VictoryHeader from '../../components/VictoryHeader';
 import { fetchCurrentUser, fetchCurrentUserBodyMetrics } from '../../lib/api';
+import { formatAppError } from '../../lib/error';
 import { createStrengthWorkoutPlan } from '../../lib/workout-plans';
 import { useModuleAccessGuard } from '../../lib/useModuleAccessGuard';
 import { useLanguage } from '../../lib/i18n';
@@ -118,21 +119,16 @@ export default function StrengthWizard() {
     return null;
   }
 
+  const canNext = () => {
+    if (step === 1) return Boolean(formData.goal);
+    if (step === 2) return Boolean(formData.level);
+    if (step === 3) return Boolean(formData.split);
+    return true;
+  };
+
   const nextStep = () => {
-    if (step === 1 && !formData.goal) {
-      updateData('goal', GOALS[0]?.id ?? '1');
-    }
-
-    if (step === 2 && !formData.level) {
-      updateData('level', 'BEGINNER');
-    }
-
-    if (step === 3 && !formData.split) {
-      updateData('split', SPLITS[0]?.id ?? '1');
-    }
-
-    if (step === 7 && !formData.frequency) {
-      updateData('frequency', '4');
+    if (!canNext()) {
+      return;
     }
 
     if (step < TOTAL_STEPS) setStep(step + 1);
@@ -147,9 +143,9 @@ export default function StrengthWizard() {
     setLoading(true);
     try {
       await createStrengthWorkoutPlan({
-        goal: resolveGoalLabel(formData.goal || GOALS[0]?.id),
-        level: formData.level || 'BEGINNER',
-        split: resolveSplitLabel(formData.split || SPLITS[0]?.id),
+        goal: resolveGoalLabel(formData.goal),
+        level: formData.level,
+        split: resolveSplitLabel(formData.split),
         height: formData.height,
         gender: formData.gender,
         bench: formData.bench,
@@ -163,9 +159,10 @@ export default function StrengthWizard() {
       });
       setLoading(false);
       router.replace('/workoutplan/strength-plan');
-    } catch {
+    } catch (error) {
       setLoading(false);
-      Alert.alert(t('Generation failed'), t('Unable to create your custom strength plan right now.'));
+      const formatted = formatAppError(error);
+      Alert.alert(formatted.title || t('Generation failed'), formatted.message || t('Unable to create your custom strength plan right now.'));
     }
   };
 
@@ -447,9 +444,10 @@ export default function StrengthWizard() {
               <Text style={[styles.footerBtnText, step === 1 && { opacity: 0.3 }]}>{t('Back')}</Text>
             </TouchableOpacity>
             <TouchableOpacity 
-              style={styles.mainBtn} 
+              style={[styles.mainBtn, !canNext() && styles.mainBtnDisabled]}
               onPress={nextStep}
               activeOpacity={0.8}
+              disabled={!canNext()}
             >
               <Text style={styles.mainBtnText}>
                 {step === TOTAL_STEPS ? t('Generate Plan').toUpperCase() : t('Next').toUpperCase()}
@@ -685,6 +683,9 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.3,
     shadowRadius: 8,
     elevation: 4,
+  },
+  mainBtnDisabled: {
+    opacity: 0.45,
   },
   mainBtnText: {
     color: '#000',
