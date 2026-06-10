@@ -119,6 +119,22 @@ export default function StrengthWizard() {
   }
 
   const nextStep = () => {
+    if (step === 1 && !formData.goal) {
+      updateData('goal', GOALS[0]?.id ?? '1');
+    }
+
+    if (step === 2 && !formData.level) {
+      updateData('level', 'BEGINNER');
+    }
+
+    if (step === 3 && !formData.split) {
+      updateData('split', SPLITS[0]?.id ?? '1');
+    }
+
+    if (step === 7 && !formData.frequency) {
+      updateData('frequency', '4');
+    }
+
     if (step < TOTAL_STEPS) setStep(step + 1);
     else generatePlan();
   };
@@ -131,16 +147,16 @@ export default function StrengthWizard() {
     setLoading(true);
     try {
       await createStrengthWorkoutPlan({
-        goal: resolveGoalLabel(formData.goal),
-        level: formData.level,
-        split: resolveSplitLabel(formData.split),
+        goal: resolveGoalLabel(formData.goal || GOALS[0]?.id),
+        level: formData.level || 'BEGINNER',
+        split: resolveSplitLabel(formData.split || SPLITS[0]?.id),
         height: formData.height,
         gender: formData.gender,
         bench: formData.bench,
         squat: formData.squat,
         deadlift: formData.deadlift,
         equipment: resolveEquipmentLabels(formData.equipment),
-        frequency: formData.frequency,
+        frequency: formData.frequency || '4',
         days: formData.days,
         age: formData.age,
         weight: formData.weight,
