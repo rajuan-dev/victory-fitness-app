@@ -1,10 +1,53 @@
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { useState } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, Alert, Platform, Share } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../constants/Colors';
 import { useLanguage } from '../../lib/i18n';
 
 export default function InviteFriendsCard() {
   const { t } = useLanguage();
+  const [sharing, setSharing] = useState(false);
+
+  const inviteUrl =
+    Platform.OS === 'web' && typeof window !== 'undefined'
+      ? window.location.origin
+      : 'https://victory-fitness-app.vercel.app';
+
+  const inviteMessage = `${t('Join me on Victory Fitness and start training with me.')}\n${inviteUrl}`;
+
+  const handleInviteFriends = async () => {
+    if (sharing) {
+      return;
+    }
+
+    setSharing(true);
+    try {
+      if (Platform.OS === 'web' && typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
+        await navigator.share({
+          title: 'Victory Fitness',
+          text: t('Join me on Victory Fitness and start training with me.'),
+          url: inviteUrl,
+        });
+        return;
+      }
+
+      if (Platform.OS === 'web' && typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(inviteUrl);
+        Alert.alert(t('Invite link copied'), t('The Victory Fitness invite link was copied to your clipboard.'));
+        return;
+      }
+
+      await Share.share({
+        message: inviteMessage,
+        url: inviteUrl,
+      });
+    } catch (error) {
+      Alert.alert(t('Invite failed'), error instanceof Error ? error.message : t('Unable to share the invite link right now.'));
+    } finally {
+      setSharing(false);
+    }
+  };
+
   return (
     <View
       style={[styles.premiumInviteCard, { backgroundColor: Colors.accentPurple }]}
@@ -23,8 +66,8 @@ export default function InviteFriendsCard() {
         {t('Bring your friends to Victory Fitness. Motivate each other and earn points for the next rank.')}
       </Text>
 
-      <TouchableOpacity style={styles.premiumInviteBtn} activeOpacity={0.85}>
-        <Text style={styles.premiumInviteBtnText}>{t('Invite Friends')}</Text>
+      <TouchableOpacity style={styles.premiumInviteBtn} activeOpacity={0.85} onPress={() => void handleInviteFriends()}>
+        <Text style={styles.premiumInviteBtnText}>{sharing ? t('Sharing...') : t('Invite Friends')}</Text>
       </TouchableOpacity>
     </View>
   );
