@@ -177,7 +177,6 @@ export default function StrengthPlanDashboard() {
                     onPress={() => handleToggleExpand(plan)}
                   >
                     <View style={styles.planMain}>
-                      <Text style={styles.planTitle}>{t('CUSTOM PLAN')} {plans.length - index}</Text>
                       <Text style={styles.planSummary} numberOfLines={isExpanded ? 3 : 1}>{plan.summary}</Text>
                     </View>
                     <View style={styles.planActions}>
@@ -411,12 +410,6 @@ const styles = StyleSheet.create({
   planMain: {
     flex: 1,
     gap: 4,
-  },
-  planTitle: {
-    color: Colors.accentBlue,
-    fontSize: 13,
-    fontFamily: 'Inter_700Bold',
-    letterSpacing: 1,
   },
   planSummary: {
     color: '#fff',

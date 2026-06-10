@@ -71,6 +71,7 @@ export async function createStrengthWorkoutPlan(payload: Record<string, unknown>
   const plan = await apiRequest<StrengthPlanResponse>('/ai/workout-plan/strength', {
     method: 'POST',
     body: payload,
+    timeoutMs: 120_000,
   });
   await persistLatestStrengthPlan(plan);
   return plan;
