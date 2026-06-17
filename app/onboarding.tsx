@@ -13,7 +13,7 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../constants/Colors';
 import { StatusBar } from 'expo-status-bar';
-import { clearAuthTokens, fetchCurrentUser, getValidAuthTokens } from '../lib/api';
+import { clearAuthTokens, fetchCurrentUser, getValidAuthTokens, updateCurrentUserProfile } from '../lib/api';
 import { getPostAuthRoute } from '../lib/access';
 import { replaceRoute } from '../lib/navigation';
 
@@ -44,6 +44,7 @@ export default function OnboardingScreen() {
   const router = useRouter();
   const [activeStep, setActiveStep] = useState(0);
   const [checkingAuth, setCheckingAuth] = useState(true);
+  const [completing, setCompleting] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -57,13 +58,14 @@ export default function OnboardingScreen() {
       if (tokens) {
         try {
           const user = await fetchCurrentUser();
-          replaceRoute(router, getPostAuthRoute(user));
+          const targetRoute = getPostAuthRoute(user);
+          if (targetRoute !== '/onboarding') {
+            replaceRoute(router, targetRoute);
+            return;
+          }
         } catch {
-          replaceRoute(router, '/login');
+          await clearAuthTokens();
         }
-      } else {
-        await clearAuthTokens();
-        replaceRoute(router, '/login');
       }
 
       if (!cancelled) {
@@ -78,9 +80,41 @@ export default function OnboardingScreen() {
     };
   }, [router]);
 
-  const handleNext = () => {
+  const handleNext = async () => {
     if (activeStep < ONBOARDING_DATA.length - 1) {
       setActiveStep(activeStep + 1);
+    } else {
+      const tokens = await getValidAuthTokens();
+      if (tokens) {
+        setCompleting(true);
+        try {
+          const user = await updateCurrentUserProfile({ onboarding_completed: true });
+          replaceRoute(router, getPostAuthRoute(user));
+        } catch (err) {
+          console.error('Failed to complete onboarding', err);
+          replaceRoute(router, '/plan');
+        } finally {
+          setCompleting(false);
+        }
+      } else {
+        replaceRoute(router, '/login');
+      }
+    }
+  };
+
+  const handleSkip = async () => {
+    const tokens = await getValidAuthTokens();
+    if (tokens) {
+      setCompleting(true);
+      try {
+        const user = await updateCurrentUserProfile({ onboarding_completed: true });
+        replaceRoute(router, getPostAuthRoute(user));
+      } catch (err) {
+        console.error('Failed to skip onboarding', err);
+        replaceRoute(router, '/plan');
+      } finally {
+        setCompleting(false);
+      }
     } else {
       replaceRoute(router, '/login');
     }
@@ -104,14 +138,15 @@ export default function OnboardingScreen() {
       <StatusBar style="light" />
       
       {/* Skip Button */}
-        {activeStep < 2 && (
-          <TouchableOpacity 
-            style={styles.skipBtn} 
-            onPress={() => replaceRoute(router, '/login')}
-          >
-            <Text style={styles.skipText}>SKIP</Text>
-          </TouchableOpacity>
-        )}
+      {activeStep < 2 && (
+        <TouchableOpacity 
+          style={styles.skipBtn} 
+          onPress={handleSkip}
+          disabled={completing}
+        >
+          <Text style={styles.skipText}>SKIP</Text>
+        </TouchableOpacity>
+      )}
 
       <View style={styles.content}>
         {/* Animated Icon Section */}
@@ -148,15 +183,22 @@ export default function OnboardingScreen() {
           style={[styles.nextBtn, activeStep === 2 && styles.getStartedBtn]} 
           onPress={handleNext}
           activeOpacity={0.8}
+          disabled={completing}
         >
-          <Text style={styles.nextBtnText}>
-            {activeStep === 2 ? 'GET STARTED' : 'CONTINUE'}
-          </Text>
-          <Ionicons 
-            name={activeStep === 2 ? 'rocket-outline' : 'arrow-forward'} 
-            size={20} 
-            color="#000" 
-          />
+          {completing ? (
+            <ActivityIndicator color="#000" size="small" />
+          ) : (
+            <>
+              <Text style={styles.nextBtnText}>
+                {activeStep === 2 ? 'GET STARTED' : 'CONTINUE'}
+              </Text>
+              <Ionicons 
+                name={activeStep === 2 ? 'rocket-outline' : 'arrow-forward'} 
+                size={20} 
+                color="#000" 
+              />
+            </>
+          )}
         </TouchableOpacity>
       </View>
     </SafeAreaView>
@@ -272,4 +314,3 @@ const styles = StyleSheet.create({
     letterSpacing: 1,
   },
 });
-

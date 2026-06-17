@@ -97,6 +97,7 @@ export type AuthUser = {
   is_admin?: boolean;
   country?: string;
   profileImage?: string;
+  onboarding_completed?: boolean;
   points?: number;
   workouts_completed?: number;
   workouts_total?: number;
@@ -427,6 +428,7 @@ function normalizeAuthUser(user: Partial<AuthUser> & { id?: string; name?: strin
     is_admin: Boolean(user.is_admin),
     country: String(user.country ?? ''),
     profileImage: String(user.profileImage ?? ''),
+    onboarding_completed: Boolean(user.onboarding_completed),
     points: Math.max(Number(user.points ?? 0) || 0, 0),
     workouts_completed: Math.max(Number(user.workouts_completed ?? 0) || 0, 0),
     workouts_total: Math.max(Number(user.workouts_total ?? 0) || 0, 0),
@@ -738,8 +740,9 @@ export async function updateCurrentUserProfile(payload: {
   email?: string;
   country?: string;
   profileImage?: string;
+  onboarding_completed?: boolean;
 }) {
-  const user = await apiRequest<AuthUser & { role?: string; is_admin?: boolean; country?: string; profileImage?: string }>(
+  const user = await apiRequest<AuthUser & { role?: string; is_admin?: boolean; country?: string; profileImage?: string; onboarding_completed?: boolean }>(
     '/me',
     {
       method: 'PATCH',

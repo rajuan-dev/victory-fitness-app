@@ -142,11 +142,21 @@ export function isPublicRoute(pathname: string): boolean {
   return ALLOWED_PUBLIC_PATHS.some((route) => pathname === route || pathname.startsWith(`${route}/`));
 }
 
-export function getPostAuthRoute(user?: Pick<AuthUser, 'is_admin' | 'subscription_tier' | 'subscription_status'> | null): string {
+export function getPostAuthRoute(user?: Pick<AuthUser, 'is_admin' | 'subscription_tier' | 'subscription_status' | 'onboarding_completed'> | null): string {
+  if (!user) {
+    return '/login';
+  }
+  if (!user.onboarding_completed) {
+    return '/onboarding';
+  }
   return isSubscriptionActive(user) ? '/(tabs)' : PLAN_PATH;
 }
 
-export function isRouteAllowedForPlan(pathname: string, user?: Pick<AuthUser, 'is_admin' | 'subscription_tier' | 'subscription_status'> | null): boolean {
+export function isRouteAllowedForPlan(pathname: string, user?: Pick<AuthUser, 'is_admin' | 'subscription_tier' | 'subscription_status' | 'onboarding_completed'> | null): boolean {
+  if (user && !user.onboarding_completed) {
+    return pathname === '/onboarding' || pathname === '/login' || pathname === '/register' || pathname === '/verification';
+  }
+
   if (isPublicRoute(pathname) || isPlanSelectionRoute(pathname)) {
     return true;
   }
@@ -168,7 +178,7 @@ export function isRouteAllowedForPlan(pathname: string, user?: Pick<AuthUser, 'i
   return false;
 }
 
-export function canAccessPlanRoute(pathname: string, user?: Pick<AuthUser, 'is_admin' | 'subscription_tier' | 'subscription_status'> | null): boolean {
+export function canAccessPlanRoute(pathname: string, user?: Pick<AuthUser, 'is_admin' | 'subscription_tier' | 'subscription_status' | 'onboarding_completed'> | null): boolean {
   if (!user) {
     return false;
   }
