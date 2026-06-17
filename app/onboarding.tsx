@@ -1,5 +1,5 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Animated, Easing, Image, ImageSourcePropType, Pressable, StyleSheet, View } from 'react-native';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { ActivityIndicator, Animated, Easing, Image, ImageSourcePropType, Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
@@ -44,6 +44,7 @@ const FRAMES: OnboardingFrame[] = [
 
 export default function OnboardingScreen() {
   const router = useRouter();
+  const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   const [activeStep, setActiveStep] = useState(0);
   const [checkingAuth, setCheckingAuth] = useState(true);
   const [completing, setCompleting] = useState(false);
@@ -98,6 +99,20 @@ export default function OnboardingScreen() {
       useNativeDriver: true,
     }).start();
   }, [activeStep, fadeAnim]);
+
+  const frameDimensions = useMemo(() => {
+    const horizontalPadding = 24;
+    const verticalPadding = 24;
+    const availableWidth = Math.max(windowWidth - horizontalPadding, 280);
+    const availableHeight = Math.max(windowHeight - verticalPadding, 560);
+    const widthFromHeight = availableHeight * SCREEN_ASPECT_RATIO;
+    const frameWidth = Math.min(availableWidth, widthFromHeight, 430);
+
+    return {
+      width: frameWidth,
+      height: frameWidth / SCREEN_ASPECT_RATIO,
+    };
+  }, [windowHeight, windowWidth]);
 
   const finishOnboarding = async () => {
     const tokens = await getValidAuthTokens();
@@ -157,7 +172,7 @@ export default function OnboardingScreen() {
     <SafeAreaView style={styles.container}>
       <StatusBar style="light" />
       <View style={styles.screen}>
-        <Animated.View style={[styles.frameWrap, { opacity: fadeAnim }]}>
+        <Animated.View style={[styles.frameWrap, frameDimensions, { opacity: fadeAnim }]}>
           <Image source={currentFrame.image} style={styles.frameImage} resizeMode="contain" />
 
           {currentFrame.hasVisibleSkip ? (
