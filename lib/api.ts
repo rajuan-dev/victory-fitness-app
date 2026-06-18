@@ -399,6 +399,25 @@ export type LongevityCircle = {
   description: string;
 };
 
+export type OnboardingSlideContent = {
+  id: string;
+  badge?: string;
+  title_lines: string[];
+  title_accent_index?: number | null;
+  description: string;
+  show_skip: boolean;
+  button_label: string;
+  button_arrow: string;
+  has_secondary: boolean;
+  secondary_label?: string;
+  has_footer: boolean;
+  footer_text?: string;
+};
+
+export type OnboardingContentResponse = {
+  slides: OnboardingSlideContent[];
+};
+
 const AUTH_STORAGE_KEY = 'victory-auth-tokens';
 const AUTH_USER_STORAGE_KEY = 'victory-auth-user';
 
@@ -857,6 +876,10 @@ export async function submitSupportMessage(payload: SupportMessagePayload) {
     method: 'POST',
     body: payload,
   });
+}
+
+export async function fetchOnboardingContent() {
+  return apiRequest<OnboardingContentResponse>('/content/onboarding');
 }
 
 export async function fetchLongevityDashboard(language?: string) {

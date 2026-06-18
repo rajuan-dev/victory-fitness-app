@@ -17,6 +17,7 @@ import { StatusBar } from 'expo-status-bar';
 
 import {
   clearAuthTokens,
+  fetchOnboardingContent,
   fetchCurrentUser,
   getValidAuthTokens,
   updateCurrentUserProfile,
@@ -53,7 +54,7 @@ type SlideConfig = {
   footerText?: string;
 };
 
-const SLIDES: SlideConfig[] = [
+const FALLBACK_SLIDES: SlideConfig[] = [
   {
     image: performanceImg,
     imgNativeW: 390,
@@ -65,7 +66,7 @@ const SLIDES: SlideConfig[] = [
     titleAccentIndex: 1,
     description:
       'Elite discipline meets data-driven precision. Track every rep, optimize your recovery, and transcend your limits with our high-octane performance ecosystem.',
-    showSkip: true,
+    showSkip: false,
     buttonLabel: 'NEXT',
     buttonArrow: '→',
     hasSecondary: false,
@@ -80,7 +81,7 @@ const SLIDES: SlideConfig[] = [
     titleLines: ['PRECISION', 'TRACKING'],
     description:
       'Experience real-time analytics fueled by proprietary algorithms. Every rep, breath, and heartbeat becomes actionable data.',
-    showSkip: true,
+    showSkip: false,
     buttonLabel: 'NEXT',
     buttonArrow: '→',
     hasSecondary: false,
@@ -98,17 +99,42 @@ const SLIDES: SlideConfig[] = [
     showSkip: false,
     buttonLabel: 'GET STARTED',
     buttonArrow: '>',
-    hasSecondary: true,
+    hasSecondary: false,
     secondaryLabel: 'SIGN IN TO EXISTING ACCOUNT',
     hasFooter: true,
-    footerText: 'VICTORY KINETIC OS V2.0',
+    footerText: 'VICTORY FITNESS OS V2.0',
   },
 ];
+
+const ONBOARDING_ASSETS: Record<string, Pick<SlideConfig, 'image' | 'imgNativeW' | 'imgNativeH' | 'imgTopSkip' | 'imgCropH'>> = {
+  'performance-first': {
+    image: performanceImg,
+    imgNativeW: 390,
+    imgNativeH: 883,
+    imgTopSkip: 68,
+    imgCropH: 430,
+  },
+  'precision-tracking': {
+    image: precisionImg,
+    imgNativeW: 390,
+    imgNativeH: 818,
+    imgTopSkip: 0,
+    imgCropH: 400,
+  },
+  'stronger-together': {
+    image: communityImg,
+    imgNativeW: 390,
+    imgNativeH: 841,
+    imgTopSkip: 0,
+    imgCropH: 420,
+  },
+};
 
 export default function OnboardingScreen() {
   const router = useRouter();
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   const [activeStep, setActiveStep] = useState(0);
+  const [slides, setSlides] = useState<SlideConfig[]>(FALLBACK_SLIDES);
   const [checkingAuth, setCheckingAuth] = useState(true);
   const [completing, setCompleting] = useState(false);
   const [hasAuthSession, setHasAuthSession] = useState(false);
@@ -154,6 +180,53 @@ export default function OnboardingScreen() {
     }).start();
   }, [activeStep, fadeAnim]);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadSlides = async () => {
+      try {
+        const response = await fetchOnboardingContent();
+        if (cancelled || !Array.isArray(response?.slides) || response.slides.length === 0) {
+          return;
+        }
+
+        const nextSlides = response.slides.reduce<SlideConfig[]>((acc, slide) => {
+            const asset = ONBOARDING_ASSETS[String(slide.id || '').trim()];
+            if (!asset) {
+              return acc;
+            }
+
+            acc.push({
+              ...asset,
+              badge: String(slide.badge || '').trim(),
+              titleLines: Array.isArray(slide.title_lines) ? slide.title_lines.map((line) => String(line || '').trim()).filter(Boolean) : [],
+              titleAccentIndex: typeof slide.title_accent_index === 'number' ? slide.title_accent_index : undefined,
+              description: String(slide.description || '').trim(),
+              showSkip: Boolean(slide.show_skip),
+              buttonLabel: String(slide.button_label || '').trim(),
+              buttonArrow: String(slide.button_arrow || '').trim(),
+              hasSecondary: Boolean(slide.has_secondary),
+              secondaryLabel: String(slide.secondary_label || '').trim(),
+              hasFooter: Boolean(slide.has_footer),
+              footerText: String(slide.footer_text || '').trim(),
+            });
+            return acc;
+          }, []);
+
+        if (!cancelled && nextSlides.length > 0) {
+          setSlides(nextSlides);
+        }
+      } catch {
+        // Keep fallback slide content when the backend content endpoint is unavailable.
+      }
+    };
+
+    void loadSlides();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const finishOnboarding = async () => {
     const tokens = await getValidAuthTokens();
     if (!tokens) {
@@ -172,7 +245,7 @@ export default function OnboardingScreen() {
   };
 
   const handleNext = async () => {
-    if (activeStep < SLIDES.length - 1) {
+    if (activeStep < slides.length - 1) {
       setActiveStep((s) => s + 1);
       return;
     }
@@ -200,10 +273,11 @@ export default function OnboardingScreen() {
     );
   }
 
-  const slide = SLIDES[activeStep];
+  const slide = slides[activeStep] || FALLBACK_SLIDES[Math.min(activeStep, FALLBACK_SLIDES.length - 1)];
 
-  const layoutWidth = Math.min(windowWidth, 560);
+  const layoutWidth = windowWidth;
   const compactHeight = windowHeight < 760;
+  const narrowWidth = layoutWidth < 360;
   const horizontalPadding = layoutWidth >= 480 ? 28 : 20;
   const displayW = layoutWidth;
   const imgScale = displayW / slide.imgNativeW;
@@ -229,7 +303,7 @@ export default function OnboardingScreen() {
         >
           <View style={styles.logoRow}>
             <Text style={styles.logoBolt}>⚡</Text>
-            <Text style={styles.logoText}> VICTORY KINETIC</Text>
+            <Text style={styles.logoText}> VICTORY FITNESS</Text>
           </View>
           {slide.showSkip && (
             <Pressable
@@ -261,7 +335,7 @@ export default function OnboardingScreen() {
             styles.textContent,
             {
               opacity: fadeAnim,
-              paddingHorizontal: horizontalPadding + 4,
+              paddingHorizontal: narrowWidth ? 18 : horizontalPadding + 4,
               paddingTop: compactHeight ? 14 : 18,
             },
           ]}
@@ -278,6 +352,7 @@ export default function OnboardingScreen() {
                 key={i}
                 style={[
                   styles.titleLine,
+                  narrowWidth && styles.titleLineNarrow,
                   i === slide.titleAccentIndex && styles.titleLineAccent,
                 ]}
               >
@@ -286,7 +361,9 @@ export default function OnboardingScreen() {
             ))}
           </View>
 
-          <Text style={styles.description}>{slide.description}</Text>
+          <Text style={[styles.description, narrowWidth && styles.descriptionNarrow]}>
+            {slide.description}
+          </Text>
         </Animated.View>
 
         {/* ── Bottom controls ── */}
@@ -301,7 +378,7 @@ export default function OnboardingScreen() {
         >
           {/* Pagination dots */}
           <View style={styles.dotsRow}>
-            {SLIDES.map((_, i) => (
+            {slides.map((_, i) => (
               <View
                 key={i}
                 style={[styles.dot, i === activeStep && styles.dotActive]}
@@ -317,8 +394,8 @@ export default function OnboardingScreen() {
             accessibilityRole="button"
             accessibilityLabel={slide.buttonLabel}
           >
-            <Text style={styles.primaryBtnText}>
-              {slide.buttonLabel} {slide.buttonArrow}
+            <Text style={[styles.primaryBtnText, narrowWidth && styles.primaryBtnTextNarrow]}>
+              {slide.buttonArrow}
             </Text>
           </Pressable>
 
@@ -358,9 +435,17 @@ const styles = StyleSheet.create({
   },
   screen: {
     flex: 1,
-    maxWidth: 430,
-    alignSelf: 'center',
     width: '100%',
+    position: 'relative',
+    flexDirection: 'column',
+    alignItems: 'flex-start',
+    justifyContent: 'flex-start',
+    padding: 0,
+  },
+  screenInner: {
+    flex: 1,
+    width: '100%',
+    alignSelf: 'center',
   },
 
   // Header
@@ -400,7 +485,6 @@ const styles = StyleSheet.create({
   // Text content
   textContent: {
     flex: 1,
-    paddingHorizontal: 24,
     paddingTop: 18,
     paddingBottom: 8,
   },
@@ -430,6 +514,10 @@ const styles = StyleSheet.create({
     lineHeight: 40,
     fontFamily: 'Inter_700Bold',
   },
+  titleLineNarrow: {
+    fontSize: 30,
+    lineHeight: 36,
+  },
   titleLineAccent: {
     color: TEAL,
   },
@@ -439,10 +527,14 @@ const styles = StyleSheet.create({
     lineHeight: 24,
     fontFamily: 'Inter_400Regular',
   },
+  descriptionNarrow: {
+    fontSize: 14,
+    lineHeight: 22,
+  },
 
   // Bottom controls
   bottomControls: {
-    paddingHorizontal: 20,
+    width: '100%',
     paddingBottom: 12,
   },
   dotsRow: {
@@ -478,6 +570,9 @@ const styles = StyleSheet.create({
     color: '#0D0D0D',
     letterSpacing: 2,
     fontFamily: 'Inter_700Bold',
+  },
+  primaryBtnTextNarrow: {
+    fontSize: 14,
   },
   secondaryBtn: {
     alignItems: 'center',
