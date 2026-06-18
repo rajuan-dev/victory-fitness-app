@@ -3,17 +3,16 @@ import {
   ActivityIndicator,
   Animated,
   Easing,
-  Image,
-  ImageSourcePropType,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   useWindowDimensions,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
+import { useRouter } from 'expo-router';
 
 import {
   clearAuthTokens,
@@ -25,107 +24,77 @@ import {
 import { getPostAuthRoute } from '../lib/access';
 import { replaceRoute } from '../lib/navigation';
 
-const TEAL = '#18E2D2';
-const BG = '#0D0D0D';
-const CONTENT_MAX_WIDTH = 560;
+const TEAL = '#00F5D4';
+const BG = '#070909';
+const CARD = '#111514';
+const WHITE = '#F5F5F5';
+const MUTED = '#B8B8B8';
 
-const performanceImg = require('../assets/images/onboarding/performance-first.png') as ImageSourcePropType;
-const precisionImg = require('../assets/images/onboarding/precision-tracking.png') as ImageSourcePropType;
-const communityImg = require('../assets/images/onboarding/stronger-together.png') as ImageSourcePropType;
+type SlideVisual = 'hero' | 'analytics' | 'community';
 
 type SlideConfig = {
-  image: ImageSourcePropType;
-  imgNativeW: number;
-  imgNativeH: number;
-  imgTopSkip: number;
-  imgCropH: number;
-  badge?: string;
+  id: string;
+  tag: string;
   titleLines: string[];
-  titleAccentIndex?: number;
   description: string;
   showSkip: boolean;
   buttonLabel: string;
   buttonArrow: string;
   hasFooter: boolean;
   footerText?: string;
+  visual: SlideVisual;
 };
 
 const FALLBACK_SLIDES: SlideConfig[] = [
   {
-    image: performanceImg,
-    imgNativeW: 390,
-    imgNativeH: 883,
-    imgTopSkip: 68,
-    imgCropH: 430,
-    badge: 'PERFORMANCE FIRST',
+    id: 'performance-first',
+    tag: 'PERFORMANCE FIRST',
     titleLines: ['UNLEASH YOUR', 'POTENTIAL'],
-    titleAccentIndex: 1,
     description:
-      'Elite discipline meets data-driven precision. Track every rep, optimize your recovery, and transcend your limits with our high-performance training ecosystem.',
+      'Elite discipline meets data-driven precision. Track every rep, optimize your recovery, and transcend your limits with our high-octane performance ecosystem.',
     showSkip: false,
-    buttonLabel: 'Next',
+    buttonLabel: 'NEXT',
     buttonArrow: '>',
     hasFooter: false,
+    visual: 'hero',
   },
   {
-    image: precisionImg,
-    imgNativeW: 390,
-    imgNativeH: 818,
-    imgTopSkip: 0,
-    imgCropH: 400,
+    id: 'precision-tracking',
+    tag: 'VO2 MAX GAIN',
     titleLines: ['PRECISION', 'TRACKING'],
     description:
-      'Experience real-time analytics fueled by smart coaching systems. Every rep, breath, and heartbeat becomes useful training data.',
+      'Experience real-time analytics fueled by proprietary algorithms. Every rep, breath, and heartbeat becomes actionable data.',
     showSkip: false,
-    buttonLabel: 'Next',
+    buttonLabel: 'NEXT',
     buttonArrow: '>',
     hasFooter: false,
+    visual: 'analytics',
   },
   {
-    image: communityImg,
-    imgNativeW: 390,
-    imgNativeH: 841,
-    imgTopSkip: 0,
-    imgCropH: 420,
+    id: 'stronger-together',
+    tag: 'GLOBAL FEED',
     titleLines: ['STRONGER', 'TOGETHER'],
     description:
-      'Train with a connected community, stay accountable, and move into your plan with a cleaner onboarding flow.',
+      'Unlock your full potential by training with a global network of elite athletes. Share data, compete in challenges, and never train alone.',
     showSkip: false,
-    buttonLabel: 'Get Started',
+    buttonLabel: 'GET STARTED',
     buttonArrow: '>',
     hasFooter: true,
     footerText: 'VICTORY FITNESS OS V2.0',
+    visual: 'community',
   },
 ];
 
-const ONBOARDING_ASSETS: Record<string, Pick<SlideConfig, 'image' | 'imgNativeW' | 'imgNativeH' | 'imgTopSkip' | 'imgCropH'>> = {
-  'performance-first': {
-    image: performanceImg,
-    imgNativeW: 390,
-    imgNativeH: 883,
-    imgTopSkip: 68,
-    imgCropH: 430,
-  },
-  'precision-tracking': {
-    image: precisionImg,
-    imgNativeW: 390,
-    imgNativeH: 818,
-    imgTopSkip: 0,
-    imgCropH: 400,
-  },
-  'stronger-together': {
-    image: communityImg,
-    imgNativeW: 390,
-    imgNativeH: 841,
-    imgTopSkip: 0,
-    imgCropH: 420,
-  },
+const VISUAL_BY_ID: Record<string, SlideVisual> = {
+  'performance-first': 'hero',
+  'precision-tracking': 'analytics',
+  'stronger-together': 'community',
 };
 
 export default function OnboardingScreen() {
   const router = useRouter();
-  const { width: windowWidth, height: windowHeight } = useWindowDimensions();
-  const [activeStep, setActiveStep] = useState(0);
+  const { width } = useWindowDimensions();
+  const [index, setIndex] = useState(0);
   const [slides, setSlides] = useState<SlideConfig[]>(FALLBACK_SLIDES);
   const [checkingAuth, setCheckingAuth] = useState(true);
   const [completing, setCompleting] = useState(false);
@@ -165,16 +134,6 @@ export default function OnboardingScreen() {
   }, [router]);
 
   useEffect(() => {
-    fadeAnim.setValue(0);
-    Animated.timing(fadeAnim, {
-      toValue: 1,
-      duration: 220,
-      easing: Easing.out(Easing.cubic),
-      useNativeDriver: true,
-    }).start();
-  }, [activeStep, fadeAnim]);
-
-  useEffect(() => {
     let cancelled = false;
 
     const loadSlides = async () => {
@@ -185,35 +144,36 @@ export default function OnboardingScreen() {
         }
 
         const nextSlides = response.slides.reduce<SlideConfig[]>((acc, slide) => {
-          const asset = ONBOARDING_ASSETS[String(slide.id || '').trim()];
-          if (!asset) {
-            return acc;
-          }
-
+          const id = String(slide.id || '').trim();
           const titleLines = Array.isArray(slide.title_lines)
             ? slide.title_lines.map((line) => String(line || '').trim()).filter(Boolean)
             : [];
 
+          if (!id) {
+            return acc;
+          }
+
           acc.push({
-            ...asset,
-            badge: String(slide.badge || '').trim() || undefined,
-            titleLines: titleLines.length > 0 ? titleLines : ['VICTORY'],
-            titleAccentIndex: typeof slide.title_accent_index === 'number' ? slide.title_accent_index : undefined,
+            id,
+            tag: String(slide.badge || '').trim() || 'VICTORY FITNESS',
+            titleLines: titleLines.length > 0 ? titleLines : ['VICTORY', 'FITNESS'],
             description: String(slide.description || '').trim(),
             showSkip: Boolean(slide.show_skip),
-            buttonLabel: String(slide.button_label || '').trim() || 'Next',
+            buttonLabel: String(slide.button_label || '').trim() || 'NEXT',
             buttonArrow: String(slide.button_arrow || '').trim() || '>',
             hasFooter: Boolean(slide.has_footer),
             footerText: String(slide.footer_text || '').trim() || undefined,
+            visual: VISUAL_BY_ID[id] || 'hero',
           });
           return acc;
         }, []);
 
         if (!cancelled && nextSlides.length > 0) {
           setSlides(nextSlides);
+          setIndex((current) => Math.min(current, nextSlides.length - 1));
         }
       } catch {
-        // Keep fallback content if the backend content endpoint is unavailable.
+        // Keep fallback slides when backend content is unavailable.
       }
     };
 
@@ -223,28 +183,26 @@ export default function OnboardingScreen() {
     };
   }, []);
 
-  const slide = slides[activeStep] || FALLBACK_SLIDES[Math.min(activeStep, FALLBACK_SLIDES.length - 1)];
+  useEffect(() => {
+    fadeAnim.setValue(0);
+    Animated.timing(fadeAnim, {
+      toValue: 1,
+      duration: 220,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    }).start();
+  }, [fadeAnim, index]);
 
-  const layout = useMemo(() => {
-    const compactHeight = windowHeight < 760;
-    const narrowWidth = windowWidth < 360;
-    const horizontalPadding = windowWidth >= 480 ? 28 : 20;
-    const contentWidth = Math.min(windowWidth, CONTENT_MAX_WIDTH);
-    const contentPadding = Math.max(horizontalPadding, (windowWidth - contentWidth) / 2 + horizontalPadding);
-    const imageScale = windowWidth / slide.imgNativeW;
+  const slide = slides[index] || FALLBACK_SLIDES[Math.min(index, FALLBACK_SLIDES.length - 1)];
+  const isTablet = width >= 768 && width < 1024;
+  const isDesktop = width >= 1024;
 
-    return {
-      compactHeight,
-      narrowWidth,
-      contentPadding,
-      displayW: windowWidth,
-      imgFullH: slide.imgNativeH * imageScale,
-      imgCropH: slide.imgCropH * imageScale,
-      imgSkipH: slide.imgTopSkip * imageScale,
-    };
-  }, [slide, windowHeight, windowWidth]);
+  const next = async () => {
+    if (index < slides.length - 1) {
+      setIndex((current) => current + 1);
+      return;
+    }
 
-  const finishOnboarding = async () => {
     const tokens = await getValidAuthTokens();
     if (!tokens) {
       replaceRoute(router, '/register');
@@ -262,21 +220,30 @@ export default function OnboardingScreen() {
     }
   };
 
-  const handleNext = async () => {
-    if (activeStep < slides.length - 1) {
-      setActiveStep((step) => step + 1);
+  const handleSkip = async () => {
+    const tokens = await getValidAuthTokens();
+    if (!tokens) {
+      replaceRoute(router, '/register');
       return;
     }
-    await finishOnboarding();
+    await next();
   };
 
-  const handleSkip = () => {
-    void finishOnboarding();
-  };
+  const content = (
+    <Animated.View style={{ flex: 1, opacity: fadeAnim }}>
+      {isDesktop ? (
+        <DesktopScreen slide={slide} index={index} total={slides.length} next={next} onSkip={handleSkip} completing={completing} />
+      ) : isTablet ? (
+        <TabletScreen slide={slide} index={index} total={slides.length} next={next} onSkip={handleSkip} completing={completing} />
+      ) : (
+        <MobileScreen slide={slide} index={index} total={slides.length} next={next} onSkip={handleSkip} completing={completing} />
+      )}
+    </Animated.View>
+  );
 
   if (checkingAuth) {
     return (
-      <SafeAreaView style={styles.container}>
+      <SafeAreaView style={styles.safe}>
         <StatusBar style="light" />
         <View style={styles.loadingWrap}>
           <ActivityIndicator color={TEAL} size="large" />
@@ -286,129 +253,249 @@ export default function OnboardingScreen() {
   }
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={styles.safe}>
       <StatusBar style="light" />
-
-      <View style={styles.screen}>
-        <View style={styles.screenInner}>
-          <View
-            style={[
-              styles.header,
-              {
-                paddingHorizontal: layout.contentPadding,
-                paddingVertical: layout.compactHeight ? 10 : 14,
-              },
-            ]}
-          >
-            <View style={styles.logoRow}>
-              <Text style={styles.logoMark}>V</Text>
-              <Text style={styles.logoText}> VICTORY FITNESS</Text>
-            </View>
-            {slide.showSkip ? (
-              <Pressable
-                onPress={handleSkip}
-                disabled={completing}
-                hitSlop={16}
-                accessibilityRole="button"
-                accessibilityLabel="Skip onboarding"
-              >
-                <Text style={styles.skipText}>SKIP</Text>
-              </Pressable>
-            ) : (
-              <View style={styles.skipSpacer} />
-            )}
-          </View>
-
-          <Animated.View style={{ opacity: fadeAnim, width: layout.displayW }}>
-            <View style={[styles.imageClip, { height: layout.imgCropH, width: layout.displayW }]}>
-              <Image
-                source={slide.image}
-                style={{
-                  width: layout.displayW,
-                  height: layout.imgFullH,
-                  marginTop: -layout.imgSkipH,
-                }}
-                resizeMode="cover"
-              />
-              <View style={styles.imageShade} />
-            </View>
-          </Animated.View>
-
-          <Animated.View
-            style={[
-              styles.textContent,
-              {
-                opacity: fadeAnim,
-                paddingHorizontal: layout.narrowWidth ? 18 : layout.contentPadding,
-                paddingTop: layout.compactHeight ? 16 : 22,
-              },
-            ]}
-          >
-            {slide.badge ? (
-              <View style={styles.badge}>
-                <Text style={styles.badgeText}>{slide.badge}</Text>
-              </View>
-            ) : null}
-
-            <View style={styles.titleBlock}>
-              {slide.titleLines.map((line, index) => (
-                <Text
-                  key={`${line}-${index}`}
-                  style={[
-                    styles.titleLine,
-                    layout.narrowWidth && styles.titleLineNarrow,
-                    index === slide.titleAccentIndex && styles.titleLineAccent,
-                  ]}
-                >
-                  {line}
-                </Text>
-              ))}
-            </View>
-
-            <Text style={[styles.description, layout.narrowWidth && styles.descriptionNarrow]}>
-              {slide.description}
-            </Text>
-          </Animated.View>
-
-          <View
-            style={[
-              styles.bottomControls,
-              {
-                paddingHorizontal: layout.contentPadding,
-                paddingBottom: layout.compactHeight ? 8 : 16,
-              },
-            ]}
-          >
-            <View style={styles.dotsRow}>
-              {slides.map((_, index) => (
-                <View key={index} style={[styles.dot, index === activeStep && styles.dotActive]} />
-              ))}
-            </View>
-
-            <Pressable
-              style={[styles.primaryBtn, completing && styles.primaryBtnDisabled]}
-              onPress={() => void handleNext()}
-              disabled={completing}
-              accessibilityRole="button"
-              accessibilityLabel={slide.buttonLabel}
-            >
-              <Text style={[styles.primaryBtnText, layout.narrowWidth && styles.primaryBtnTextNarrow]}>
-                {slide.buttonArrow}
-              </Text>
-            </Pressable>
-
-            {slide.hasFooter && slide.footerText ? (
-              <Text style={styles.footerText}>{slide.footerText}</Text>
-            ) : null}
-          </View>
-        </View>
-      </View>
+      {content}
     </SafeAreaView>
   );
 }
 
+type LayoutProps = {
+  slide: SlideConfig;
+  index: number;
+  total: number;
+  next: () => void;
+  onSkip: () => void;
+  completing: boolean;
+};
+
+function MobileScreen({ slide, index, total, next, onSkip, completing }: LayoutProps) {
+  return (
+    <View style={styles.mobileContainer}>
+      <Header showSkip={slide.showSkip} onSkip={onSkip} />
+      <View style={styles.mobileHero}>
+        <SlideVisual visual={slide.visual} />
+      </View>
+      <View style={styles.mobileText}>
+        <Tag text={slide.tag} />
+        <Title lines={slide.titleLines} style={styles.mobileTitle} />
+        <Text style={styles.mobileDesc}>{slide.description}</Text>
+      </View>
+      <Pagination index={index} total={total} />
+      <Button
+        label={index === total - 1 ? slide.buttonLabel : 'NEXT'}
+        arrow={slide.buttonArrow}
+        onPress={next}
+        disabled={completing}
+      />
+      {slide.hasFooter && slide.footerText ? <Text style={styles.footerText}>{slide.footerText}</Text> : null}
+    </View>
+  );
+}
+
+function TabletScreen({ slide, index, total, next, onSkip, completing }: LayoutProps) {
+  return (
+    <ScrollView contentContainerStyle={styles.tabletPage}>
+      <View style={styles.tabletContainer}>
+        <Header showSkip={slide.showSkip} onSkip={onSkip} />
+        <View style={styles.tabletHero}>
+          <SlideVisual visual={slide.visual} large />
+        </View>
+        <View style={styles.tabletText}>
+          <Tag text={slide.tag} />
+          <Title lines={slide.titleLines} style={styles.tabletTitle} centered />
+          <Text style={styles.tabletDesc}>{slide.description}</Text>
+        </View>
+        <Pagination index={index} total={total} />
+        <Button
+          label={index === total - 1 ? slide.buttonLabel : 'NEXT'}
+          arrow={slide.buttonArrow}
+          onPress={next}
+          disabled={completing}
+        />
+        {slide.hasFooter && slide.footerText ? <Text style={styles.footerText}>{slide.footerText}</Text> : null}
+      </View>
+    </ScrollView>
+  );
+}
+
+function DesktopScreen({ slide, index, total, next, onSkip, completing }: LayoutProps) {
+  return (
+    <View style={styles.desktopPage}>
+      <View style={styles.desktopContainer}>
+        <Header showSkip={slide.showSkip} onSkip={onSkip} />
+        <View style={styles.desktopContent}>
+          <View style={styles.desktopVisual}>
+            <SlideVisual visual={slide.visual} large />
+          </View>
+          <View style={styles.desktopText}>
+            <Tag text={slide.tag} />
+            <Title lines={slide.titleLines} style={styles.desktopTitle} />
+            <Text style={styles.desktopDesc}>{slide.description}</Text>
+            <Pagination index={index} total={total} />
+            <Button
+              label={index === total - 1 ? slide.buttonLabel : 'NEXT'}
+              arrow={slide.buttonArrow}
+              onPress={next}
+              disabled={completing}
+            />
+            {slide.hasFooter && slide.footerText ? <Text style={styles.footerTextDesktop}>{slide.footerText}</Text> : null}
+          </View>
+        </View>
+      </View>
+    </View>
+  );
+}
+
+function Header({ showSkip, onSkip }: { showSkip: boolean; onSkip: () => void }) {
+  return (
+    <View style={styles.header}>
+      <Text style={styles.logo}>V VICTORY FITNESS</Text>
+      {showSkip ? (
+        <Pressable onPress={onSkip} hitSlop={12}>
+          <Text style={styles.skip}>SKIP</Text>
+        </Pressable>
+      ) : (
+        <View style={styles.skipPlaceholder} />
+      )}
+    </View>
+  );
+}
+
+function Tag({ text }: { text: string }) {
+  return (
+    <Text style={styles.tag}>
+      {text}
+    </Text>
+  );
+}
+
+function Title({ lines, style, centered }: { lines: string[]; style: object; centered?: boolean }) {
+  return (
+    <View style={centered ? styles.centeredTitle : undefined}>
+      {lines.map((line, idx) => (
+        <Text key={`${line}-${idx}`} style={[style, centered && styles.centeredText]}>
+          {line}
+        </Text>
+      ))}
+    </View>
+  );
+}
+
+function Button({ label, arrow, onPress, disabled }: { label: string; arrow: string; onPress: () => void; disabled?: boolean }) {
+  return (
+    <Pressable style={[styles.button, disabled && styles.buttonDisabled]} onPress={onPress} disabled={disabled}>
+      <Text style={styles.buttonText}>
+        {`${label} ${arrow}`.trim()}
+      </Text>
+    </Pressable>
+  );
+}
+
+function Pagination({ index, total }: { index: number; total: number }) {
+  return (
+    <View style={styles.pagination}>
+      {Array.from({ length: total }).map((_, item) => (
+        <View key={item} style={[styles.dot, index === item && styles.activeDot]} />
+      ))}
+    </View>
+  );
+}
+
+function SlideVisual({ visual, large }: { visual: SlideVisual; large?: boolean }) {
+  if (visual === 'analytics') {
+    return <AnalyticsCard large={large} />;
+  }
+
+  if (visual === 'community') {
+    return <CommunityCard large={large} />;
+  }
+
+  return <HeroMock large={large} />;
+}
+
+function HeroMock({ large }: { large?: boolean }) {
+  return (
+    <View style={styles.heroMock}>
+      <View style={[styles.bodyCircle, large && styles.bodyCircleLarge]} />
+      <View style={styles.heroGrid} />
+      <Text style={styles.heroText}>VICTORY FITNESS</Text>
+    </View>
+  );
+}
+
+function AnalyticsCard({ large }: { large?: boolean }) {
+  return (
+    <View style={[styles.analyticsCard, large && styles.analyticsCardLarge]}>
+      <Text style={styles.analyticsLabel}>VO2 MAX GAIN</Text>
+      <Text style={styles.analyticsValue}>+12.4%</Text>
+
+      <View style={styles.analyticsGraph}>
+        <View style={[styles.graphBar, { height: 42 }]} />
+        <View style={[styles.graphBar, { height: 74 }]} />
+        <View style={[styles.graphBar, { height: 58 }]} />
+        <View style={[styles.graphBar, { height: 98 }]} />
+        <View style={[styles.graphBar, { height: 124 }]} />
+        <View style={[styles.graphBar, { height: 82 }]} />
+      </View>
+
+      <View style={styles.wattBox}>
+        <Text style={styles.wattSmall}>PEAK OUTPUT</Text>
+        <Text style={styles.wattText}>342 WATTS</Text>
+      </View>
+
+      <View style={styles.days}>
+        {['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'].map((day) => (
+          <Text key={day} style={[styles.day, day === 'THU' && styles.activeDay]}>
+            {day}
+          </Text>
+        ))}
+      </View>
+    </View>
+  );
+}
+
+function CommunityCard({ large }: { large?: boolean }) {
+  return (
+    <View style={[styles.communityCard, large && styles.communityCardLarge]}>
+      <View style={styles.communityRow}>
+        <MiniProfile name="Miskat" accent />
+        <MiniProfile name="Victor" />
+      </View>
+      <View style={styles.communityCenter}>
+        <Text style={styles.communityBadge}>GLOBAL FEED</Text>
+        <Text style={styles.communityTitle}>24 ATHLETES LIVE</Text>
+        <Text style={styles.communitySub}>Challenges, progress and accountability in one place.</Text>
+      </View>
+      <View style={styles.communityMetrics}>
+        <MetricPill label="Wins" value="182" />
+        <MetricPill label="Teams" value="12" />
+        <MetricPill label="Streak" value="31d" />
+      </View>
+    </View>
+  );
+}
+
+function MiniProfile({ name, accent }: { name: string; accent?: boolean }) {
+  return (
+    <View style={[styles.profileCard, accent && styles.profileCardAccent]}>
+      <View style={styles.profileAvatar} />
+      <Text style={styles.profileName}>{name}</Text>
+    </View>
+  );
+}
+
+function MetricPill({ label, value }: { label: string; value: string }) {
+  return (
+    <View style={styles.metricPill}>
+      <Text style={styles.metricValue}>{value}</Text>
+      <Text style={styles.metricLabel}>{label}</Text>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
-  container: {
+  safe: {
     flex: 1,
     backgroundColor: BG,
   },
@@ -417,147 +504,378 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  screen: {
-    flex: 1,
-    width: '100%',
-    justifyContent: 'flex-start',
-  },
-  screenInner: {
-    flex: 1,
-    width: '100%',
-  },
   header: {
+    height: 64,
+    width: '100%',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
   },
-  logoRow: {
-    flexDirection: 'row',
+  logo: {
+    color: TEAL,
+    fontSize: 18,
+    fontWeight: '800',
+    fontStyle: 'italic',
+  },
+  skip: {
+    color: MUTED,
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  skipPlaceholder: {
+    width: 44,
+  },
+  mobileContainer: {
+    flex: 1,
+    paddingHorizontal: 20,
+    paddingBottom: 28,
+  },
+  mobileHero: {
+    height: 360,
+    marginTop: 20,
+  },
+  mobileText: {
+    marginTop: 18,
+  },
+  mobileTitle: {
+    color: WHITE,
+    fontSize: 36,
+    lineHeight: 38,
+    fontWeight: '900',
+  },
+  mobileDesc: {
+    color: MUTED,
+    fontSize: 16,
+    lineHeight: 24,
+    marginTop: 12,
+  },
+  tabletPage: {
+    flexGrow: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: BG,
+    paddingVertical: 32,
+  },
+  tabletContainer: {
+    width: '86%',
+    maxWidth: 720,
+    minHeight: 900,
+    paddingHorizontal: 32,
+    paddingBottom: 36,
+  },
+  tabletHero: {
+    height: 460,
+    marginTop: 30,
+  },
+  tabletText: {
+    marginTop: 32,
     alignItems: 'center',
   },
-  logoMark: {
-    fontSize: 15,
-    color: TEAL,
-    fontFamily: 'Inter_700Bold',
+  tabletTitle: {
+    color: WHITE,
+    fontSize: 52,
+    lineHeight: 54,
+    fontWeight: '900',
   },
-  logoText: {
-    fontSize: 13,
-    color: TEAL,
-    fontWeight: '700',
-    letterSpacing: 1.5,
-    fontFamily: 'Inter_700Bold',
+  tabletDesc: {
+    color: MUTED,
+    fontSize: 19,
+    lineHeight: 30,
+    marginTop: 16,
+    textAlign: 'center',
+    maxWidth: 560,
   },
-  skipText: {
-    fontSize: 14,
-    color: 'rgba(255,255,255,0.85)',
-    fontFamily: 'Inter_400Regular',
-  },
-  skipSpacer: {
-    width: 40,
-  },
-  imageClip: {
-    overflow: 'hidden',
-    position: 'relative',
-  },
-  imageShade: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(13,13,13,0.08)',
-  },
-  textContent: {
+  desktopPage: {
     flex: 1,
-    width: '100%',
-    paddingBottom: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: BG,
+    paddingHorizontal: 24,
   },
-  badge: {
+  desktopContainer: {
+    width: '92%',
+    maxWidth: 1200,
+    minHeight: 720,
+  },
+  desktopContent: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 70,
+  },
+  desktopVisual: {
+    flex: 1.1,
+    height: 560,
+  },
+  desktopText: {
+    flex: 0.9,
+  },
+  desktopTitle: {
+    color: WHITE,
+    fontSize: 68,
+    lineHeight: 70,
+    fontWeight: '900',
+  },
+  desktopDesc: {
+    color: MUTED,
+    fontSize: 21,
+    lineHeight: 34,
+    marginTop: 18,
+    maxWidth: 520,
+  },
+  centeredTitle: {
+    alignItems: 'center',
+  },
+  centeredText: {
+    textAlign: 'center',
+  },
+  tag: {
     alignSelf: 'flex-start',
+    color: TEAL,
+    fontSize: 12,
+    fontWeight: '800',
+    letterSpacing: 1,
     borderWidth: 1,
     borderColor: TEAL,
-    borderRadius: 4,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
+    borderRadius: 20,
+    paddingHorizontal: 14,
+    paddingVertical: 6,
     marginBottom: 12,
   },
-  badgeText: {
-    fontSize: 11,
-    color: TEAL,
-    fontWeight: '600',
-    letterSpacing: 1.5,
-    fontFamily: 'Inter_600SemiBold',
-  },
-  titleBlock: {
-    marginBottom: 14,
-  },
-  titleLine: {
-    fontSize: 34,
-    fontWeight: '800',
-    color: '#FFFFFF',
-    lineHeight: 40,
-    fontFamily: 'Inter_700Bold',
-  },
-  titleLineNarrow: {
-    fontSize: 30,
-    lineHeight: 36,
-  },
-  titleLineAccent: {
-    color: TEAL,
-  },
-  description: {
-    fontSize: 15,
-    color: 'rgba(255,255,255,0.68)',
-    lineHeight: 24,
-    fontFamily: 'Inter_400Regular',
-    maxWidth: 540,
-  },
-  descriptionNarrow: {
-    fontSize: 14,
-    lineHeight: 22,
-  },
-  bottomControls: {
-    width: '100%',
-  },
-  dotsRow: {
-    flexDirection: 'row',
+  heroMock: {
+    flex: 1,
+    borderRadius: 14,
+    backgroundColor: '#0D1211',
+    borderWidth: 1,
+    borderColor: '#1B3A36',
+    justifyContent: 'center',
     alignItems: 'center',
+    overflow: 'hidden',
+  },
+  heroGrid: {
+    position: 'absolute',
+    inset: 0,
+    borderColor: 'rgba(0,245,212,0.08)',
+    borderWidth: 1,
+  },
+  bodyCircle: {
+    width: 230,
+    height: 230,
+    borderRadius: 999,
+    backgroundColor: '#1C2725',
+    borderWidth: 1,
+    borderColor: TEAL,
+    opacity: 0.4,
+  },
+  bodyCircleLarge: {
+    width: 320,
+    height: 320,
+  },
+  heroText: {
+    position: 'absolute',
+    color: TEAL,
+    fontSize: 16,
+    fontWeight: '900',
+    letterSpacing: 2,
+  },
+  analyticsCard: {
+    flex: 1,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#16423D',
+    backgroundColor: CARD,
+    padding: 24,
+    justifyContent: 'space-between',
+  },
+  analyticsCardLarge: {
+    padding: 36,
+  },
+  analyticsLabel: {
+    color: MUTED,
+    fontSize: 14,
+    fontWeight: '900',
+    letterSpacing: 2,
+  },
+  analyticsValue: {
+    color: TEAL,
+    fontSize: 44,
+    fontWeight: '900',
+  },
+  analyticsGraph: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    justifyContent: 'space-between',
+    height: 132,
+    marginVertical: 12,
+  },
+  graphBar: {
+    width: '12%',
+    borderRadius: 999,
+    backgroundColor: 'rgba(0,245,212,0.7)',
+  },
+  wattBox: {
+    alignSelf: 'center',
+    borderWidth: 1,
+    borderColor: '#1C8178',
+    borderRadius: 6,
+    paddingHorizontal: 28,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  wattSmall: {
+    color: MUTED,
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  wattText: {
+    color: WHITE,
+    fontSize: 15,
+    fontWeight: '900',
+    letterSpacing: 1,
+  },
+  days: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  day: {
+    color: MUTED,
+    fontSize: 11,
+  },
+  activeDay: {
+    color: TEAL,
+  },
+  communityCard: {
+    flex: 1,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#1B3A36',
+    backgroundColor: CARD,
+    padding: 24,
+    justifyContent: 'space-between',
+  },
+  communityCardLarge: {
+    padding: 36,
+  },
+  communityRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 16,
+  },
+  profileCard: {
+    flex: 1,
+    borderRadius: 12,
+    backgroundColor: '#0D1211',
+    borderWidth: 1,
+    borderColor: '#203230',
+    padding: 16,
+    alignItems: 'center',
+  },
+  profileCardAccent: {
+    borderColor: '#1C8178',
+  },
+  profileAvatar: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#22312E',
+    marginBottom: 10,
+  },
+  profileName: {
+    color: WHITE,
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  communityCenter: {
+    alignItems: 'center',
+    paddingVertical: 24,
+  },
+  communityBadge: {
+    color: TEAL,
+    fontSize: 12,
+    fontWeight: '800',
+    letterSpacing: 1.5,
+    marginBottom: 10,
+  },
+  communityTitle: {
+    color: WHITE,
+    fontSize: 28,
+    fontWeight: '900',
+    marginBottom: 10,
+  },
+  communitySub: {
+    color: MUTED,
+    fontSize: 15,
+    lineHeight: 22,
+    textAlign: 'center',
+    maxWidth: 340,
+  },
+  communityMetrics: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  metricPill: {
+    flex: 1,
+    borderRadius: 12,
+    backgroundColor: '#0D1211',
+    borderWidth: 1,
+    borderColor: '#203230',
+    paddingVertical: 14,
+    alignItems: 'center',
+  },
+  metricValue: {
+    color: TEAL,
+    fontSize: 18,
+    fontWeight: '900',
+  },
+  metricLabel: {
+    color: MUTED,
+    fontSize: 11,
+    marginTop: 4,
+  },
+  pagination: {
+    flexDirection: 'row',
     justifyContent: 'center',
     gap: 8,
-    marginBottom: 18,
+    marginVertical: 22,
   },
   dot: {
-    width: 8,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: 'rgba(255,255,255,0.28)',
+    width: 28,
+    height: 4,
+    borderRadius: 20,
+    backgroundColor: '#333',
   },
-  dotActive: {
-    width: 26,
+  activeDot: {
+    width: 36,
     backgroundColor: TEAL,
   },
-  primaryBtn: {
+  button: {
+    height: 64,
+    width: '100%',
     backgroundColor: TEAL,
-    borderRadius: 8,
-    minHeight: 56,
-    alignItems: 'center',
+    borderRadius: 6,
     justifyContent: 'center',
+    alignItems: 'center',
   },
-  primaryBtnDisabled: {
+  buttonDisabled: {
     opacity: 0.5,
   },
-  primaryBtnText: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#0D0D0D',
-    letterSpacing: 1,
-    fontFamily: 'Inter_700Bold',
-  },
-  primaryBtnTextNarrow: {
+  buttonText: {
+    color: '#020202',
     fontSize: 16,
+    fontWeight: '900',
+    letterSpacing: 1.5,
   },
   footerText: {
+    marginTop: 12,
     textAlign: 'center',
+    color: 'rgba(245,245,245,0.35)',
     fontSize: 11,
-    color: 'rgba(255,255,255,0.28)',
     letterSpacing: 2,
-    marginTop: 10,
-    fontFamily: 'Inter_400Regular',
+  },
+  footerTextDesktop: {
+    marginTop: 14,
+    color: 'rgba(245,245,245,0.35)',
+    fontSize: 11,
+    letterSpacing: 2,
   },
 });
