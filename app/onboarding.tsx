@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   Animated,
   Easing,
+  Image,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -29,6 +30,7 @@ const BG = '#070909';
 const CARD = '#111514';
 const WHITE = '#F5F5F5';
 const MUTED = '#B8B8B8';
+const performanceCutout = require('../assets/images/onboarding/performance-cutout.png');
 
 type SlideVisual = 'hero' | 'analytics' | 'community';
 
@@ -419,7 +421,11 @@ function HeroMock({ large }: { large?: boolean }) {
     <View style={styles.heroMock}>
       <View style={[styles.bodyCircle, large && styles.bodyCircleLarge]} />
       <View style={styles.heroGrid} />
-      <Text style={styles.heroText}>VICTORY FITNESS</Text>
+      <Image
+        source={performanceCutout}
+        resizeMode="contain"
+        style={[styles.heroImage, large && styles.heroImageLarge]}
+      />
     </View>
   );
 }
@@ -677,6 +683,16 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '900',
     letterSpacing: 2,
+  },
+  heroImage: {
+    position: 'absolute',
+    width: '88%',
+    height: '88%',
+    bottom: 0,
+  },
+  heroImageLarge: {
+    width: '92%',
+    height: '92%',
   },
   analyticsCard: {
     flex: 1,
