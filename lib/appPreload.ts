@@ -28,7 +28,17 @@ let preloadPromise: Promise<void> | null = null;
 export async function preloadAppData() {
   if (!preloadPromise) {
     preloadPromise = (async () => {
-      const [userResult, overviewResult] = await Promise.allSettled([
+      const [
+        userResult,
+        _bodyMetricsResult,
+        _strengthPlanResult,
+        _videoPlanResult,
+        _workoutLibraryResult,
+        _journalEntriesResult,
+        _privacyPolicyResult,
+        _nutritionPlanResult,
+        challengeOverviewResult,
+      ] = await Promise.allSettled([
         fetchCurrentUser(),
         fetchCurrentUserBodyMetrics(),
         fetchLatestStrengthWorkoutPlan(),
@@ -43,7 +53,7 @@ export async function preloadAppData() {
       ]);
 
       const user = userResult.status === 'fulfilled' ? userResult.value : null;
-      const overview = overviewResult.status === 'fulfilled' ? overviewResult.value : null;
+      const overview = challengeOverviewResult.status === 'fulfilled' ? challengeOverviewResult.value : null;
 
       const secondaryPreloads: Promise<unknown>[] = [];
 
@@ -67,6 +77,7 @@ export async function preloadAppData() {
       }
 
       const challengeIds = new Set<string>();
+      const activeChallengeIds = new Set<string>();
       if (overview && typeof overview === 'object') {
         const typedOverview = overview as {
           active_challenges?: Array<{ challenge_id?: string }>;
@@ -75,6 +86,7 @@ export async function preloadAppData() {
         for (const challenge of typedOverview.active_challenges || []) {
           if (challenge?.challenge_id) {
             challengeIds.add(challenge.challenge_id);
+            activeChallengeIds.add(challenge.challenge_id);
           }
         }
         for (const challenge of typedOverview.ready_to_start || []) {
@@ -85,11 +97,13 @@ export async function preloadAppData() {
       }
 
       for (const challengeId of challengeIds) {
-        secondaryPreloads.push(
-          fetchChallengeDetailData(challengeId),
-          fetchChallengeChatData(challengeId),
-          fetchChallengeProgressData(challengeId)
-        );
+        secondaryPreloads.push(fetchChallengeDetailData(challengeId));
+        if (activeChallengeIds.has(challengeId)) {
+          secondaryPreloads.push(
+            fetchChallengeChatData(challengeId),
+            fetchChallengeProgressData(challengeId)
+          );
+        }
       }
 
       await Promise.allSettled(secondaryPreloads);

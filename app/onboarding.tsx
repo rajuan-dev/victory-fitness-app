@@ -1,44 +1,107 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Animated, Easing, Image, ImageSourcePropType, Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
+import {
+  ActivityIndicator,
+  Animated,
+  Easing,
+  Image,
+  ImageSourcePropType,
+  Pressable,
+  StyleSheet,
+  Text,
+  useWindowDimensions,
+  View,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 
-import { clearAuthTokens, fetchCurrentUser, getValidAuthTokens, updateCurrentUserProfile } from '../lib/api';
+import {
+  clearAuthTokens,
+  fetchCurrentUser,
+  getValidAuthTokens,
+  updateCurrentUserProfile,
+} from '../lib/api';
 import { getPostAuthRoute } from '../lib/access';
 import { replaceRoute } from '../lib/navigation';
 
-const performanceScreen = require('../assets/images/onboarding/performance-first.png') as ImageSourcePropType;
-const precisionScreen = require('../assets/images/onboarding/precision-tracking.png') as ImageSourcePropType;
-const communityScreen = require('../assets/images/onboarding/stronger-together.png') as ImageSourcePropType;
+const TEAL = '#18E2D2';
+const BG = '#0D0D0D';
 
-const SCREEN_ASPECT_RATIO = 390 / 844;
+const performanceImg = require('../assets/images/onboarding/performance-first.png') as ImageSourcePropType;
+const precisionImg = require('../assets/images/onboarding/precision-tracking.png') as ImageSourcePropType;
+const communityImg = require('../assets/images/onboarding/stronger-together.png') as ImageSourcePropType;
 
-type OnboardingFrame = {
+// Actual pixel dimensions of each image
+// performance-first: 390x883, precision-tracking: 390x818, stronger-together: 390x841
+// Each image has text/buttons drawn at the bottom — we crop those away and render natively.
+type SlideConfig = {
   image: ImageSourcePropType;
-  nextLabel: string;
-  hasVisibleSkip: boolean;
-  hasSecondaryAction: boolean;
+  imgNativeW: number;
+  imgNativeH: number;
+  imgTopSkip: number;  // pixels to hide from the top (e.g. drawn header on slide 1)
+  imgCropH: number;    // pixels of content to actually display
+  badge?: string;
+  titleLines: string[];
+  titleAccentIndex?: number; // which line index gets teal colour
+  description: string;
+  showSkip: boolean;
+  buttonLabel: string;
+  buttonArrow: string;
+  hasSecondary: boolean;
+  secondaryLabel?: string;
+  hasFooter: boolean;
+  footerText?: string;
 };
 
-const FRAMES: OnboardingFrame[] = [
+const SLIDES: SlideConfig[] = [
   {
-    image: performanceScreen,
-    nextLabel: 'Next',
-    hasVisibleSkip: true,
-    hasSecondaryAction: false,
+    image: performanceImg,
+    imgNativeW: 390,
+    imgNativeH: 883,
+    imgTopSkip: 68,   // slide 1 has its own drawn header — skip those pixels
+    imgCropH: 430,    // show y=68..498 of the image (dark athletic photo only)
+    badge: 'PERFORMANCE FIRST',
+    titleLines: ['UNLEASH YOUR', 'POTENTIAL'],
+    titleAccentIndex: 1,
+    description:
+      'Elite discipline meets data-driven precision. Track every rep, optimize your recovery, and transcend your limits with our high-octane performance ecosystem.',
+    showSkip: true,
+    buttonLabel: 'NEXT',
+    buttonArrow: '→',
+    hasSecondary: false,
+    hasFooter: false,
   },
   {
-    image: precisionScreen,
-    nextLabel: 'Next',
-    hasVisibleSkip: false,
-    hasSecondaryAction: false,
+    image: precisionImg,
+    imgNativeW: 390,
+    imgNativeH: 818,
+    imgTopSkip: 0,
+    imgCropH: 400,    // show y=0..400 — analytics card only
+    titleLines: ['PRECISION', 'TRACKING'],
+    description:
+      'Experience real-time analytics fueled by proprietary algorithms. Every rep, breath, and heartbeat becomes actionable data.',
+    showSkip: true,
+    buttonLabel: 'NEXT',
+    buttonArrow: '→',
+    hasSecondary: false,
+    hasFooter: false,
   },
   {
-    image: communityScreen,
-    nextLabel: 'Get started',
-    hasVisibleSkip: false,
-    hasSecondaryAction: true,
+    image: communityImg,
+    imgNativeW: 390,
+    imgNativeH: 841,
+    imgTopSkip: 0,
+    imgCropH: 420,    // show y=0..420 — athletes photo + community cards
+    titleLines: ['STRONGER', 'TOGETHER'],
+    description:
+      'Unlock your full potential by training with a global network of elite athletes. Share data, compete in challenges, and never train alone.',
+    showSkip: false,
+    buttonLabel: 'GET STARTED',
+    buttonArrow: '>',
+    hasSecondary: true,
+    secondaryLabel: 'SIGN IN TO EXISTING ACCOUNT',
+    hasFooter: true,
+    footerText: 'VICTORY KINETIC OS V2.0',
   },
 ];
 
@@ -56,38 +119,29 @@ export default function OnboardingScreen() {
 
     const redirectIfAuthenticated = async () => {
       const tokens = await getValidAuthTokens();
-      if (cancelled) {
-        return;
-      }
+      if (cancelled) return;
 
       setHasAuthSession(Boolean(tokens));
 
       if (tokens) {
         try {
           const user = await fetchCurrentUser();
-          const targetRoute = getPostAuthRoute(user);
-          if (targetRoute !== '/onboarding') {
-            replaceRoute(router, targetRoute);
+          const target = getPostAuthRoute(user);
+          if (target !== '/onboarding') {
+            replaceRoute(router, target);
             return;
           }
         } catch {
           await clearAuthTokens();
-          if (!cancelled) {
-            setHasAuthSession(false);
-          }
+          if (!cancelled) setHasAuthSession(false);
         }
       }
 
-      if (!cancelled) {
-        setCheckingAuth(false);
-      }
+      if (!cancelled) setCheckingAuth(false);
     };
 
     void redirectIfAuthenticated();
-
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, [router]);
 
   useEffect(() => {
@@ -100,33 +154,17 @@ export default function OnboardingScreen() {
     }).start();
   }, [activeStep, fadeAnim]);
 
-  const frameDimensions = useMemo(() => {
-    const horizontalPadding = 24;
-    const verticalPadding = 24;
-    const availableWidth = Math.max(windowWidth - horizontalPadding, 280);
-    const availableHeight = Math.max(windowHeight - verticalPadding, 560);
-    const widthFromHeight = availableHeight * SCREEN_ASPECT_RATIO;
-    const frameWidth = Math.min(availableWidth, widthFromHeight, 430);
-
-    return {
-      width: frameWidth,
-      height: frameWidth / SCREEN_ASPECT_RATIO,
-    };
-  }, [windowHeight, windowWidth]);
-
   const finishOnboarding = async () => {
     const tokens = await getValidAuthTokens();
     if (!tokens) {
       replaceRoute(router, '/login');
       return;
     }
-
     setCompleting(true);
     try {
       const user = await updateCurrentUserProfile({ onboarding_completed: true });
       replaceRoute(router, getPostAuthRoute(user));
-    } catch (err) {
-      console.error('Failed to complete onboarding', err);
+    } catch {
       replaceRoute(router, '/plan');
     } finally {
       setCompleting(false);
@@ -134,24 +172,20 @@ export default function OnboardingScreen() {
   };
 
   const handleNext = async () => {
-    if (activeStep < FRAMES.length - 1) {
-      setActiveStep((current) => current + 1);
+    if (activeStep < SLIDES.length - 1) {
+      setActiveStep((s) => s + 1);
       return;
     }
-
     await finishOnboarding();
   };
 
-  const handleSkip = async () => {
-    await finishOnboarding();
-  };
+  const handleSkip = () => void finishOnboarding();
 
-  const handleSecondaryAction = () => {
+  const handleSecondary = () => {
     if (hasAuthSession) {
-      void handleSkip();
+      void finishOnboarding();
       return;
     }
-
     replaceRoute(router, '/login');
   };
 
@@ -160,61 +194,153 @@ export default function OnboardingScreen() {
       <SafeAreaView style={styles.container}>
         <StatusBar style="light" />
         <View style={styles.loadingWrap}>
-          <ActivityIndicator color="#18E2D2" size="large" />
+          <ActivityIndicator color={TEAL} size="large" />
         </View>
       </SafeAreaView>
     );
   }
 
-  const currentFrame = FRAMES[activeStep];
+  const slide = SLIDES[activeStep];
+
+  const layoutWidth = Math.min(windowWidth, 560);
+  const compactHeight = windowHeight < 760;
+  const horizontalPadding = layoutWidth >= 480 ? 28 : 20;
+  const displayW = layoutWidth;
+  const imgScale = displayW / slide.imgNativeW;
+  const imgFullH = slide.imgNativeH * imgScale;
+  const imgCropH = slide.imgCropH * imgScale;
+  const imgSkipH = slide.imgTopSkip * imgScale;
 
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar style="light" />
+
       <View style={styles.screen}>
-        <Animated.View style={[styles.frameWrap, frameDimensions, { opacity: fadeAnim }]}>
-          <Image source={currentFrame.image} style={styles.frameImage} resizeMode="contain" />
-
-          {currentFrame.hasVisibleSkip ? (
+        <View style={[styles.screenInner, { width: layoutWidth }]}>
+        {/* ── Header ── */}
+        <View
+          style={[
+            styles.header,
+            {
+              paddingHorizontal: horizontalPadding,
+              paddingVertical: compactHeight ? 10 : 14,
+            },
+          ]}
+        >
+          <View style={styles.logoRow}>
+            <Text style={styles.logoBolt}>⚡</Text>
+            <Text style={styles.logoText}> VICTORY KINETIC</Text>
+          </View>
+          {slide.showSkip && (
             <Pressable
+              onPress={handleSkip}
+              disabled={completing}
+              hitSlop={16}
               accessibilityRole="button"
               accessibilityLabel="Skip onboarding"
-              disabled={completing}
-              onPress={handleSkip}
-              style={styles.skipHitbox}
-            />
-          ) : null}
+            >
+              <Text style={styles.skipText}>SKIP</Text>
+            </Pressable>
+          )}
+        </View>
 
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={currentFrame.nextLabel}
-            disabled={completing}
-            onPress={() => {
-              void handleNext();
-            }}
-            style={activeStep === FRAMES.length - 1 ? styles.getStartedHitbox : styles.nextHitbox}
-          />
-
-          {currentFrame.hasSecondaryAction ? (
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={hasAuthSession ? 'Skip onboarding for now' : 'Sign in to existing account'}
-              disabled={completing}
-              onPress={handleSecondaryAction}
-              style={styles.secondaryHitbox}
+        {/* ── Illustration (cropped image) ── */}
+        <Animated.View style={{ opacity: fadeAnim, alignSelf: 'center', width: displayW }}>
+          <View style={[styles.imageClip, { height: imgCropH, width: displayW }]}>
+            <Image
+              source={slide.image}
+              style={{ width: displayW, height: imgFullH, marginTop: -imgSkipH }}
+              resizeMode="stretch"
             />
-          ) : null}
-
-          {!currentFrame.hasVisibleSkip && activeStep < FRAMES.length - 1 ? (
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Skip onboarding"
-              disabled={completing}
-              onPress={handleSkip}
-              style={styles.hiddenSkipHitbox}
-            />
-          ) : null}
+          </View>
         </Animated.View>
+
+        {/* ── Text content ── */}
+        <Animated.View
+          style={[
+            styles.textContent,
+            {
+              opacity: fadeAnim,
+              paddingHorizontal: horizontalPadding + 4,
+              paddingTop: compactHeight ? 14 : 18,
+            },
+          ]}
+        >
+          {slide.badge ? (
+            <View style={styles.badge}>
+              <Text style={styles.badgeText}>{slide.badge}</Text>
+            </View>
+          ) : null}
+
+          <View style={styles.titleBlock}>
+            {slide.titleLines.map((line, i) => (
+              <Text
+                key={i}
+                style={[
+                  styles.titleLine,
+                  i === slide.titleAccentIndex && styles.titleLineAccent,
+                ]}
+              >
+                {line}
+              </Text>
+            ))}
+          </View>
+
+          <Text style={styles.description}>{slide.description}</Text>
+        </Animated.View>
+
+        {/* ── Bottom controls ── */}
+        <View
+          style={[
+            styles.bottomControls,
+            {
+              paddingHorizontal: horizontalPadding,
+              paddingBottom: compactHeight ? 8 : 12,
+            },
+          ]}
+        >
+          {/* Pagination dots */}
+          <View style={styles.dotsRow}>
+            {SLIDES.map((_, i) => (
+              <View
+                key={i}
+                style={[styles.dot, i === activeStep && styles.dotActive]}
+              />
+            ))}
+          </View>
+
+          {/* Primary action button */}
+          <Pressable
+            style={[styles.primaryBtn, completing && styles.primaryBtnDisabled]}
+            onPress={() => void handleNext()}
+            disabled={completing}
+            accessibilityRole="button"
+            accessibilityLabel={slide.buttonLabel}
+          >
+            <Text style={styles.primaryBtnText}>
+              {slide.buttonLabel} {slide.buttonArrow}
+            </Text>
+          </Pressable>
+
+          {/* Secondary link (last slide) */}
+          {slide.hasSecondary ? (
+            <Pressable
+              style={styles.secondaryBtn}
+              onPress={handleSecondary}
+              disabled={completing}
+              accessibilityRole="button"
+              accessibilityLabel={slide.secondaryLabel}
+            >
+              <Text style={styles.secondaryBtnText}>{slide.secondaryLabel}</Text>
+            </Pressable>
+          ) : null}
+
+          {/* Footer (last slide) */}
+          {slide.hasFooter ? (
+            <Text style={styles.footerText}>{slide.footerText}</Text>
+          ) : null}
+        </View>
+        </View>
       </View>
     </SafeAreaView>
   );
@@ -223,7 +349,7 @@ export default function OnboardingScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#000',
+    backgroundColor: BG,
   },
   loadingWrap: {
     flex: 1,
@@ -232,56 +358,144 @@ const styles = StyleSheet.create({
   },
   screen: {
     flex: 1,
-    backgroundColor: '#000',
+    maxWidth: 430,
+    alignSelf: 'center',
+    width: '100%',
+  },
+
+  // Header
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingVertical: 14,
+  },
+  logoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  logoBolt: {
+    fontSize: 16,
+    color: TEAL,
+  },
+  logoText: {
+    fontSize: 13,
+    color: TEAL,
+    fontWeight: '700',
+    letterSpacing: 1.5,
+    fontFamily: 'Inter_700Bold',
+  },
+  skipText: {
+    fontSize: 14,
+    color: 'rgba(255,255,255,0.85)',
+    fontFamily: 'Inter_400Regular',
+  },
+
+  // Image crop container — hides the drawn text/button portions of the PNGs
+  imageClip: {
+    overflow: 'hidden',
+  },
+
+  // Text content
+  textContent: {
+    flex: 1,
+    paddingHorizontal: 24,
+    paddingTop: 18,
+    paddingBottom: 8,
+  },
+  badge: {
+    alignSelf: 'flex-start',
+    borderWidth: 1,
+    borderColor: TEAL,
+    borderRadius: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    marginBottom: 12,
+  },
+  badgeText: {
+    fontSize: 11,
+    color: TEAL,
+    fontWeight: '600',
+    letterSpacing: 1.5,
+    fontFamily: 'Inter_600SemiBold',
+  },
+  titleBlock: {
+    marginBottom: 14,
+  },
+  titleLine: {
+    fontSize: 34,
+    fontWeight: '800',
+    color: '#ffffff',
+    lineHeight: 40,
+    fontFamily: 'Inter_700Bold',
+  },
+  titleLineAccent: {
+    color: TEAL,
+  },
+  description: {
+    fontSize: 15,
+    color: 'rgba(255,255,255,0.62)',
+    lineHeight: 24,
+    fontFamily: 'Inter_400Regular',
+  },
+
+  // Bottom controls
+  bottomControls: {
+    paddingHorizontal: 20,
+    paddingBottom: 12,
+  },
+  dotsRow: {
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    gap: 8,
+    marginBottom: 18,
   },
-  frameWrap: {
-    width: '100%',
-    maxWidth: 430,
-    aspectRatio: SCREEN_ASPECT_RATIO,
-    position: 'relative',
-    backgroundColor: '#000',
+  dot: {
+    width: 8,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: 'rgba(255,255,255,0.28)',
   },
-  frameImage: {
-    width: '100%',
-    height: '100%',
+  dotActive: {
+    width: 26,
+    backgroundColor: TEAL,
   },
-  skipHitbox: {
-    position: 'absolute',
-    top: '2.4%',
-    right: '3.5%',
-    width: '18%',
-    height: '7%',
+  primaryBtn: {
+    backgroundColor: TEAL,
+    borderRadius: 8,
+    paddingVertical: 17,
+    alignItems: 'center',
+    marginBottom: 10,
   },
-  hiddenSkipHitbox: {
-    position: 'absolute',
-    top: 0,
-    right: 0,
-    width: '28%',
-    height: '16%',
+  primaryBtnDisabled: {
+    opacity: 0.5,
   },
-  nextHitbox: {
-    position: 'absolute',
-    left: '5%',
-    right: '5%',
-    bottom: '14.5%',
-    height: '6.6%',
-    borderRadius: 10,
+  primaryBtnText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#0D0D0D',
+    letterSpacing: 2,
+    fontFamily: 'Inter_700Bold',
   },
-  getStartedHitbox: {
-    position: 'absolute',
-    left: '5%',
-    right: '5%',
-    bottom: '12.6%',
-    height: '11.2%',
-    borderRadius: 20,
+  secondaryBtn: {
+    alignItems: 'center',
+    paddingVertical: 12,
   },
-  secondaryHitbox: {
-    position: 'absolute',
-    left: '12%',
-    right: '12%',
-    bottom: '7.2%',
-    height: '4.4%',
+  secondaryBtnText: {
+    fontSize: 12,
+    color: 'rgba(255,255,255,0.55)',
+    fontWeight: '600',
+    letterSpacing: 1.5,
+    fontFamily: 'Inter_600SemiBold',
+  },
+  footerText: {
+    textAlign: 'center',
+    fontSize: 11,
+    color: 'rgba(255,255,255,0.28)',
+    letterSpacing: 2,
+    marginTop: 10,
+    fontFamily: 'Inter_400Regular',
   },
 });
