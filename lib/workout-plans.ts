@@ -21,8 +21,14 @@ export type StrengthPlanDay = {
 };
 
 export type StrengthPlanResponse = {
+  plan_id?: string | null;
   summary: string;
   days: StrengthPlanDay[];
+  created_at?: string | null;
+};
+
+export type StrengthPlanListResponse = {
+  items: StrengthPlanResponse[];
 };
 
 export type VideoPlanItem = {
@@ -52,29 +58,50 @@ let latestVideoPlan: VideoPlanResponse | null = null;
 const STRENGTH_PLAN_STORAGE_KEY = 'victory-strength-workout-plan';
 const VIDEO_PLAN_STORAGE_KEY = 'victory-video-workout-plan';
 
+async function persistLatestStrengthPlan(plan: StrengthPlanResponse | null) {
+  latestStrengthPlan = plan;
+  if (plan) {
+    await AsyncStorage.setItem(STRENGTH_PLAN_STORAGE_KEY, JSON.stringify(plan));
+  } else {
+    await AsyncStorage.removeItem(STRENGTH_PLAN_STORAGE_KEY);
+  }
+}
+
 export async function createStrengthWorkoutPlan(payload: Record<string, unknown>) {
   const plan = await apiRequest<StrengthPlanResponse>('/ai/workout-plan/strength', {
     method: 'POST',
     body: payload,
+    timeoutMs: 120_000,
   });
-  latestStrengthPlan = plan;
-  await AsyncStorage.setItem(STRENGTH_PLAN_STORAGE_KEY, JSON.stringify(plan));
+  await persistLatestStrengthPlan(plan);
   return plan;
 }
 
 export async function fetchLatestStrengthWorkoutPlan() {
   const plan = await apiRequest<StrengthPlanResponse>('/ai/workout-plan/strength/latest');
-  latestStrengthPlan = plan;
-  await AsyncStorage.setItem(STRENGTH_PLAN_STORAGE_KEY, JSON.stringify(plan));
+  await persistLatestStrengthPlan(plan);
   return plan;
+}
+
+export async function fetchStrengthWorkoutPlans() {
+  const response = await apiRequest<StrengthPlanListResponse>('/ai/workout-plan/strength');
+  const latest = response.items[0] ?? null;
+  await persistLatestStrengthPlan(latest);
+  return response.items;
 }
 
 export async function deleteLatestStrengthWorkoutPlan() {
   await apiRequest<{ status: string; message: string }>('/ai/workout-plan/strength/latest', {
     method: 'DELETE',
   });
-  latestStrengthPlan = null;
-  await AsyncStorage.removeItem(STRENGTH_PLAN_STORAGE_KEY);
+  await persistLatestStrengthPlan(null);
+}
+
+export async function deleteStrengthWorkoutPlan(planId: string) {
+  await apiRequest<{ status: string; message: string }>(`/ai/workout-plan/strength/${encodeURIComponent(planId)}`, {
+    method: 'DELETE',
+  });
+  await persistLatestStrengthPlan(null);
 }
 
 export async function createVideoWorkoutPlan(payload: Record<string, unknown>) {

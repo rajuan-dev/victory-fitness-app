@@ -1,4 +1,4 @@
-import { apiRequest } from './api';
+import { ApiError, apiRequest } from './api';
 import { fetchCachedResource } from './resourceCache';
 
 export type JournalEntry = {
@@ -27,9 +27,7 @@ export type CommunityPostPayload = {
   posts: unknown[];
 };
 
-export type NutritionPlanLatestPayload = {
-  [key: string]: unknown;
-};
+export type NutritionPlanLatestPayload = Record<string, unknown> | null;
 
 export type CoachVictorHistoryPayload = {
   messages: Array<{
@@ -107,7 +105,14 @@ export async function fetchCommunityPostsData() {
 
 export async function fetchLatestNutritionPlanData() {
   return fetchCachedResource(NUTRITION_PLAN_LATEST_CACHE_KEY, async () => {
-    return apiRequest<NutritionPlanLatestPayload>('/ai/nutrition/plan/latest');
+    try {
+      return await apiRequest<NutritionPlanLatestPayload>('/ai/nutrition/plan/latest');
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 404) {
+        return null;
+      }
+      throw error;
+    }
   });
 }
 
@@ -134,6 +139,6 @@ export async function fetchChallengeChatData<T>(challengeId: string) {
 
 export async function fetchChallengeProgressData<T>(challengeId: string) {
   return fetchCachedResource(getChallengeProgressCacheKey(challengeId), async () => {
-    return apiRequest<T>(`/challenges/${encodeURIComponent(challengeId)}/chat`);
+    return apiRequest<T>(`/challenges/${encodeURIComponent(challengeId)}`);
   });
 }

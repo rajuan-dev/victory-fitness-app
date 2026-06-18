@@ -1285,7 +1285,13 @@ export default function JournalScreen() {
   }, []);
 
   const loadLatestNutritionPlan = async () => {
-    const latestPlan = await fetchLatestNutritionPlanData() as NutritionPlanApiResponse;
+    const latestPlan = await fetchLatestNutritionPlanData() as NutritionPlanApiResponse | null;
+    if (!latestPlan) {
+      setHasSavedPlan(false);
+      setGeneratedPlan(null);
+      setDone(false);
+      return null;
+    }
     await syncLatestNutritionPlanCache(latestPlan);
     applyLatestNutritionPlan(latestPlan);
     return latestPlan;
@@ -1303,7 +1309,11 @@ export default function JournalScreen() {
       }
 
       if (status === 'completed') {
-        return await loadLatestNutritionPlan();
+        const latestPlan = await loadLatestNutritionPlan();
+        if (latestPlan) {
+          return latestPlan;
+        }
+        throw new Error(t('Nutrition plan generation finished but no saved plan was returned.'));
       }
 
       if (status === 'failed') {

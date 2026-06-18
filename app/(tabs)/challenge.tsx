@@ -311,7 +311,7 @@ export default function ChallengesScreen() {
   });
   const [subscriptionTier, setSubscriptionTier] = useState('NONE');
   const [isCommunityAdmin, setIsCommunityAdmin] = useState(false);
-  const [selectedCommunityFilter, setSelectedCommunityFilter] = useState<(typeof COMMUNITY_AUDIENCE_FILTERS)[number]>('ALL');
+  const [selectedCommunityFilters, setSelectedCommunityFilters] = useState<(typeof COMMUNITY_AUDIENCE_FILTERS)[number][]>(['ALL']);
   const [communityFilterPickerOpen, setCommunityFilterPickerOpen] = useState(false);
 
   const [restrictedSection, setRestrictedSection] = useState('');
@@ -377,11 +377,11 @@ export default function ChallengesScreen() {
     return hierarchy[subscriptionTier] ?? [];
   }, [canAccessCommunity, isCommunityAdmin, subscriptionTier]);
   const filteredCommunityPosts = useMemo(() => {
-    if (selectedCommunityFilter === 'ALL') {
+    if (!selectedCommunityFilters.length || selectedCommunityFilters.includes('ALL')) {
       return communityPosts;
     }
-    return communityPosts.filter((post) => String(post.audience || '').toUpperCase() === selectedCommunityFilter);
-  }, [communityPosts, selectedCommunityFilter]);
+    return communityPosts.filter((post) => selectedCommunityFilters.includes(String(post.audience || '').toUpperCase() as (typeof COMMUNITY_AUDIENCE_FILTERS)[number]));
+  }, [communityPosts, selectedCommunityFilters]);
   useEffect(() => {
     let isMounted = true;
 
@@ -540,10 +540,21 @@ export default function ChallengesScreen() {
   }, [activeTab, canAccessCommunity, params.tab]);
 
   useEffect(() => {
-    if (!allowedCommunityAudiences.includes(selectedCommunityFilter)) {
-      setSelectedCommunityFilter((allowedCommunityAudiences[0] as (typeof COMMUNITY_AUDIENCE_FILTERS)[number]) ?? 'ALL');
-    }
-  }, [allowedCommunityAudiences, selectedCommunityFilter]);
+    setSelectedCommunityFilters((current) => {
+      const next = current.filter((filterKey) => allowedCommunityAudiences.includes(filterKey));
+      if (next.includes('ALL') && allowedCommunityAudiences.includes('ALL')) {
+        return ['ALL'];
+      }
+      if (next.length > 0) {
+        return next;
+      }
+      return allowedCommunityAudiences.includes('ALL')
+        ? ['ALL']
+        : allowedCommunityAudiences.length > 0
+          ? [allowedCommunityAudiences[0] as (typeof COMMUNITY_AUDIENCE_FILTERS)[number]]
+          : [];
+    });
+  }, [allowedCommunityAudiences]);
 
   useEffect(() => {
     const source = Array.isArray(params.prefillSource) ? params.prefillSource[0] : params.prefillSource;
@@ -1359,6 +1370,13 @@ export default function ChallengesScreen() {
                 onPress={() => setCommunityFilterPickerOpen(true)}
               >
                 <Ionicons name="filter" size={14} color="rgba(255,255,255,0.78)" />
+                {selectedCommunityFilters.length > 0 ? (
+                  <View style={styles.communityFilterCountBadge}>
+                    <Text style={styles.communityFilterCountText}>
+                      {selectedCommunityFilters.includes('ALL') ? 'All' : selectedCommunityFilters.length}
+                    </Text>
+                  </View>
+                ) : null}
               </TouchableOpacity>
             </View>
 
@@ -1376,19 +1394,33 @@ export default function ChallengesScreen() {
                 <View style={styles.communityFilterModalCard}>
                   {COMMUNITY_AUDIENCE_FILTERS.map((filterKey) => {
                     const isAllowed = allowedCommunityAudiences.includes(filterKey);
-                    const isActive = selectedCommunityFilter === filterKey;
+                    const isActive = selectedCommunityFilters.includes(filterKey);
                     return (
                       <TouchableOpacity
                         key={filterKey}
                         style={styles.communityFilterOption}
                         activeOpacity={0.88}
                         onPress={() => {
-                          setCommunityFilterPickerOpen(false);
                           if (!isAllowed) {
                             setRestrictedSection(`Community ${filterKey}`);
                             return;
                           }
-                          setSelectedCommunityFilter(filterKey);
+                          setSelectedCommunityFilters((current) => {
+                            if (filterKey === 'ALL') {
+                              return ['ALL'];
+                            }
+                            const withoutAll = current.filter((item) => item !== 'ALL');
+                            if (withoutAll.includes(filterKey)) {
+                              const next = withoutAll.filter((item) => item !== filterKey);
+                              if (next.length > 0) {
+                                return next;
+                              }
+                              return allowedCommunityAudiences.includes('ALL')
+                                ? ['ALL']
+                                : [filterKey];
+                            }
+                            return [...withoutAll, filterKey];
+                          });
                         }}
                       >
                         <Text
@@ -1408,6 +1440,13 @@ export default function ChallengesScreen() {
                       </TouchableOpacity>
                     );
                   })}
+                  <TouchableOpacity
+                    style={styles.communityFilterDoneButton}
+                    activeOpacity={0.88}
+                    onPress={() => setCommunityFilterPickerOpen(false)}
+                  >
+                    <Text style={styles.communityFilterDoneText}>{t('Done')}</Text>
+                  </TouchableOpacity>
                 </View>
               </TouchableOpacity>
             </Modal>
@@ -2553,6 +2592,24 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.06)',
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.08)',
+    position: 'relative',
+  },
+  communityFilterCountBadge: {
+    position: 'absolute',
+    top: -8,
+    right: -12,
+    minWidth: 20,
+    height: 20,
+    borderRadius: 10,
+    paddingHorizontal: 5,
+    backgroundColor: Colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  communityFilterCountText: {
+    color: '#07111F',
+    fontSize: 9,
+    fontFamily: 'Inter_800ExtraBold',
   },
   communityFilterModalBackdrop: {
     flex: 1,
@@ -2591,6 +2648,22 @@ const styles = StyleSheet.create({
   },
   communityFilterOptionTextLocked: {
     color: '#F5D0FE',
+  },
+  communityFilterDoneButton: {
+    marginTop: 6,
+    marginBottom: 4,
+    alignSelf: 'flex-end',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 10,
+    backgroundColor: 'rgba(6,182,212,0.14)',
+    borderWidth: 1,
+    borderColor: 'rgba(6,182,212,0.28)',
+  },
+  communityFilterDoneText: {
+    color: Colors.primary,
+    fontSize: 12,
+    fontFamily: 'Inter_700Bold',
   },
   searchInput: {
     color: '#fff',

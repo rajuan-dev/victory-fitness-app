@@ -12,18 +12,34 @@ declare const process: {
   env?: Record<string, string | undefined>;
 };
 
-const RAW_API_URL = process.env?.EXPO_PUBLIC_API_URL ?? 'http://10.0.2.2:8000';
+const PRODUCTION_WEB_API_URL = 'https://victory-fitness-backend-six.vercel.app';
+
+function getDefaultApiUrl(): string {
+  if (Platform.OS === 'android') {
+    return 'http://10.0.2.2:8000';
+  }
+
+  if (Platform.OS === 'web') {
+    return PRODUCTION_WEB_API_URL;
+  }
+
+  return 'http://localhost:8000';
+}
+
+const RAW_API_URL = String(process.env?.EXPO_PUBLIC_API_URL ?? '').trim() || getDefaultApiUrl();
 
 function resolveApiUrl(url: string): string {
+  const normalizedUrl = String(url || '').trim().replace(/\/+$/, '');
+
   if (Platform.OS !== 'android') {
-    return url;
+    return normalizedUrl;
   }
 
-  if (url.includes('://127.0.0.1') || url.includes('://localhost')) {
-    return url.replace('://127.0.0.1', '://10.0.2.2').replace('://localhost', '://10.0.2.2');
+  if (normalizedUrl.includes('://127.0.0.1') || normalizedUrl.includes('://localhost')) {
+    return normalizedUrl.replace('://127.0.0.1', '://10.0.2.2').replace('://localhost', '://10.0.2.2');
   }
 
-  return url;
+  return normalizedUrl;
 }
 
 const API_URL = resolveApiUrl(RAW_API_URL);
@@ -83,6 +99,7 @@ export type AuthUser = {
   is_admin?: boolean;
   country?: string;
   profileImage?: string;
+  onboarding_completed?: boolean;
   points?: number;
   workouts_completed?: number;
   workouts_total?: number;
@@ -382,6 +399,25 @@ export type LongevityCircle = {
   description: string;
 };
 
+export type OnboardingSlideContent = {
+  id: string;
+  badge?: string;
+  title_lines: string[];
+  title_accent_index?: number | null;
+  description: string;
+  show_skip: boolean;
+  button_label: string;
+  button_arrow: string;
+  has_secondary: boolean;
+  secondary_label?: string;
+  has_footer: boolean;
+  footer_text?: string;
+};
+
+export type OnboardingContentResponse = {
+  slides: OnboardingSlideContent[];
+};
+
 const AUTH_STORAGE_KEY = 'victory-auth-tokens';
 const AUTH_USER_STORAGE_KEY = 'victory-auth-user';
 
@@ -413,6 +449,7 @@ function normalizeAuthUser(user: Partial<AuthUser> & { id?: string; name?: strin
     is_admin: Boolean(user.is_admin),
     country: String(user.country ?? ''),
     profileImage: String(user.profileImage ?? ''),
+    onboarding_completed: Boolean(user.onboarding_completed),
     points: Math.max(Number(user.points ?? 0) || 0, 0),
     workouts_completed: Math.max(Number(user.workouts_completed ?? 0) || 0, 0),
     workouts_total: Math.max(Number(user.workouts_total ?? 0) || 0, 0),
@@ -724,8 +761,9 @@ export async function updateCurrentUserProfile(payload: {
   email?: string;
   country?: string;
   profileImage?: string;
+  onboarding_completed?: boolean;
 }) {
-  const user = await apiRequest<AuthUser & { role?: string; is_admin?: boolean; country?: string; profileImage?: string }>(
+  const user = await apiRequest<AuthUser & { role?: string; is_admin?: boolean; country?: string; profileImage?: string; onboarding_completed?: boolean }>(
     '/me',
     {
       method: 'PATCH',
@@ -838,6 +876,10 @@ export async function submitSupportMessage(payload: SupportMessagePayload) {
     method: 'POST',
     body: payload,
   });
+}
+
+export async function fetchOnboardingContent() {
+  return apiRequest<OnboardingContentResponse>('/content/onboarding');
 }
 
 export async function fetchLongevityDashboard(language?: string) {

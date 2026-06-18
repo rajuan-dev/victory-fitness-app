@@ -21,13 +21,6 @@ type GoogleTokens = {
   accessToken?: string | null;
 };
 
-type FirebaseIdentityToolkitResponse = {
-  idToken?: string;
-  email?: string;
-  displayName?: string;
-  localId?: string;
-};
-
 function readEnv(name: string): string {
   return String(process.env?.[name] ?? '').trim();
 }
@@ -60,65 +53,18 @@ export function getFirebaseGoogleConfig(): FirebaseGoogleConfig {
   };
 }
 
-export async function exchangeGoogleTokensForFirebaseSession(tokens: GoogleTokens): Promise<FirebaseIdentityToolkitResponse> {
-  const { firebaseApiKey } = getFirebaseGoogleConfig();
-  if (!firebaseApiKey) {
-    throw new Error('Firebase API key is not configured.');
-  }
-
+export async function signInWithFirebaseGoogle(tokens: GoogleTokens): Promise<AuthResponse> {
   const idToken = String(tokens.idToken || '').trim();
   const accessToken = String(tokens.accessToken || '').trim();
   if (!idToken && !accessToken) {
     throw new Error('Google sign-in did not return a token.');
   }
 
-  const postBody = new URLSearchParams({
-    providerId: 'google.com',
-    requestUri: 'http://localhost',
-    returnIdpCredential: 'true',
-    returnSecureToken: 'true',
-    id_token: idToken,
-    access_token: accessToken,
-  }).toString();
-
-  const response = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:signInWithIdp?key=${encodeURIComponent(firebaseApiKey)}`, {
+  return apiRequest<AuthResponse>('/auth/google', {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
+    body: {
+      id_token: idToken || undefined,
+      access_token: accessToken || undefined,
     },
-    body: JSON.stringify({
-      postBody,
-      requestUri: 'http://localhost',
-      returnIdpCredential: true,
-      returnSecureToken: true,
-    }),
   });
-
-  const payload = (await response.json().catch(() => ({}))) as FirebaseIdentityToolkitResponse & { error?: { message?: string } };
-  if (!response.ok) {
-    throw new Error(payload.error?.message || 'Firebase sign-in failed.');
-  }
-
-  if (!payload.idToken) {
-    throw new Error('Firebase did not return an ID token.');
-  }
-
-  return payload;
-}
-
-export async function exchangeFirebaseTokenForAppSession(firebaseIdToken: string): Promise<AuthResponse> {
-  const token = String(firebaseIdToken || '').trim();
-  if (!token) {
-    throw new Error('Missing Firebase ID token.');
-  }
-
-  return apiRequest<AuthResponse>('/auth/firebase', {
-    method: 'POST',
-    body: { id_token: token },
-  });
-}
-
-export async function signInWithFirebaseGoogle(tokens: GoogleTokens): Promise<AuthResponse> {
-  const firebaseSession = await exchangeGoogleTokensForFirebaseSession(tokens);
-  return exchangeFirebaseTokenForAppSession(firebaseSession.idToken || '');
 }

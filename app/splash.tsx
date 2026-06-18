@@ -47,7 +47,7 @@ export default function SplashScreen() {
 
       await clearAuthTokens();
       timer = setTimeout(() => {
-        replaceRoute(router, '/login');
+        replaceRoute(router, '/onboarding');
       }, 800);
     };
 

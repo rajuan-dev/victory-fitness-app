@@ -12,18 +12,12 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import * as Google from 'expo-auth-session/providers/google';
-import { makeRedirectUri } from 'expo-auth-session';
 import { Colors } from '../../constants/Colors';
 import { AuthInput } from '../../components/AuthInput';
 import { AuthButton } from '../../components/AuthButton';
 import { ErrorPopupModal } from '../../components/ErrorPopupModal';
-import { GoogleSignInButton } from '../../components/GoogleSignInButton';
-import { apiRequest, setAuthTokens } from '../../lib/api';
-import { getPostAuthRoute } from '../../lib/access';
+import { apiRequest } from '../../lib/api';
 import { formatAppError } from '../../lib/error';
-import { getFirebaseGoogleConfig, signInWithFirebaseGoogle } from '../../lib/firebaseGoogleAuth';
-import { replaceRoute } from '../../lib/navigation';
 
 const { height } = Dimensions.get('window');
 
@@ -34,14 +28,6 @@ export default function RegisterScreen() {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [errorDialog, setErrorDialog] = useState<{ title: string; message: string } | null>(null);
-  const firebaseGoogleConfig = getFirebaseGoogleConfig();
-  const [googleRequest, , googlePromptAsync] = Google.useAuthRequest({
-    clientId: firebaseGoogleConfig.googleClientId || undefined,
-    androidClientId: firebaseGoogleConfig.androidClientId || firebaseGoogleConfig.googleClientId || undefined,
-    webClientId: firebaseGoogleConfig.googleClientId || undefined,
-    redirectUri: makeRedirectUri({ scheme: 'victoryfitness', path: 'auth/google' }),
-    scopes: ['openid', 'profile', 'email'],
-  });
 
   const handleRegister = async () => {
     const normalizedEmail = email.trim().toLowerCase();
@@ -63,35 +49,6 @@ export default function RegisterScreen() {
         pathname: '/verification',
         params: { email: normalizedEmail },
       });
-    } catch (error) {
-      setErrorDialog(formatAppError(error));
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleGoogleSignIn = async () => {
-    if (!googleRequest) {
-      setErrorDialog({
-        title: 'Sign in unavailable',
-        message: 'Google sign-in is not configured yet.',
-      });
-      return;
-    }
-
-    setLoading(true);
-    try {
-      const result = await googlePromptAsync();
-      if (result.type !== 'success') {
-        return;
-      }
-
-      const auth = await signInWithFirebaseGoogle({
-        idToken: result.authentication?.idToken || null,
-        accessToken: result.authentication?.accessToken || null,
-      });
-      await setAuthTokens(auth);
-      replaceRoute(router, getPostAuthRoute(auth.user));
     } catch (error) {
       setErrorDialog(formatAppError(error));
     } finally {
@@ -164,16 +121,6 @@ export default function RegisterScreen() {
                 <Text style={styles.linkHighlight}>Log In</Text>
               </TouchableOpacity>
             </View>
-
-            {/* Divider */}
-            <View style={styles.dividerContainer}>
-              <View style={styles.dividerLine} />
-              <Text style={styles.dividerText}>or</Text>
-              <View style={styles.dividerLine} />
-            </View>
-
-            {/* Google Sign In */}
-            <GoogleSignInButton onPress={handleGoogleSignIn} />
 
             {/* Footer */}
             <View style={styles.footer}>
