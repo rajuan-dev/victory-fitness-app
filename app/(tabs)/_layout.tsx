@@ -50,6 +50,11 @@ export default function TabsLayout() {
 
           setAllowedTabs(getAllowedTabNames(cachedUser));
           setCheckingAuth(false);
+
+          if (!hasStartedPreloadRef.current) {
+            hasStartedPreloadRef.current = true;
+            void preloadAppData();
+          }
         }
 
         const authUser = await fetchCurrentUser();

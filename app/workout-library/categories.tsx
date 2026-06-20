@@ -14,7 +14,7 @@ import { Colors } from '../../constants/Colors';
 import { formatAppError } from '../../lib/error';
 import { fetchWorkoutLibrary, getWorkoutLibraryCacheKey, WorkoutLibraryCategory } from '../../lib/workouts';
 import { useLanguage } from '../../lib/i18n';
-import { goBackOrReplace } from '../../lib/navigation';
+import { goBackOrReplace, pushRoute } from '../../lib/navigation';
 import { ScreenState } from '../../components/ScreenState';
 import { useAsyncScreenData } from '../../hooks/useAsyncScreenData';
 
@@ -54,7 +54,7 @@ export default function WorkoutCategoriesScreen() {
   const categoryRows = useMemo(() => pairCategories(categories), [categories]);
 
   const openCategory = (category: WorkoutLibraryCategory) => {
-    router.push({
+    pushRoute(router, {
       pathname: '/workout-library/category/[name]',
       params: {
         name: category.name,

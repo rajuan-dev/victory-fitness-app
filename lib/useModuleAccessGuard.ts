@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'expo-router';
-import { fetchCurrentUser, getValidAuthTokens } from './api';
+import { fetchCurrentUser, getAuthUser, getValidAuthTokens } from './api';
 import { getPostAuthRoute, isRouteAllowedForPlan } from './access';
 import { appendRunLog } from './runLog';
 import { replaceRoute } from './navigation';
@@ -13,6 +13,27 @@ export function useModuleAccessGuard(routePath: string) {
     let cancelled = false;
 
     const guard = async () => {
+      const applyAccess = async (user: Awaited<ReturnType<typeof getAuthUser>>) => {
+        if (!user) {
+          return false;
+        }
+
+        if (!isRouteAllowedForPlan(routePath, user)) {
+          void appendRunLog({
+            level: 'warning',
+            title: 'Access guard redirect',
+            message: `Plan access blocked for ${routePath}; redirecting to ${getPostAuthRoute(user)}.`,
+            route: routePath,
+            context: 'ModuleGuard',
+          });
+          replaceRoute(router, getPostAuthRoute(user));
+          return true;
+        }
+
+        setCheckingAccess(false);
+        return false;
+      };
+
       try {
         const tokens = await getValidAuthTokens();
         if (cancelled) {
@@ -31,20 +52,21 @@ export function useModuleAccessGuard(routePath: string) {
           return;
         }
 
+        const cachedUser = await getAuthUser();
+        if (cancelled) {
+          return;
+        }
+
+        if (await applyAccess(cachedUser)) {
+          return;
+        }
+
         const user = await fetchCurrentUser();
         if (cancelled) {
           return;
         }
 
-        if (!isRouteAllowedForPlan(routePath, user)) {
-          void appendRunLog({
-            level: 'warning',
-            title: 'Access guard redirect',
-            message: `Plan access blocked for ${routePath}; redirecting to ${getPostAuthRoute(user)}.`,
-            route: routePath,
-            context: 'ModuleGuard',
-          });
-          replaceRoute(router, getPostAuthRoute(user));
+        if (await applyAccess(user)) {
           return;
         }
       } catch {

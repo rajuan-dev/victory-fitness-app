@@ -12,9 +12,9 @@ import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../../constants/Colors';
 import { formatAppError } from '../../../lib/error';
-import { fetchWorkoutLibrary, getWorkoutLibraryCacheKey, WorkoutLibraryItem } from '../../../lib/workouts';
+import { fetchWorkoutLibrary, getCachedWorkoutLibrary, getWorkoutLibraryCacheKey, WorkoutLibraryItem } from '../../../lib/workouts';
 import { useLanguage } from '../../../lib/i18n';
-import { goBackOrReplace } from '../../../lib/navigation';
+import { goBackOrReplace, pushRoute } from '../../../lib/navigation';
 import { ScreenState } from '../../../components/ScreenState';
 import { useAsyncScreenData } from '../../../hooks/useAsyncScreenData';
 
@@ -30,13 +30,23 @@ export default function WorkoutCategoryScreen() {
   const { t } = useLanguage();
   const params = useLocalSearchParams<{ name?: string }>();
   const categoryName = typeof params.name === 'string' ? params.name : t('CATEGORY');
+  const cachedLibrary = getCachedWorkoutLibrary();
+  const cachedCategoryWorkouts = useMemo(() => {
+    const normalizedCategory = categoryName.trim().toLowerCase();
+    if (!normalizedCategory) {
+      return [];
+    }
+    return (cachedLibrary?.workouts || []).filter(
+      (workout) => workout.tag.trim().toLowerCase() === normalizedCategory
+    );
+  }, [cachedLibrary?.workouts, categoryName]);
   const {
     data: workouts,
     loading,
     error,
     reload,
   } = useAsyncScreenData<WorkoutLibraryItem[]>({
-    initialData: [],
+    initialData: cachedCategoryWorkouts,
     cacheKey: getWorkoutLibraryCacheKey(categoryName),
     load: async () => {
       const response = await fetchWorkoutLibrary(categoryName);
@@ -49,7 +59,7 @@ export default function WorkoutCategoryScreen() {
   const title = useMemo(() => categoryName.toUpperCase(), [categoryName]);
 
   const openWorkout = (workout: WorkoutLibraryItem) => {
-    router.push({
+    pushRoute(router, {
       pathname: '/workout-library/[id]',
       params: {
         id: workout.id,

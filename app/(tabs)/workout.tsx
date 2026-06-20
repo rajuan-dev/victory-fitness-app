@@ -31,6 +31,7 @@ import {
 } from '../../lib/workout-plans';
 import { useModuleAccessGuard } from '../../lib/useModuleAccessGuard';
 import { useLanguage } from '../../lib/i18n';
+import { pushRoute } from '../../lib/navigation';
 
 const { width } = Dimensions.get('window');
 const FALLBACK_WORKOUT_IMAGE = 'https://images.unsplash.com/photo-1517836357463-d25dfeac3438?w=600&q=80';
@@ -210,7 +211,7 @@ export default function WorkoutScreen() {
   }
 
   const openWorkout = (workout: WorkoutLibraryItem) => {
-    router.push({
+    pushRoute(router, {
       pathname: '/workout-library/[id]',
       params: {
         id: workout.id,
@@ -225,7 +226,7 @@ export default function WorkoutScreen() {
   };
 
   const openCategory = (category: WorkoutLibraryCategory) => {
-    router.push({
+    pushRoute(router, {
       pathname: '/workout-library/category/[name]',
       params: {
         name: category.name,
@@ -234,7 +235,7 @@ export default function WorkoutScreen() {
   };
 
   const openAllCategories = () => {
-    router.push('/workout-library/categories');
+    pushRoute(router, '/workout-library/categories');
   };
 
   const handleRemoveStrengthPlan = () => {

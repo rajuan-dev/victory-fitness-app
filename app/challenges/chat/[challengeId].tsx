@@ -22,6 +22,7 @@ import { apiRequest, fetchCurrentUser, getValidAuthTokens } from '../../../lib/a
 import { ErrorPopupModal } from '../../../components/ErrorPopupModal';
 import { formatAppError } from '../../../lib/error';
 import { useLanguage } from '../../../lib/i18n';
+import { pushRoute } from '../../../lib/navigation';
 import { getCachedResourceSnapshot } from '../../../lib/resourceCache';
 import { fetchChallengeChatData, getChallengeChatCacheKey } from '../../../lib/screenData';
 
@@ -392,7 +393,7 @@ export default function ChallengeChatScreen() {
     if (!exercise.workout_vimeo_id && !exercise.workout_video_url) {
       return;
     }
-    router.push({
+    pushRoute(router, {
       pathname: '/workout-library/[id]',
       params: {
         id: exercise.workout_id || exercise.id,
