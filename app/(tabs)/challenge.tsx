@@ -18,7 +18,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as ImagePicker from 'expo-image-picker';
-import { WebView } from 'react-native-webview';
+import CrossPlatformWebView from '../../components/CrossPlatformWebView';
 import { Colors } from '../../constants/Colors';
 import AccessRestrictionModal from '../../components/AccessRestrictionModal';
 import { apiRequest, fetchCurrentUser, getAuthUser, resolveRemoteAssetUrl } from '../../lib/api';
@@ -1728,7 +1728,7 @@ export default function ChallengesScreen() {
               <View style={styles.communityPreviewCard}>
                 {communityMedia.type === 'video' ? (
                   <View style={styles.communityPreviewVideoWrap}>
-                    <WebView
+                    <CrossPlatformWebView
                       source={{ html: buildCommunityVideoHtml(getCommunityVideoUrl(communityMedia.uri) || communityMedia.uri) }}
                       style={styles.communityPreviewVideo}
                       scrollEnabled={false}
@@ -1748,7 +1748,7 @@ export default function ChallengesScreen() {
             {!communityMedia?.uri && communityVideoLink.trim() ? (
               <View style={styles.communityPreviewCard}>
                 <View style={styles.communityPreviewVideoWrap}>
-                  <WebView
+                  <CrossPlatformWebView
                     source={{ html: buildCommunityVideoHtml(normalizeExternalCommunityVideoUrl(communityVideoLink) || communityVideoLink.trim()) }}
                     style={styles.communityPreviewVideo}
                     scrollEnabled={false}
@@ -1797,7 +1797,7 @@ export default function ChallengesScreen() {
                     <Image source={getImageSource(post.image_url)!} style={styles.postImagePreview} />
                   ) : getCommunityVideoUrl(post.video_url) ? (
                     <View style={styles.postVideoPreviewWrap}>
-                      <WebView
+                      <CrossPlatformWebView
                         source={{ html: buildCommunityVideoHtml(getCommunityVideoUrl(post.video_url)) }}
                         style={styles.postVideoPreview}
                         scrollEnabled={false}
@@ -1959,7 +1959,7 @@ export default function ChallengesScreen() {
                   <Image source={getImageSource(selectedCommunityPost.image_url)!} style={styles.postModalImage} />
                 ) : getCommunityVideoUrl(selectedCommunityPost.video_url) ? (
                   <View style={styles.postModalVideoWrap}>
-                    <WebView
+                    <CrossPlatformWebView
                       source={{ html: buildCommunityVideoHtml(getCommunityVideoUrl(selectedCommunityPost.video_url)) }}
                       style={styles.postModalVideo}
                       scrollEnabled={false}

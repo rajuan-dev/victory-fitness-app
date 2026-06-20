@@ -10,7 +10,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { WebView } from 'react-native-webview';
+import CrossPlatformWebView from '../../components/CrossPlatformWebView';
 import { Colors } from '../../constants/Colors';
 import { useLanguage } from '../../lib/i18n';
 import { goBackOrReplace } from '../../lib/navigation';
@@ -168,7 +168,7 @@ export default function WorkoutPlayerScreen() {
 
       {embedUrl ? (
         <View style={styles.playerWrap}>
-          <WebView
+          <CrossPlatformWebView
             source={{ html: playerHtml }}
             style={styles.webview}
             originWhitelist={['*']}

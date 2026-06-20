@@ -15,7 +15,7 @@ import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as FileSystem from 'expo-file-system/legacy';
-import { WebView } from 'react-native-webview';
+import CrossPlatformWebView from '../../../components/CrossPlatformWebView';
 import { Colors } from '../../../constants/Colors';
 import { apiRequest } from '../../../lib/api';
 import { ErrorPopupModal } from '../../../components/ErrorPopupModal';
@@ -847,7 +847,7 @@ export default function ChallengeProgressScreen() {
             </View>
             <View style={styles.videoModalPlayerWrap}>
               {videoEmbedUrl ? (
-                <WebView
+                <CrossPlatformWebView
                   source={{ html: videoPlayerHtml }}
                   style={styles.videoModalWebview}
                   originWhitelist={['*']}

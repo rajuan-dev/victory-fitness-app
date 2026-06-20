@@ -52,7 +52,7 @@ import {
   syncLongevityWearables,
   updateLongevityHabit,
 } from '../../lib/api';
-import { WebView } from 'react-native-webview';
+import CrossPlatformWebView from '../../components/CrossPlatformWebView';
 import { canAccessFeature } from '../../lib/access';
 import {
   authorizeNativeHealthSource,
@@ -1940,7 +1940,7 @@ export default function LongevityOS() {
                   </View>
                   {masterclassVideoModal?.embedUrl ? (
                     <View style={styles.learnVideoModalPlayerWrap}>
-                      <WebView
+                      <CrossPlatformWebView
                         source={{ html: buildMasterclassVideoHtml(masterclassVideoModal.embedUrl) }}
                         style={styles.learnVideoModalPlayer}
                         scrollEnabled={false}
@@ -2107,7 +2107,7 @@ export default function LongevityOS() {
                 {resolveMasterclassMediaUrl(item.audioUrl) ? (
                   <View style={styles.learnAudioWrap}>
                     <Text style={styles.learnAudioLabel}>{t('Audio lesson')}</Text>
-                    <WebView
+                    <CrossPlatformWebView
                       source={{ html: buildMasterclassAudioHtml(resolveMasterclassMediaUrl(item.audioUrl)) }}
                       style={styles.learnAudioPlayer}
                       scrollEnabled={false}
