@@ -58,6 +58,7 @@ type ActiveChallenge = {
   challenge_id: string;
   title: string;
   description: string;
+  why_it_matters: string;
   type: string;
   duration_days: number;
   days_left: number;
@@ -74,6 +75,7 @@ type CompletedChallenge = {
   challenge_id: string;
   title: string;
   description: string;
+  why_it_matters: string;
   duration_days: number;
   type: string;
   earned_points: number;
@@ -87,6 +89,7 @@ type ReadyChallenge = {
   id: string;
   title: string;
   description: string;
+  why_it_matters: string;
   duration_days: number;
   type: string;
   points: number;
@@ -292,6 +295,7 @@ export default function ChallengesScreen() {
   const [challengeError, setChallengeError] = useState('');
   const [challengeStarting, setChallengeStarting] = useState<Record<string, boolean>>({});
   const [challengeDayCompleting, setChallengeDayCompleting] = useState<Record<string, boolean>>({});
+  const [expandedChallengeCards, setExpandedChallengeCards] = useState<Record<string, boolean>>({});
   const [communityPosts, setCommunityPosts] = useState<CommunityPost[]>(cachedCommunityPosts?.posts ?? []);
   const [communityDraft, setCommunityDraft] = useState('');
   const [communityLoading, setCommunityLoading] = useState(!cachedCommunityPosts);
@@ -947,6 +951,13 @@ export default function ChallengesScreen() {
     } as any);
   };
 
+  const toggleChallengeCardExpansion = (challengeId: string) => {
+    setExpandedChallengeCards((current) => ({
+      ...current,
+      [challengeId]: !current[challengeId],
+    }));
+  };
+
   const performDeleteCommunityPost = async (postId: string) => {
     if (deleteSubmitting[postId]) {
       return;
@@ -1185,22 +1196,25 @@ export default function ChallengesScreen() {
                 </ScrollView>
                 {selectedDurationChallenges.length > 0 ? selectedDurationChallenges.map((ch) => {
                   const challengeRouteId = 'challenge_id' in ch ? ch.challenge_id : ch.id;
+                  const isExpanded = Boolean(expandedChallengeCards[ch.id]);
                   return (
                   <View key={ch.id} style={styles.challengeLibraryCard}>
                     <TouchableOpacity activeOpacity={0.94} onPress={() => router.push(`/challenges/${challengeRouteId}` as any)}>
                       {ch.thumbnail ? <Image source={{ uri: ch.thumbnail }} style={styles.challengeLibraryImage} /> : null}
-                    <View style={styles.challengeLibraryCardHeader}>
-                      <View style={styles.challengeLibraryTitleWrap}>
-                        <Text style={styles.challengeLibraryTitle}>{ch.title}</Text>
-                        <Text style={styles.challengeLibraryCategory}>{ch.type}</Text>
+                      <View style={styles.challengeLibraryCardHeader}>
+                        <View style={styles.challengeLibraryTitleWrap}>
+                          <Text style={styles.challengeLibraryTitle}>{ch.title}</Text>
+                        </View>
+                        <View style={styles.challengeLibraryPointsBadge}>
+                          <Text style={styles.challengeLibraryPointsText}>
+                            +{ch.state === 'COMPLETED' ? ch.earned_points : ch.points} {t('Points')}
+                          </Text>
+                        </View>
                       </View>
-                      <View style={styles.challengeLibraryPointsBadge}>
-                      <Text style={styles.challengeLibraryPointsText}>
-                        +{ch.state === 'COMPLETED' ? ch.earned_points : ch.points} {t('Points')}
-                      </Text>
-                      </View>
-                    </View>
-                    <Text style={styles.challengeLibraryDescription}>{ch.description}</Text>
+                      <Text style={styles.challengeLibraryFieldLabel}>Goal Type</Text>
+                      <Text style={styles.challengeLibraryCategory}>{ch.type}</Text>
+                      <Text style={styles.challengeLibraryFieldLabel}>What To Do</Text>
+                      <Text style={styles.challengeLibraryDescription} numberOfLines={isExpanded ? undefined : 3}>{ch.description}</Text>
                       {ch.state === 'ACTIVE' ? (
                         <View style={styles.challengeLibraryProgressRow}>
                           <View style={styles.challengeLibraryProgressTrack}>
@@ -1222,6 +1236,19 @@ export default function ChallengesScreen() {
                         </View>
                       ) : null}
                     </TouchableOpacity>
+                    {ch.why_it_matters ? (
+                      <>
+                        <TouchableOpacity
+                          style={styles.challengeExpandBtn}
+                          activeOpacity={0.84}
+                          onPress={() => toggleChallengeCardExpansion(ch.id)}
+                        >
+                          <Text style={styles.challengeExpandBtnText}>{isExpanded ? 'Hide Why It Matters' : 'Why It Matters'}</Text>
+                          <Ionicons name={isExpanded ? 'chevron-up' : 'chevron-down'} size={16} color="#BFDBFE" />
+                        </TouchableOpacity>
+                        {isExpanded ? <Text style={styles.challengeWhyText}>{ch.why_it_matters}</Text> : null}
+                      </>
+                    ) : null}
                     <View style={styles.challengeLibraryFooter}>
                       <View style={styles.challengeLibraryMetaRow}>
                         <View style={styles.challengeLibraryMetaItem}>
@@ -1261,6 +1288,7 @@ export default function ChallengesScreen() {
                                 id: ch.challenge_id,
                                 title: ch.title,
                                 description: ch.description,
+                                why_it_matters: ch.why_it_matters,
                                 duration_days: ch.duration_days,
                                 type: ch.type,
                                 points: ch.points,
@@ -2035,10 +2063,19 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter_700Bold',
   },
   challengeLibraryCategory: {
-    marginTop: 0,
+    marginTop: 2,
     color: '#F5A43C',
     fontSize: 9,
     textTransform: 'uppercase',
+    fontFamily: 'Inter_700Bold',
+  },
+  challengeLibraryFieldLabel: {
+    marginTop: 8,
+    marginBottom: 2,
+    color: 'rgba(191,219,254,0.78)',
+    fontSize: 9,
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
     fontFamily: 'Inter_700Bold',
   },
   challengeLibraryPointsBadge: {
@@ -2058,6 +2095,24 @@ const styles = StyleSheet.create({
     lineHeight: 13,
     fontFamily: 'Inter_400Regular',
     marginTop: 1,
+  },
+  challengeExpandBtn: {
+    marginTop: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  challengeExpandBtnText: {
+    color: '#BFDBFE',
+    fontSize: 11,
+    fontFamily: 'Inter_600SemiBold',
+  },
+  challengeWhyText: {
+    marginTop: 6,
+    color: '#CBD5E1',
+    fontSize: 10,
+    lineHeight: 14,
+    fontFamily: 'Inter_400Regular',
   },
   challengeLibraryProgressRow: {
     flexDirection: 'row',
