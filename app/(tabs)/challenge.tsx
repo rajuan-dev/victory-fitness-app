@@ -18,6 +18,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as ImagePicker from 'expo-image-picker';
+import { WebView } from 'react-native-webview';
 import { Colors } from '../../constants/Colors';
 import AccessRestrictionModal from '../../components/AccessRestrictionModal';
 import { apiRequest, fetchCurrentUser, getAuthUser, resolveRemoteAssetUrl } from '../../lib/api';
@@ -123,6 +124,7 @@ type CommunityPost = {
   audience: string;
   content: string;
   image_url: string;
+  video_url: string;
   like_count: number;
   comment_count: number;
   viewer_has_liked: boolean;
@@ -132,6 +134,8 @@ type CommunityPost = {
   created_at: string;
   updated_at: string;
 };
+
+type CommunityVideoKind = 'direct' | 'embed' | 'none';
 
 type CommunityComment = {
   id: string;
@@ -154,6 +158,16 @@ type CommunityReactionUser = {
   user_role: string;
   user_profile_image: string;
   created_at: string;
+};
+
+type CommunityMediaAsset = {
+  uri: string;
+  base64: string;
+  mimeType: string;
+  fileName: string | null;
+  width?: number | null;
+  height?: number | null;
+  type: 'image' | 'video';
 };
 function formatCommunityPostTime(value: string, t: (key: string, params?: Record<string, string | number>) => string) {
   const createdAt = new Date(value);
@@ -186,6 +200,126 @@ function formatCommunityPostTime(value: string, t: (key: string, params?: Record
 function getImageSource(url: string | null | undefined) {
   const resolvedUrl = resolveRemoteAssetUrl(url);
   return resolvedUrl ? { uri: resolvedUrl } : null;
+}
+
+function getCommunityVideoUrl(url: string | null | undefined) {
+  return resolveRemoteAssetUrl(url) || '';
+}
+
+function normalizeExternalCommunityVideoUrl(url: string | null | undefined) {
+  const normalizedUrl = String(url || '').trim();
+  if (!normalizedUrl) {
+    return '';
+  }
+  try {
+    const parsed = new URL(normalizedUrl);
+    const host = parsed.hostname.toLowerCase();
+    const path = parsed.pathname || '';
+
+    if (host === 'youtu.be') {
+      const videoId = path.replace(/^\/+/, '').split('/')[0];
+      return videoId ? `https://www.youtube.com/embed/${videoId}?playsinline=1&rel=0` : '';
+    }
+    if (host === 'youtube.com' || host === 'www.youtube.com' || host === 'm.youtube.com') {
+      const videoId =
+        path.startsWith('/embed/')
+          ? path.split('/embed/')[1]?.split('/')[0]
+          : path.startsWith('/shorts/')
+            ? path.split('/shorts/')[1]?.split('/')[0]
+            : parsed.searchParams.get('v') || '';
+      return videoId ? `https://www.youtube.com/embed/${videoId}?playsinline=1&rel=0` : '';
+    }
+    if (host === 'player.vimeo.com' && path.startsWith('/video/')) {
+      const videoId = path.split('/video/')[1]?.split('/')[0] || '';
+      return videoId ? `https://player.vimeo.com/video/${videoId}?playsinline=1&title=0&byline=0&portrait=0&dnt=1` : '';
+    }
+    if (host === 'vimeo.com' || host === 'www.vimeo.com') {
+      const match = path.match(/\/(\d+)(?:$|[/?#])/);
+      return match?.[1]
+        ? `https://player.vimeo.com/video/${match[1]}?playsinline=1&title=0&byline=0&portrait=0&dnt=1`
+        : '';
+    }
+  } catch {
+    return '';
+  }
+  return '';
+}
+
+function getCommunityVideoLinkHint(t: (key: string, params?: Record<string, string | number>) => string) {
+  return t('Supported links: YouTube watch/share/shorts and Vimeo links.');
+}
+
+function getCommunityVideoLinkError(
+  message: string,
+  t: (key: string, params?: Record<string, string | number>) => string
+) {
+  const normalized = String(message || '').trim();
+  if (
+    normalized === 'Only YouTube and Vimeo links are supported' ||
+    normalized === 'Only valid YouTube and Vimeo links are supported' ||
+    normalized === 'That YouTube link is not valid' ||
+    normalized === 'That Vimeo link is not valid' ||
+    normalized === 'Video link is empty'
+  ) {
+    return t('Use a valid YouTube or Vimeo link. Supported: YouTube watch/share/shorts and Vimeo links.');
+  }
+  return normalized || t('Failed to publish post');
+}
+
+function getCommunityVideoKind(url: string | null | undefined): CommunityVideoKind {
+  const resolvedUrl = getCommunityVideoUrl(url) || normalizeExternalCommunityVideoUrl(url);
+  if (!resolvedUrl) {
+    return 'none';
+  }
+  if (
+    resolvedUrl.startsWith('https://player.vimeo.com/video/') ||
+    resolvedUrl.startsWith('https://www.youtube.com/embed/') ||
+    resolvedUrl.startsWith('https://www.youtube-nocookie.com/embed/')
+  ) {
+    return 'embed';
+  }
+  return 'direct';
+}
+
+function buildCommunityVideoHtml(videoUrl: string) {
+  const escapedUrl = videoUrl
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+  const videoKind = getCommunityVideoKind(videoUrl);
+
+  return `<!DOCTYPE html>
+<html>
+  <head>
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+    <style>
+      html, body {
+        margin: 0;
+        padding: 0;
+        background: #0b1020;
+        height: 100%;
+        overflow: hidden;
+      }
+      video, iframe {
+        width: 100%;
+        height: 100%;
+        background: #0b1020;
+        border: 0;
+      }
+      video {
+        object-fit: cover;
+      }
+    </style>
+  </head>
+  <body>
+    ${
+      videoKind === 'embed'
+        ? `<iframe src="${escapedUrl}" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen referrerpolicy="strict-origin-when-cross-origin"></iframe>`
+        : `<video controls playsinline preload="metadata" src="${escapedUrl}"></video>`
+    }
+  </body>
+</html>`;
 }
 
 function SkeletonBlock({
@@ -301,8 +435,9 @@ export default function ChallengesScreen() {
   const [communityLoading, setCommunityLoading] = useState(!cachedCommunityPosts);
   const [communityPosting, setCommunityPosting] = useState(false);
   const [communityError, setCommunityError] = useState('');
+  const [communityVideoLink, setCommunityVideoLink] = useState('');
   const [screenRefreshing, setScreenRefreshing] = useState(false);
-  const [communityImage, setCommunityImage] = useState<ImagePicker.ImagePickerAsset | null>(null);
+  const [communityMedia, setCommunityMedia] = useState<CommunityMediaAsset | null>(null);
   const [expandedComments, setExpandedComments] = useState<Record<string, boolean>>({});
   const [commentDrafts, setCommentDrafts] = useState<Record<string, string>>({});
   const [commentSubmitting, setCommentSubmitting] = useState<Record<string, boolean>>({});
@@ -590,7 +725,7 @@ export default function ChallengesScreen() {
           return;
         }
 
-        setCommunityImage({
+        setCommunityMedia({
           uri: imageUri,
           base64: imageBase64,
           mimeType: mimeType || 'image/svg+xml',
@@ -598,8 +733,7 @@ export default function ChallengesScreen() {
           width: 1080,
           height: 1920,
           type: 'image',
-          assetId: null,
-        } as unknown as ImagePicker.ImagePickerAsset);
+        });
         setCommunityDraft(prefillStatus || '');
         setCommunityError('');
       } catch (error) {
@@ -734,8 +868,13 @@ export default function ChallengesScreen() {
 
   const handleCommunityPost = async () => {
     const content = communityDraft.trim();
-    if (!content && !communityImage?.base64) {
-      setCommunityError(t('Add a status or choose an image before posting.'));
+    const externalVideoUrl = normalizeExternalCommunityVideoUrl(communityVideoLink) || communityVideoLink.trim();
+    if (communityMedia?.base64 && externalVideoUrl) {
+      setCommunityError(t('Choose an upload or paste a video link, not both.'));
+      return;
+    }
+    if (!content && !communityMedia?.base64 && !externalVideoUrl) {
+      setCommunityError(t('Add a status, choose media, or paste a video link before posting.'));
       return;
     }
 
@@ -746,32 +885,35 @@ export default function ChallengesScreen() {
         method: 'POST',
         body: {
           content: content || '',
-          image_base64: communityImage?.base64 ?? undefined,
-          mime_type: communityImage?.mimeType ?? 'image/jpeg',
-          file_name: communityImage?.fileName ?? null,
+          image_base64: communityMedia?.type === 'image' ? communityMedia.base64 : undefined,
+          video_base64: communityMedia?.type === 'video' ? communityMedia.base64 : undefined,
+          external_video_url: externalVideoUrl || undefined,
+          mime_type: communityMedia?.mimeType ?? 'image/jpeg',
+          file_name: communityMedia?.fileName ?? null,
         },
       });
       setCommunityDraft('');
-      setCommunityImage(null);
+      setCommunityMedia(null);
+      setCommunityVideoLink('');
       setCommunityPosts((current) => [response, ...current]);
     } catch (error) {
-      setCommunityError(error instanceof Error ? error.message : t('Failed to publish post'));
+      setCommunityError(error instanceof Error ? getCommunityVideoLinkError(error.message, t) : t('Failed to publish post'));
     } finally {
       setCommunityPosting(false);
     }
   };
 
-  const handlePickCommunityImage = async () => {
+  const handlePickCommunityMedia = async () => {
     try {
       const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (!permission.granted) {
-        Alert.alert(t('Permission needed'), t('Please allow photo library access to add an image.'));
+        Alert.alert(t('Permission needed'), t('Please allow photo library access to add media.'));
         return;
       }
 
       const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ['images'],
-        allowsEditing: true,
+        mediaTypes: ['images', 'videos'],
+        allowsEditing: false,
         quality: 0.9,
         base64: true,
       });
@@ -781,15 +923,33 @@ export default function ChallengesScreen() {
       }
 
       const asset = result.assets[0];
-      if (!asset.base64) {
-        throw new Error('The selected image could not be processed for upload.');
+      const assetType = asset.type === 'video' ? 'video' : 'image';
+      const assetBase64 =
+        asset.base64 ||
+        (asset.uri
+          ? await FileSystem.readAsStringAsync(asset.uri, {
+              encoding: FileSystem.EncodingType.Base64,
+            })
+          : '');
+
+      if (!assetBase64) {
+        throw new Error(assetType === 'video' ? 'The selected video could not be processed for upload.' : 'The selected image could not be processed for upload.');
       }
 
-      setCommunityImage(asset);
+      setCommunityMedia({
+        uri: asset.uri,
+        base64: assetBase64,
+        mimeType: asset.mimeType || (assetType === 'video' ? 'video/mp4' : 'image/jpeg'),
+        fileName: asset.fileName || null,
+        width: asset.width,
+        height: asset.height,
+        type: assetType,
+      });
+      setCommunityVideoLink('');
       setCommunityError('');
     } catch (error) {
-      const message = error instanceof Error ? error.message : t('Unable to choose an image right now.');
-      Alert.alert(t('Image unavailable'), message);
+      const message = error instanceof Error ? error.message : t('Unable to choose media right now.');
+      Alert.alert(t('Media unavailable'), message);
     }
   };
 
@@ -1489,10 +1649,26 @@ export default function ChallengesScreen() {
                 value={communityDraft}
                 onChangeText={setCommunityDraft}
               />
+              <TextInput
+                style={styles.composerLinkInput}
+                placeholder={t('Paste a YouTube or Vimeo link')}
+                placeholderTextColor="rgba(255,255,255,0.35)"
+                autoCapitalize="none"
+                autoCorrect={false}
+                keyboardType="url"
+                value={communityVideoLink}
+                onChangeText={(text) => {
+                  setCommunityVideoLink(text);
+                  if (text.trim()) {
+                    setCommunityMedia(null);
+                  }
+                }}
+              />
+              <Text style={styles.composerLinkHint}>{getCommunityVideoLinkHint(t)}</Text>
               <View style={styles.composerDivider} />
               <View style={styles.composerActions}>
-                <TouchableOpacity style={styles.composerImgBtn} onPress={handlePickCommunityImage}>
-                  <Ionicons name="image-outline" size={22} color={communityImage ? Colors.primary : 'rgba(255,255,255,0.45)'} />
+                <TouchableOpacity style={styles.composerImgBtn} onPress={handlePickCommunityMedia}>
+                  <Ionicons name="images-outline" size={22} color={communityMedia ? Colors.primary : 'rgba(255,255,255,0.45)'} />
                 </TouchableOpacity>
 
                 {/* Tier Dropdown */}
@@ -1548,11 +1724,40 @@ export default function ChallengesScreen() {
               </View>
             </View>
 
-            {communityImage?.uri ? (
+            {communityMedia?.uri ? (
               <View style={styles.communityPreviewCard}>
-                <Image source={{ uri: communityImage.uri }} style={styles.communityPreviewImage} />
-                <TouchableOpacity onPress={() => setCommunityImage(null)} style={styles.communityPreviewRemove}>
-                  <Text style={styles.communityPreviewRemoveText}>{t('Remove image')}</Text>
+                {communityMedia.type === 'video' ? (
+                  <View style={styles.communityPreviewVideoWrap}>
+                    <WebView
+                      source={{ html: buildCommunityVideoHtml(getCommunityVideoUrl(communityMedia.uri) || communityMedia.uri) }}
+                      style={styles.communityPreviewVideo}
+                      scrollEnabled={false}
+                      javaScriptEnabled
+                      mediaPlaybackRequiresUserAction
+                    />
+                  </View>
+                ) : (
+                  <Image source={{ uri: communityMedia.uri }} style={styles.communityPreviewImage} />
+                )}
+                <TouchableOpacity onPress={() => setCommunityMedia(null)} style={styles.communityPreviewRemove}>
+                  <Text style={styles.communityPreviewRemoveText}>{t('Remove media')}</Text>
+                </TouchableOpacity>
+              </View>
+            ) : null}
+
+            {!communityMedia?.uri && communityVideoLink.trim() ? (
+              <View style={styles.communityPreviewCard}>
+                <View style={styles.communityPreviewVideoWrap}>
+                  <WebView
+                    source={{ html: buildCommunityVideoHtml(normalizeExternalCommunityVideoUrl(communityVideoLink) || communityVideoLink.trim()) }}
+                    style={styles.communityPreviewVideo}
+                    scrollEnabled={false}
+                    javaScriptEnabled
+                    mediaPlaybackRequiresUserAction
+                  />
+                </View>
+                <TouchableOpacity onPress={() => setCommunityVideoLink('')} style={styles.communityPreviewRemove}>
+                  <Text style={styles.communityPreviewRemoveText}>{t('Remove link')}</Text>
                 </TouchableOpacity>
               </View>
             ) : null}
@@ -1590,6 +1795,16 @@ export default function ChallengesScreen() {
                   {post.content ? <Text style={styles.postBody}>{post.content}</Text> : null}
                   {getImageSource(post.image_url) ? (
                     <Image source={getImageSource(post.image_url)!} style={styles.postImagePreview} />
+                  ) : getCommunityVideoUrl(post.video_url) ? (
+                    <View style={styles.postVideoPreviewWrap}>
+                      <WebView
+                        source={{ html: buildCommunityVideoHtml(getCommunityVideoUrl(post.video_url)) }}
+                        style={styles.postVideoPreview}
+                        scrollEnabled={false}
+                        javaScriptEnabled
+                        mediaPlaybackRequiresUserAction
+                      />
+                    </View>
                   ) : null}
                 </TouchableOpacity>
 
@@ -1742,6 +1957,16 @@ export default function ChallengesScreen() {
 
                 {getImageSource(selectedCommunityPost.image_url) ? (
                   <Image source={getImageSource(selectedCommunityPost.image_url)!} style={styles.postModalImage} />
+                ) : getCommunityVideoUrl(selectedCommunityPost.video_url) ? (
+                  <View style={styles.postModalVideoWrap}>
+                    <WebView
+                      source={{ html: buildCommunityVideoHtml(getCommunityVideoUrl(selectedCommunityPost.video_url)) }}
+                      style={styles.postModalVideo}
+                      scrollEnabled={false}
+                      javaScriptEnabled
+                      mediaPlaybackRequiresUserAction
+                    />
+                  </View>
                 ) : null}
               </ScrollView>
             ) : null}
@@ -2735,6 +2960,27 @@ const styles = StyleSheet.create({
     minHeight: 80,
     textAlignVertical: 'top',
   },
+  composerLinkInput: {
+    color: '#fff',
+    fontSize: 13,
+    fontFamily: 'Inter_400Regular',
+    marginHorizontal: 16,
+    marginBottom: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+    borderRadius: 12,
+    backgroundColor: 'rgba(255,255,255,0.02)',
+  },
+  composerLinkHint: {
+    color: 'rgba(255,255,255,0.45)',
+    fontSize: 11,
+    lineHeight: 16,
+    fontFamily: 'Inter_400Regular',
+    marginHorizontal: 16,
+    marginBottom: 12,
+  },
   composerDivider: {
     height: 1,
     backgroundColor: 'rgba(255,255,255,0.08)',
@@ -2819,6 +3065,18 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     resizeMode: 'cover',
     marginBottom: 10,
+  },
+  communityPreviewVideoWrap: {
+    width: '100%',
+    height: 180,
+    borderRadius: 12,
+    overflow: 'hidden',
+    marginBottom: 10,
+    backgroundColor: '#0B1020',
+  },
+  communityPreviewVideo: {
+    flex: 1,
+    backgroundColor: '#0B1020',
   },
   communityPreviewRemove: {
     alignSelf: 'flex-end',
@@ -2912,6 +3170,18 @@ const styles = StyleSheet.create({
     resizeMode: 'cover',
     marginBottom: 14,
   },
+  postVideoPreviewWrap: {
+    width: '100%',
+    height: 200,
+    borderRadius: 14,
+    overflow: 'hidden',
+    marginBottom: 14,
+    backgroundColor: '#0B1020',
+  },
+  postVideoPreview: {
+    flex: 1,
+    backgroundColor: '#0B1020',
+  },
   postFooter: {
     flexDirection: 'row',
     gap: 20,
@@ -2976,6 +3246,17 @@ const styles = StyleSheet.create({
     height: 320,
     borderRadius: 16,
     resizeMode: 'cover',
+  },
+  postModalVideoWrap: {
+    width: '100%',
+    height: 320,
+    borderRadius: 16,
+    overflow: 'hidden',
+    backgroundColor: '#0B1020',
+  },
+  postModalVideo: {
+    flex: 1,
+    backgroundColor: '#0B1020',
   },
   commentsWrap: {
     marginTop: 14,
