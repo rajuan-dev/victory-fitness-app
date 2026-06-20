@@ -19,6 +19,9 @@ const DEFAULT_THUMBNAIL =
   'https://images.unsplash.com/photo-1517836357463-d25dfeac3438?q=80&w=300&auto=format&fit=crop';
 
 function buildWorkoutPlayerHtml(videoUrl: string) {
+  const isDirectVideo =
+    /^https?:\/\/.+\.(mp4|mov|m4v|webm)(\?.*)?$/i.test(videoUrl) ||
+    videoUrl.includes('/workout-videos/');
   return `<!DOCTYPE html>
 <html lang="en">
   <head>
@@ -44,16 +47,23 @@ function buildWorkoutPlayerHtml(videoUrl: string) {
         height: 100%;
         background: #0E1326;
       }
+      video.frame {
+        object-fit: contain;
+      }
     </style>
   </head>
   <body>
-    <iframe
+    ${
+      isDirectVideo
+        ? `<video class="frame" controls playsinline preload="metadata" src="${videoUrl}"></video>`
+        : `<iframe
       class="frame"
       src="${videoUrl}"
       allow="autoplay; fullscreen; picture-in-picture; encrypted-media"
       allowfullscreen
       referrerpolicy="strict-origin-when-cross-origin"
-    ></iframe>
+    ></iframe>`
+    }
     <script>
       window.open = function () { return null; };
       document.addEventListener('click', function (event) {
@@ -86,6 +96,18 @@ function isAllowedWorkoutPlayerRequest(url: string): boolean {
     return true;
   }
 
+  if (normalizedUrl.startsWith('https://www.youtube.com/embed/')) {
+    return true;
+  }
+
+  if (normalizedUrl.startsWith('https://www.youtube-nocookie.com/embed/')) {
+    return true;
+  }
+
+  if (normalizedUrl.startsWith('http://') || normalizedUrl.startsWith('https://')) {
+    return true;
+  }
+
   return false;
 }
 
@@ -96,22 +118,28 @@ export default function WorkoutPlayerScreen() {
     id?: string;
     title?: string;
     vimeoId?: string;
+    videoUrl?: string;
+    videoSource?: string;
     tag?: string;
     thumbnail?: string;
   }>();
 
   const title = typeof params.title === 'string' ? params.title : t('Workout');
   const vimeoId = typeof params.vimeoId === 'string' ? params.vimeoId : '';
+  const videoUrl = typeof params.videoUrl === 'string' ? params.videoUrl : '';
   const tag = typeof params.tag === 'string' ? params.tag : t('Workout');
   const thumbnail = typeof params.thumbnail === 'string' ? params.thumbnail : DEFAULT_THUMBNAIL;
 
   const embedUrl = useMemo(() => {
+    if (videoUrl) {
+      return videoUrl;
+    }
     if (!vimeoId) {
       return '';
     }
 
     return `https://player.vimeo.com/video/${encodeURIComponent(vimeoId)}?autoplay=1&title=0&byline=0&portrait=0&playsinline=1&dnt=1`;
-  }, [vimeoId]);
+  }, [videoUrl, vimeoId]);
   const playerHtml = useMemo(() => (embedUrl ? buildWorkoutPlayerHtml(embedUrl) : ''), [embedUrl]);
 
   return (
