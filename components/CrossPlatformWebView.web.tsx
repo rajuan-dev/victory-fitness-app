@@ -3,7 +3,6 @@ import {
   ActivityIndicator,
   StyleSheet,
   Text,
-  TouchableOpacity,
   View,
   type StyleProp,
   type ViewStyle,
@@ -64,25 +63,6 @@ function parseMediaFromHtml(html: string): ParsedMedia | null {
   return { kind: 'unknown', url: normalized };
 }
 
-function getVimeoWatchUrl(url: string) {
-  try {
-    const parsed = new URL(url);
-    const path = parsed.pathname || '';
-    if (parsed.hostname.toLowerCase() === 'player.vimeo.com' && path.startsWith('/video/')) {
-      const videoId = path.split('/video/')[1]?.split('/')[0] || '';
-      return videoId ? `https://vimeo.com/${videoId}` : '';
-    }
-    if (parsed.hostname.toLowerCase() === 'vimeo.com' || parsed.hostname.toLowerCase() === 'www.vimeo.com') {
-      const match = path.match(/\/(\d+)(?:$|[/?#])/);
-      return match?.[1] ? `https://vimeo.com/${match[1]}` : '';
-    }
-  } catch {
-    return '';
-  }
-
-  return '';
-}
-
 function isAllowedUrl(url: string, guard?: CrossPlatformWebViewProps['onShouldStartLoadWithRequest']) {
   if (!guard) {
     return true;
@@ -115,6 +95,12 @@ export default function CrossPlatformWebView({
   useEffect(() => {
     setIsLoading(Boolean(startInLoadingState));
   }, [startInLoadingState, media?.url]);
+
+  useEffect(() => {
+    if (media?.kind === 'unknown') {
+      setIsLoading(false);
+    }
+  }, [media?.kind]);
 
   if (!media || !media.url) {
     return (
@@ -162,22 +148,6 @@ export default function CrossPlatformWebView({
           onLoadedData={() => setIsLoading(false)}
           onCanPlay={() => setIsLoading(false)}
         />
-      ) : media.kind === 'iframe' && getVimeoWatchUrl(media.url) ? (
-        <View style={styles.vimeoFallback}>
-          <Text style={styles.vimeoTitle}>Vimeo playback opens externally on web.</Text>
-          <Text style={styles.vimeoText}>The video is still available, but this browser build cannot embed it directly.</Text>
-          <TouchableOpacity
-            style={styles.vimeoButton}
-            onPress={() => {
-              const nextUrl = getVimeoWatchUrl(media.url) || media.url;
-              if (typeof window !== 'undefined') {
-                window.open(nextUrl, '_blank', 'noopener,noreferrer');
-              }
-            }}
-          >
-            <Text style={styles.vimeoButtonText}>Open on Vimeo</Text>
-          </TouchableOpacity>
-        </View>
       ) : (
         <iframe
           title="Embedded media"
@@ -231,39 +201,5 @@ const styles = StyleSheet.create({
   emptyText: {
     color: '#fff',
     fontSize: 14,
-  },
-  vimeoFallback: {
-    flex: 1,
-    minHeight: 180,
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 16,
-    gap: 8,
-    backgroundColor: '#0b1020',
-  },
-  vimeoTitle: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '700',
-    textAlign: 'center',
-  },
-  vimeoText: {
-    color: 'rgba(255,255,255,0.72)',
-    fontSize: 13,
-    textAlign: 'center',
-    lineHeight: 18,
-    maxWidth: 420,
-  },
-  vimeoButton: {
-    marginTop: 8,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 999,
-    backgroundColor: '#22C55E',
-  },
-  vimeoButtonText: {
-    color: '#08111f',
-    fontSize: 13,
-    fontWeight: '700',
   },
 });
