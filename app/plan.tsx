@@ -14,13 +14,62 @@ import {
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { ApiError, fetchCurrentUser, updateCurrentUserSubscription } from '../lib/api';
-import { BillingCycle, getPlanPrice, getSubscriptionCard, isSubscriptionActive, PLAN_CARDS, SubscriptionTier } from '../lib/access';
+import { ApiError, fetchCurrentUser, fetchSubscriptionPlans, SubscriptionPlan, updateCurrentUserSubscription } from '../lib/api';
+import { AppPlanCard, BillingCycle, getSubscriptionCard, PLAN_CARDS, SubscriptionTier } from '../lib/access';
 import { useLanguage } from '../lib/i18n';
 import { replaceRoute } from '../lib/navigation';
 
 const { width } = Dimensions.get('window');
 const CARD_WIDTH = Math.min(width - 92, 320);
+
+type AppPlanViewModel = AppPlanCard & {
+  planId: string;
+  description: string;
+  features: string[];
+  priceMonthly: number | null;
+  priceYearly: number | null;
+  discountedPriceMonthly: number | null;
+  discountedPriceYearly: number | null;
+  discountPercentage: number | null;
+  discountStartDate: string | null;
+  discountEndDate: string | null;
+  isDiscountActive: boolean;
+  isApplicationOnly: boolean;
+  isMostPopular: boolean;
+  iconType: string;
+};
+
+function formatPrice(value: number | null, cycle: BillingCycle) {
+  if (value == null) {
+    return 'Application Only';
+  }
+  return `EUR ${value} / ${cycle === 'monthly' ? 'month' : 'year'}`;
+}
+
+function getPlanPricing(plan: AppPlanViewModel, cycle: BillingCycle) {
+  if (plan.isApplicationOnly) {
+    return {
+      originalPrice: null,
+      finalPrice: null,
+      hasActiveDiscount: false,
+    };
+  }
+
+  const originalPrice = cycle === 'monthly' ? plan.priceMonthly : plan.priceYearly;
+  const finalPrice = cycle === 'monthly' ? plan.discountedPriceMonthly : plan.discountedPriceYearly;
+  const hasActiveDiscount =
+    Boolean(plan.isDiscountActive) &&
+    plan.discountPercentage != null &&
+    originalPrice != null &&
+    finalPrice != null &&
+    finalPrice !== originalPrice;
+
+  return {
+    originalPrice,
+    finalPrice,
+    hasActiveDiscount,
+  };
+}
 
 function getPlanTierAccentStyle(tier: SubscriptionTier) {
   switch (tier) {
@@ -48,13 +97,17 @@ export default function PlanSelectionScreen() {
   const [currentTier, setCurrentTier] = useState<SubscriptionTier>('NONE');
   const [userName, setUserName] = useState('Member');
   const [billingCycle, setBillingCycle] = useState<BillingCycle>('yearly');
+  const [planItems, setPlanItems] = useState<SubscriptionPlan[]>([]);
 
   useEffect(() => {
     let cancelled = false;
 
     const load = async () => {
       try {
-        const user = await fetchCurrentUser();
+        const [user, plansResponse] = await Promise.all([
+          fetchCurrentUser(),
+          fetchSubscriptionPlans(),
+        ]);
         if (cancelled) {
           return;
         }
@@ -63,6 +116,7 @@ export default function PlanSelectionScreen() {
         setCurrentTier(tier === 'NONE' ? 'NONE' : tier);
         setSelectedTier(tier === 'NONE' ? 'SILVER' : tier);
         setUserName(String(user.name || 'Member'));
+        setPlanItems(Array.isArray(plansResponse?.items) ? plansResponse.items : []);
       } catch {
         if (!cancelled) {
           Alert.alert(t('Access error'), t('Unable to load your subscription state right now.'));
@@ -81,7 +135,30 @@ export default function PlanSelectionScreen() {
     };
   }, [router]);
 
-  const selectedPlan = useMemo(() => getSubscriptionCard(selectedTier), [selectedTier]);
+  const plans = useMemo<AppPlanViewModel[]>(() => {
+    return PLAN_CARDS.map((card) => {
+      const apiPlan = planItems.find((item) => item.subscriptionTier === card.tier);
+      return {
+        ...card,
+        planId: apiPlan?.id ?? card.tier,
+        title: apiPlan?.title ?? card.title,
+        description: apiPlan?.description ?? card.description,
+        features: Array.isArray(apiPlan?.features) && apiPlan.features.length > 0 ? apiPlan.features : card.features,
+        priceMonthly: apiPlan?.priceMonthly ?? null,
+        priceYearly: apiPlan?.priceYearly ?? null,
+        discountedPriceMonthly: apiPlan?.discountedPriceMonthly ?? apiPlan?.priceMonthly ?? null,
+        discountedPriceYearly: apiPlan?.discountedPriceYearly ?? apiPlan?.priceYearly ?? null,
+        discountPercentage: apiPlan?.discountPercentage ?? null,
+        discountStartDate: apiPlan?.discountStartDate ?? null,
+        discountEndDate: apiPlan?.discountEndDate ?? null,
+        isDiscountActive: Boolean(apiPlan?.isDiscountActive),
+        isApplicationOnly: Boolean(apiPlan?.isApplicationOnly ?? card.tier === 'INNER_CIRCLE'),
+        isMostPopular: Boolean(apiPlan?.isMostPopular ?? card.badge),
+        iconType: apiPlan?.iconType ?? '',
+      };
+    });
+  }, [planItems]);
+  const selectedPlan = useMemo(() => plans.find((plan) => plan.tier === selectedTier) ?? plans[0] ?? { ...getSubscriptionCard('SILVER'), planId: 'SILVER', priceMonthly: null, priceYearly: null, discountedPriceMonthly: null, discountedPriceYearly: null, discountPercentage: null, discountStartDate: null, discountEndDate: null, isDiscountActive: false, isApplicationOnly: false, isMostPopular: false, iconType: '' }, [plans, selectedTier]);
   const selectedPlanAccentStyle = useMemo(() => getPlanTierAccentStyle(selectedTier), [selectedTier]);
 
   const handleConfirm = async () => {
@@ -95,6 +172,7 @@ export default function PlanSelectionScreen() {
         subscription_tier: selectedTier,
         billing_cycle: billingCycle,
         confirm_payment: true,
+        plan_id: selectedPlan.planId,
       });
       setCurrentTier(selectedTier);
       replaceRoute(router, '/(tabs)');
@@ -154,7 +232,7 @@ export default function PlanSelectionScreen() {
           </View>
 
           <FlatList
-            data={PLAN_CARDS}
+            data={plans}
             keyExtractor={(item) => item.tier}
             horizontal
             showsHorizontalScrollIndicator={false}
@@ -167,7 +245,7 @@ export default function PlanSelectionScreen() {
               const tierAccentStyle = getPlanTierAccentStyle(card.tier);
               const actionLabel = current
                 ? t('Current Plan').toUpperCase()
-                : card.tier === 'INNER_CIRCLE'
+                : card.isApplicationOnly
                   ? t('Apply now').toUpperCase()
                   : t('Choose Plan').toUpperCase();
 
@@ -183,9 +261,9 @@ export default function PlanSelectionScreen() {
                   ]}
                   onPress={() => setSelectedTier(card.tier)}
                 >
-                  {card.badge ? (
+                  {card.isMostPopular ? (
                     <View style={styles.popularPill}>
-                      <Text style={styles.popularText}>{card.badge}</Text>
+                      <Text style={styles.popularText}>{t('Most Popular')}</Text>
                     </View>
                   ) : null}
 
@@ -198,18 +276,36 @@ export default function PlanSelectionScreen() {
                       />
                     </View>
                     <View style={[styles.stepBubble, tierAccentStyle, current && { borderColor: card.accent, shadowColor: card.accent }]}>
-                      <Text style={styles.stepBubbleText}>{PLAN_CARDS.findIndex((item) => item.tier === card.tier) + 1}</Text>
+                      <Text style={styles.stepBubbleText}>{plans.findIndex((item) => item.tier === card.tier) + 1}</Text>
                     </View>
                   </View>
 
                   <Text style={styles.cardTitle}>{card.title.toUpperCase()}</Text>
                   <Text style={styles.cardDescription}>{t(card.description)}</Text>
-                  <View style={styles.priceRow}>
-                    <Text style={styles.price}>{t(getPlanPrice(card, billingCycle))}</Text>
-                    {card.tier !== 'INNER_CIRCLE' ? (
-                      <Text style={styles.priceSuffix}>{billingCycle === 'monthly' ? t('per month') : t('per year')}</Text>
-                    ) : null}
-                  </View>
+                  {(() => {
+                    const pricing = getPlanPricing(card, billingCycle);
+                    if (card.isApplicationOnly) {
+                      return (
+                        <View style={styles.priceRow}>
+                          <Text style={styles.price}>{t('Application Only')}</Text>
+                        </View>
+                      );
+                    }
+                    return (
+                      <View style={styles.priceBlock}>
+                        {pricing.hasActiveDiscount ? (
+                          <View style={styles.discountRow}>
+                            <Text style={styles.discountPill}>{`-${card.discountPercentage}%`}</Text>
+                            <Text style={styles.originalPrice}>EUR {pricing.originalPrice}</Text>
+                          </View>
+                        ) : null}
+                        <View style={styles.priceRow}>
+                          <Text style={styles.price}>EUR {pricing.finalPrice}</Text>
+                          <Text style={styles.priceSuffix}>{billingCycle === 'monthly' ? t('per month') : t('per year')}</Text>
+                        </View>
+                      </View>
+                    );
+                  })()}
                   {card.tier !== 'INNER_CIRCLE' && billingCycle === 'yearly' ? (
                     <Text style={styles.valueText}>BEST VALUE</Text>
                   ) : null}
@@ -239,7 +335,7 @@ export default function PlanSelectionScreen() {
             <Text style={styles.summaryLabel}>{t('Selected plan')}</Text>
             <Text style={styles.summaryTitle}>{selectedPlan.title}</Text>
             <Text style={styles.summaryText}>
-              {t(getPlanPrice(selectedPlan, billingCycle))}. {t('Access:')} {selectedPlan.tabAccess.join(', ')}.
+              {t(formatPrice(getPlanPricing(selectedPlan, billingCycle).finalPrice, billingCycle))}. {t('Access:')} {selectedPlan.tabAccess.join(', ')}.
             </Text>
           </View>
 
@@ -261,7 +357,7 @@ export default function PlanSelectionScreen() {
             <View style={[styles.modalCard, selectedPlanAccentStyle]}>
               <Text style={styles.modalTitle}>{t('Confirm payment')}</Text>
               <Text style={styles.modalText}>
-                {`Activate ${selectedPlan.title} now. This will update the user profile subscription immediately and unlock the allowed sections.`}
+                {`Activate ${selectedPlan.title} now at ${formatPrice(getPlanPricing(selectedPlan, billingCycle).finalPrice, billingCycle)}. This will update the user profile subscription immediately and unlock the allowed sections.`}
               </Text>
 
               <View style={styles.modalActions}>
@@ -410,11 +506,30 @@ const styles = StyleSheet.create({
   popularText: { color: '#07222B', fontSize: 10, fontFamily: 'Inter_700Bold', letterSpacing: 0.8 },
   cardTitle: { color: '#FFFFFF', fontSize: 18, fontFamily: 'Inter_700Bold', marginTop: 18 },
   cardDescription: { color: '#7F8BA6', fontSize: 13, lineHeight: 20, marginTop: 10, fontFamily: 'Inter_400Regular', minHeight: 56 },
+  priceBlock: {
+    marginTop: 18,
+  },
+  discountRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 4,
+  },
+  discountPill: {
+    color: '#7BF1A8',
+    fontSize: 11,
+    fontFamily: 'Inter_700Bold',
+  },
+  originalPrice: {
+    color: '#94A3B8',
+    fontSize: 12,
+    fontFamily: 'Inter_400Regular',
+    textDecorationLine: 'line-through',
+  },
   priceRow: {
     flexDirection: 'row',
     alignItems: 'flex-end',
     gap: 6,
-    marginTop: 18,
   },
   price: { color: '#FFFFFF', fontSize: 22, fontFamily: 'Inter_700Bold' },
   priceSuffix: { color: '#A3B1C7', fontSize: 13, fontFamily: 'Inter_400Regular', marginBottom: 2 },
