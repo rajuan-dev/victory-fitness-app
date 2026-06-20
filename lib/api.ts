@@ -410,6 +410,7 @@ export type LongevityMasterclass = {
   description: string;
   thumbnail: string;
   videoUrl: string;
+  videoSource: string;
   audioUrl: string;
   category: string;
   duration: string;

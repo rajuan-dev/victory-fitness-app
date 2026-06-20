@@ -133,6 +133,13 @@ function normalizeMasterclassVideoUrl(value: string | null | undefined) {
     return '';
   }
 
+  if (
+    /^https?:\/\/.+\.(mp4|mov|m4v|webm)(\?.*)?$/i.test(normalized) ||
+    normalized.includes('/masterclass-videos/')
+  ) {
+    return normalized;
+  }
+
   try {
     const parsed = new URL(normalized);
     const host = parsed.hostname.toLowerCase();
@@ -177,6 +184,10 @@ function buildMasterclassVideoHtml(videoUrl: string) {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;');
 
+  const isDirectVideo =
+    /^https?:\/\/.+\.(mp4|mov|m4v|webm)(\?.*)?$/i.test(videoUrl) ||
+    videoUrl.includes('/masterclass-videos/');
+
   return `<!DOCTYPE html>
 <html>
   <head>
@@ -189,16 +200,21 @@ function buildMasterclassVideoHtml(videoUrl: string) {
         height: 100%;
         overflow: hidden;
       }
-      iframe {
+      iframe, video {
         width: 100%;
         height: 100%;
         border: 0;
         background: #0f172a;
       }
+      video {
+        object-fit: contain;
+      }
     </style>
   </head>
   <body>
-    <iframe src="${escapedUrl}" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen referrerpolicy="strict-origin-when-cross-origin"></iframe>
+    ${isDirectVideo
+      ? `<video controls playsinline preload="metadata" src="${escapedUrl}"></video>`
+      : `<iframe src="${escapedUrl}" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen referrerpolicy="strict-origin-when-cross-origin"></iframe>`}
   </body>
 </html>`;
 }
