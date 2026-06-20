@@ -16,6 +16,7 @@ type ActiveChallenge = {
   challenge_id: string;
   title: string;
   description: string;
+  why_it_matters: string;
   type: string;
   duration_days: number;
   plan_text: string;
@@ -32,6 +33,7 @@ type ReadyChallenge = {
   id: string;
   title: string;
   description: string;
+  why_it_matters: string;
   duration_days: number;
   type: string;
   points: number;
@@ -52,8 +54,9 @@ type HomeChallengeCard = {
   id: string;
   challengeId: string;
   title: string;
-  category: string;
-  description: string;
+  goalType: string;
+  whatToDo: string;
+  whyItMatters: string;
   points: number;
   participants: number;
   thumbnail: string;
@@ -67,8 +70,9 @@ type HomeChallengeCard = {
 
 function ChallengeCard({
   title,
-  category,
-  description,
+  goalType,
+  whatToDo,
+  whyItMatters,
   points,
   participants,
   thumbnail,
@@ -80,20 +84,34 @@ function ChallengeCard({
   onSecondaryPress,
 }: HomeChallengeCard) {
   const { t } = useLanguage();
+  const [expanded, setExpanded] = React.useState(false);
   return (
     <View style={styles.challengeLibraryCard}>
       {thumbnail ? <Image source={{ uri: thumbnail }} style={styles.challengeLibraryImage} resizeMode="contain" /> : null}
       <View style={styles.challengeLibraryCardHeader}>
         <View style={styles.challengeLibraryTitleWrap}>
           <Text style={styles.challengeLibraryTitle}>{title}</Text>
-          <Text style={styles.challengeLibraryCategory}>{category}</Text>
         </View>
         <View style={styles.challengeLibraryPointsBadge}>
           <Text style={styles.challengeLibraryPointsText}>+{points} {t('Points')}</Text>
         </View>
       </View>
 
-      <Text style={styles.challengeLibraryDescription} numberOfLines={3}>{description}</Text>
+      <Text style={styles.challengeLibraryFieldLabel}>Goal Type</Text>
+      <Text style={styles.challengeLibraryCategory}>{goalType}</Text>
+
+      <Text style={styles.challengeLibraryFieldLabel}>What To Do</Text>
+      <Text style={styles.challengeLibraryDescription} numberOfLines={expanded ? undefined : 3}>{whatToDo}</Text>
+
+      {whyItMatters ? (
+        <>
+          <TouchableOpacity style={styles.challengeExpandBtn} activeOpacity={0.84} onPress={() => setExpanded((current) => !current)}>
+            <Text style={styles.challengeExpandBtnText}>{expanded ? 'Hide Why It Matters' : 'Why It Matters'}</Text>
+            <Ionicons name={expanded ? 'chevron-up' : 'chevron-down'} size={16} color="#BFDBFE" />
+          </TouchableOpacity>
+          {expanded ? <Text style={styles.challengeWhyText}>{whyItMatters}</Text> : null}
+        </>
+      ) : null}
 
       {state === 'ACTIVE' ? (
         <View style={styles.challengeLibraryProgressRow}>
@@ -214,8 +232,9 @@ export default function ChallengesSection({ refreshToken = 0 }: { refreshToken?:
         id: challenge.id,
         challengeId: challenge.challenge_id,
         title: challenge.title,
-        category: challenge.type,
-        description: challenge.description || challenge.plan_text || `${challenge.days_left} days left in this challenge.`,
+        goalType: challenge.type,
+        whatToDo: challenge.description || challenge.plan_text || `${challenge.days_left} days left in this challenge.`,
+        whyItMatters: challenge.why_it_matters || '',
         points: challenge.points,
         participants: challenge.participants,
         thumbnail: challenge.thumbnail,
@@ -231,8 +250,9 @@ export default function ChallengesSection({ refreshToken = 0 }: { refreshToken?:
         id: challenge.id,
         challengeId: challenge.id,
         title: challenge.title,
-        category: challenge.type,
-        description: challenge.description || `${challenge.duration_days} day challenge ready to start.`,
+        goalType: challenge.type,
+        whatToDo: challenge.description || `${challenge.duration_days} day challenge ready to start.`,
+        whyItMatters: challenge.why_it_matters || '',
         points: challenge.points,
         participants: challenge.participants,
         thumbnail: challenge.thumbnail,
@@ -299,10 +319,11 @@ export default function ChallengesSection({ refreshToken = 0 }: { refreshToken?:
     const activeCards: HomeChallengeCard[] = activeChallenges.map((challenge) => ({
       id: challenge.id,
       challengeId: challenge.challenge_id,
-      title: challenge.title,
-      category: challenge.type,
-      description: challenge.description || challenge.plan_text || `${challenge.days_left} days left in this challenge.`,
-      points: challenge.points,
+        title: challenge.title,
+        goalType: challenge.type,
+        whatToDo: challenge.description || challenge.plan_text || `${challenge.days_left} days left in this challenge.`,
+        whyItMatters: challenge.why_it_matters || '',
+        points: challenge.points,
       participants: challenge.participants,
       thumbnail: challenge.thumbnail,
       state: 'ACTIVE',
@@ -317,8 +338,9 @@ export default function ChallengesSection({ refreshToken = 0 }: { refreshToken?:
       id: challenge.id,
       challengeId: challenge.id,
       title: challenge.title,
-      category: challenge.type,
-      description: challenge.description || `${challenge.duration_days} day challenge ready to start.`,
+      goalType: challenge.type,
+      whatToDo: challenge.description || `${challenge.duration_days} day challenge ready to start.`,
+      whyItMatters: challenge.why_it_matters || '',
       points: challenge.points,
       participants: challenge.participants,
       thumbnail: challenge.thumbnail,
@@ -515,10 +537,19 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter_700Bold',
   },
   challengeLibraryCategory: {
-    marginTop: 0,
+    marginTop: 2,
     color: '#F5A43C',
     fontSize: 9,
     textTransform: 'uppercase',
+    fontFamily: 'Inter_700Bold',
+  },
+  challengeLibraryFieldLabel: {
+    marginTop: 10,
+    marginBottom: 3,
+    color: 'rgba(191,219,254,0.78)',
+    fontSize: 9,
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
     fontFamily: 'Inter_700Bold',
   },
   challengeLibraryPointsBadge: {
@@ -533,9 +564,28 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter_700Bold',
   },
   challengeLibraryDescription: {
+    marginTop: 0,
     color: '#E5E7EB',
     fontSize: 10,
     lineHeight: 13,
+    fontFamily: 'Inter_400Regular',
+  },
+  challengeExpandBtn: {
+    marginTop: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  challengeExpandBtnText: {
+    color: '#BFDBFE',
+    fontSize: 11,
+    fontFamily: 'Inter_600SemiBold',
+  },
+  challengeWhyText: {
+    marginTop: 8,
+    color: '#CBD5E1',
+    fontSize: 10,
+    lineHeight: 14,
     fontFamily: 'Inter_400Regular',
   },
   challengeLibraryProgressRow: {
