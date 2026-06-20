@@ -409,6 +409,11 @@ export type LongevityMasterclass = {
   title: string;
   description: string;
   thumbnail: string;
+  videoUrl: string;
+  audioUrl: string;
+  category: string;
+  duration: string;
+  educationalContent: string;
 };
 
 export type LongevityCircle = {
