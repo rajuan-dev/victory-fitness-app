@@ -31,6 +31,8 @@ type ChallengePlanExercise = {
   workout_id: string;
   workout_title: string;
   workout_vimeo_id: string;
+  workout_video_url: string;
+  workout_video_source: string;
   workout_thumbnail: string;
 };
 
@@ -94,6 +96,9 @@ const GOOGLE_PLAY_URL = 'https://play.google.com/store';
 const APP_STORE_URL = 'https://apps.apple.com/app';
 
 function buildWorkoutPlayerHtml(videoUrl: string) {
+  const isDirectVideo =
+    /^https?:\/\/.+\.(mp4|mov|m4v|webm)(\?.*)?$/i.test(videoUrl) ||
+    videoUrl.includes('/workout-videos/');
   return `<!DOCTYPE html>
 <html lang="en">
   <head>
@@ -122,13 +127,15 @@ function buildWorkoutPlayerHtml(videoUrl: string) {
     </style>
   </head>
   <body>
-    <iframe
+    ${isDirectVideo
+      ? `<video class="frame" controls playsinline preload="metadata" src="${videoUrl}"></video>`
+      : `<iframe
       class="frame"
       src="${videoUrl}"
       allow="autoplay; fullscreen; picture-in-picture; encrypted-media"
       allowfullscreen
       referrerpolicy="strict-origin-when-cross-origin"
-    ></iframe>
+    ></iframe>`}
     <script>
       window.open = function () { return null; };
       document.addEventListener('click', function (event) {
@@ -151,7 +158,16 @@ function isAllowedWorkoutPlayerRequest(url: string): boolean {
   if (normalizedUrl === 'about:blank' || normalizedUrl.startsWith('data:') || normalizedUrl.startsWith('blob:')) {
     return true;
   }
-  return normalizedUrl.startsWith('https://player.vimeo.com/video/');
+  if (normalizedUrl.startsWith('https://player.vimeo.com/video/')) {
+    return true;
+  }
+  if (normalizedUrl.startsWith('https://www.youtube.com/embed/')) {
+    return true;
+  }
+  if (normalizedUrl.startsWith('https://www.youtube-nocookie.com/embed/')) {
+    return true;
+  }
+  return /^https?:\/\/.+/i.test(normalizedUrl);
 }
 
 function buildUnitPointMap(planDays: ChallengePlanDay[], totalPoints: number): UnitPointMap {
@@ -551,7 +567,7 @@ export default function ChallengeProgressScreen() {
   const [completionUpdatingKey, setCompletionUpdatingKey] = useState('');
   const [expandedDays, setExpandedDays] = useState<Record<number, boolean>>({});
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({});
-  const [videoModal, setVideoModal] = useState<{ title: string; vimeoId: string } | null>(null);
+  const [videoModal, setVideoModal] = useState<{ title: string; videoUrl: string } | null>(null);
   const [reportAction, setReportAction] = useState<'download' | 'community' | ''>('');
   const [errorDialog, setErrorDialog] = useState<{ title: string; message: string } | null>(null);
 
@@ -630,20 +646,24 @@ export default function ChallengeProgressScreen() {
   }, []);
 
   const openLinkedWorkout = useCallback((exercise: ChallengePlanExercise) => {
-    if (!exercise.workout_vimeo_id) {
+    const linkedVideoUrl = exercise.workout_video_url
+      || (exercise.workout_vimeo_id
+        ? `https://player.vimeo.com/video/${encodeURIComponent(exercise.workout_vimeo_id)}?autoplay=1&title=0&byline=0&portrait=0&playsinline=1&dnt=1`
+        : '');
+    if (!linkedVideoUrl) {
       return;
     }
     setVideoModal({
       title: exercise.workout_title || `${exercise.name} Demo`,
-      vimeoId: exercise.workout_vimeo_id,
+      videoUrl: linkedVideoUrl,
     });
   }, []);
 
   const videoEmbedUrl = useMemo(() => {
-    if (!videoModal?.vimeoId) {
+    if (!videoModal?.videoUrl) {
       return '';
     }
-    return `https://player.vimeo.com/video/${encodeURIComponent(videoModal.vimeoId)}?autoplay=1&title=0&byline=0&portrait=0&playsinline=1&dnt=1`;
+    return videoModal.videoUrl;
   }, [videoModal]);
 
   const videoPlayerHtml = useMemo(() => (videoEmbedUrl ? buildWorkoutPlayerHtml(videoEmbedUrl) : ''), [videoEmbedUrl]);
@@ -1066,7 +1086,7 @@ export default function ChallengeProgressScreen() {
                                           </View>
                                           <Text style={styles.exerciseDetails}>{exercise.details}</Text>
                                           {exercise.notes ? <Text style={styles.exerciseNotes}>{exercise.notes}</Text> : null}
-                                          {exercise.workout_vimeo_id ? (
+                                          {exercise.workout_vimeo_id || exercise.workout_video_url ? (
                                             <TouchableOpacity onPress={() => openLinkedWorkout(exercise)} style={styles.videoButton} activeOpacity={0.85}>
                                               <Ionicons name="play-circle" size={15} color="#001311" />
                                               <Text style={styles.videoButtonText}>Instruction video</Text>

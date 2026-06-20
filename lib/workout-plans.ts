@@ -39,6 +39,8 @@ export type VideoPlanItem = {
   image: string;
   tag: string;
   vimeo_id: string;
+  video_url: string;
+  video_source: string;
 };
 
 export type VideoPlanDay = {

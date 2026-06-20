@@ -39,6 +39,8 @@ type ChallengePlanExercise = {
   workout_id: string;
   workout_title: string;
   workout_vimeo_id: string;
+  workout_video_url: string;
+  workout_video_source: string;
   workout_thumbnail: string;
 };
 
@@ -387,7 +389,7 @@ export default function ChallengeChatScreen() {
   }, [loadThread]);
 
   const openLinkedWorkout = useCallback((exercise: ChallengePlanExercise) => {
-    if (!exercise.workout_vimeo_id) {
+    if (!exercise.workout_vimeo_id && !exercise.workout_video_url) {
       return;
     }
     router.push({
@@ -396,6 +398,8 @@ export default function ChallengeChatScreen() {
         id: exercise.workout_id || exercise.id,
         title: exercise.workout_title || `${exercise.name} Demo`,
         vimeoId: exercise.workout_vimeo_id,
+        videoUrl: exercise.workout_video_url,
+        videoSource: exercise.workout_video_source || 'VIMEO',
         tag: 'Instruction Video',
         thumbnail: exercise.workout_thumbnail || '',
       },
