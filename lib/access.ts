@@ -25,7 +25,15 @@ const INNER_CIRCLE_FEATURE_ACCESS = [...PLATINUM_FEATURE_ACCESS, 'application', 
 const SILVER_TAB_ACCESS = ['index', 'workout', 'challenge', 'profile'] as const;
 const GOLD_AND_ABOVE_TAB_ACCESS = ['index', 'workout', 'challenge', 'mealPlan', 'profile'] as const;
 
-const SILVER_ROUTE_ACCESS = ['/', '/workout', '/challenge', '/challenges', '/profile', '/journal'] as const;
+const SILVER_ROUTE_ACCESS = [
+  '/',
+  '/workout',
+  '/workout-library',
+  '/challenge',
+  '/challenges',
+  '/profile',
+  '/journal',
+] as const;
 const GOLD_ROUTE_ACCESS = [...SILVER_ROUTE_ACCESS, '/mealPlan'] as const;
 const PLATINUM_ROUTE_ACCESS = [...GOLD_ROUTE_ACCESS, '/workoutplan', '/profile/longevity-os'] as const;
 const INNER_CIRCLE_ROUTE_ACCESS = [...PLATINUM_ROUTE_ACCESS, '/profile/application', '/community', '/chat'] as const;
