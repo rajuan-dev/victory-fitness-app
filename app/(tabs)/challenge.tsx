@@ -185,7 +185,8 @@ const COMMUNITY_VIDEO_UPLOAD_MIME_TYPES = new Set([
 ]);
 
 const VIDEO_FILE_EXTENSIONS = ['.mp4', '.mov', '.m4v', '.webm', '.ogg'];
-const COMMUNITY_VIDEO_MAX_SIZE_BYTES = 25 * 1024 * 1024;
+const COMMUNITY_IMAGE_MAX_SIZE_BYTES = 1 * 1024 * 1024;
+const COMMUNITY_VIDEO_MAX_SIZE_BYTES = 20 * 1024 * 1024;
 
 function inferCommunityMediaType(asset: ImagePicker.ImagePickerAsset): 'image' | 'video' {
   const mimeType = String(asset.mimeType || '').trim().toLowerCase();
@@ -238,6 +239,12 @@ function getCommunityUploadName(asset: ImagePicker.ImagePickerAsset, mediaType: 
     return fileName;
   }
   return mediaType === 'video' ? 'community-video.mp4' : 'community-image.jpg';
+}
+
+function getCommunityMediaSizeBytes(asset: ImagePicker.ImagePickerAsset) {
+  const fileSize = Number((asset as { fileSize?: number | null }).fileSize ?? 0) || 0;
+  const fileObjectSize = Number((asset.file as { size?: number } | undefined)?.size ?? 0) || 0;
+  return Math.max(fileSize, fileObjectSize);
 }
 
 function buildCommunityUploadFormData(params: {
@@ -1022,10 +1029,15 @@ export default function ChallengesScreen() {
       const asset = result.assets[0];
       const assetType = inferCommunityMediaType(asset);
       const assetMimeType = inferCommunityMimeType(asset, assetType);
-      const assetSize = Number((asset as { fileSize?: number | null }).fileSize ?? 0) || 0;
+      const assetSize = getCommunityMediaSizeBytes(asset);
+
+      if (assetType === 'image' && assetSize > COMMUNITY_IMAGE_MAX_SIZE_BYTES) {
+        Alert.alert(t('Image too large'), t('Please choose an image that is 1MB or smaller.'));
+        return;
+      }
 
       if (assetType === 'video' && assetSize > COMMUNITY_VIDEO_MAX_SIZE_BYTES) {
-        Alert.alert(t('Video too large'), t('Please choose a video that is 25MB or smaller.'));
+        Alert.alert(t('Video too large'), t('Please choose a video that is 20MB or smaller.'));
         return;
       }
 
