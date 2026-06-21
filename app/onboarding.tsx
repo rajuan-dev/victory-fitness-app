@@ -129,6 +129,8 @@ export default function OnboardingScreen() {
             replaceRoute(router, target);
             return;
           }
+          setCheckingAuth(false);
+          return;
         } catch {
           await clearAuthTokens();
         }
