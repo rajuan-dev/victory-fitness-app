@@ -5,6 +5,8 @@ export type WorkoutLibraryItem = {
   id: string;
   title: string;
   vimeoId: string;
+  videoUrl: string;
+  videoSource: 'VIMEO' | 'YOUTUBE' | 'UPLOAD' | string;
   tag: string;
   thumbnail: string;
   dateAdded: string;
@@ -43,6 +45,8 @@ function normalizeWorkoutItem(value: unknown): WorkoutLibraryItem | null {
     id,
     title,
     vimeoId: String(item.vimeoId ?? ''),
+    videoUrl: String(item.videoUrl ?? ''),
+    videoSource: String(item.videoSource ?? 'VIMEO'),
     tag: String(item.tag ?? 'Workout'),
     thumbnail: String(item.thumbnail ?? ''),
     dateAdded: String(item.dateAdded ?? ''),

@@ -11,19 +11,38 @@ export type StrengthPlanExercise = {
   type: string;
 };
 
+export type StrengthPlanSection = {
+  id: string;
+  title: string;
+  estimated_minutes: number;
+  exercises: StrengthPlanExercise[];
+};
+
 export type StrengthPlanDay = {
   day: string;
   title: string;
   est_time: string;
   volume: string;
   intensity: string;
+  sections: StrengthPlanSection[];
   exercises: StrengthPlanExercise[];
+};
+
+export type StrengthPlanDayProgress = {
+  day: string;
+  started: boolean;
+  completed: boolean;
+  completed_section_ids: string[];
+  completed_exercise_ids: string[];
+  started_at?: string | null;
+  completed_at?: string | null;
 };
 
 export type StrengthPlanResponse = {
   plan_id?: string | null;
   summary: string;
   days: StrengthPlanDay[];
+  progress: StrengthPlanDayProgress[];
   created_at?: string | null;
 };
 
@@ -39,6 +58,8 @@ export type VideoPlanItem = {
   image: string;
   tag: string;
   vimeo_id: string;
+  video_url: string;
+  video_source: string;
 };
 
 export type VideoPlanDay = {
@@ -102,6 +123,24 @@ export async function deleteStrengthWorkoutPlan(planId: string) {
     method: 'DELETE',
   });
   await persistLatestStrengthPlan(null);
+}
+
+export async function updateStrengthWorkoutPlanProgress(
+  planId: string,
+  payload: {
+    day: string;
+    section_id?: string | null;
+    exercise_id?: string | null;
+    started?: boolean;
+    completed?: boolean;
+  }
+) {
+  const plan = await apiRequest<StrengthPlanResponse>(`/ai/workout-plan/strength/${encodeURIComponent(planId)}/progress`, {
+    method: 'PATCH',
+    body: payload,
+  });
+  await persistLatestStrengthPlan(plan);
+  return plan;
 }
 
 export async function createVideoWorkoutPlan(payload: Record<string, unknown>) {

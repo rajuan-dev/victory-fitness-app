@@ -302,6 +302,7 @@ function MealPlanResult({
   const [canAccessTracker, setCanAccessTracker] = useState(false);
   const [canAccessMealAnalysis, setCanAccessMealAnalysis] = useState(false);
   const [restrictedSection, setRestrictedSection] = useState('');
+  const useNativeDriver = Platform.OS !== 'web';
 
   useEffect(() => {
     let cancelled = false;
@@ -439,20 +440,13 @@ function MealPlanResult({
   const mealCompletionKey = (day: string, mealKey: string) => `${day}-${mealKey}`;
   const isMealComplete = (day: string, mealKey: string) => Boolean(mealCompletions[mealCompletionKey(day, mealKey)]);
   const setMealCompletion = async (day: string, mealKey: string, completed: boolean) => {
-    try {
-      const updatedPlan = await updateNutritionMealCompletion({
-        day,
-        meal_key: mealKey,
-        completed,
-      });
-      setGeneratedPlan(updatedPlan);
-      setMealCompletions(normalizeMealCompletions(updatedPlan));
-    } catch {
-      setMealCompletions((prev) => ({
-        ...prev,
-        [mealCompletionKey(day, mealKey)]: completed,
-      }));
-    }
+    const updatedPlan = await updateNutritionMealCompletion({
+      day,
+      meal_key: mealKey,
+      completed,
+    });
+    setGeneratedPlan(updatedPlan);
+    setMealCompletions(normalizeMealCompletions(updatedPlan));
   };
   const openMealModal = (day: string, mealKey: string, mealLabel: string, meal: MealEntry, expandKey: string) => {
     const cardKey = mealCompletionKey(day, mealKey);
@@ -473,12 +467,19 @@ function MealPlanResult({
     }
 
     setMealModalActionState('loading');
-    await setMealCompletion(selectedMeal.day, selectedMeal.mealKey, nextCompleted);
-    setMealModalActionState('done');
-
-    setTimeout(() => {
-      closeMealModal();
-    }, 650);
+    try {
+      await setMealCompletion(selectedMeal.day, selectedMeal.mealKey, nextCompleted);
+      setMealModalActionState('done');
+      setTimeout(() => {
+        closeMealModal();
+      }, 650);
+    } catch (error) {
+      setMealModalActionState('idle');
+      Alert.alert(
+        t('Error'),
+        formatAppError(error, t('Unable to update meal completion right now.')).message
+      );
+    }
   };
 
   const generatedDays = Array.isArray(generatedPlan?.days) ? generatedPlan.days : [];
@@ -1388,7 +1389,7 @@ export default function JournalScreen() {
       toValue: 1,
       duration: 220,
       easing: Easing.out(Easing.back(1.4)),
-      useNativeDriver: true,
+      useNativeDriver,
     }).start();
 
     const playSuccessSound = async () => {

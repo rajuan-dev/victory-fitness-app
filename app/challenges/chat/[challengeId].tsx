@@ -22,6 +22,7 @@ import { apiRequest, fetchCurrentUser, getValidAuthTokens } from '../../../lib/a
 import { ErrorPopupModal } from '../../../components/ErrorPopupModal';
 import { formatAppError } from '../../../lib/error';
 import { useLanguage } from '../../../lib/i18n';
+import { pushRoute } from '../../../lib/navigation';
 import { getCachedResourceSnapshot } from '../../../lib/resourceCache';
 import { fetchChallengeChatData, getChallengeChatCacheKey } from '../../../lib/screenData';
 
@@ -39,6 +40,8 @@ type ChallengePlanExercise = {
   workout_id: string;
   workout_title: string;
   workout_vimeo_id: string;
+  workout_video_url: string;
+  workout_video_source: string;
   workout_thumbnail: string;
 };
 
@@ -387,15 +390,17 @@ export default function ChallengeChatScreen() {
   }, [loadThread]);
 
   const openLinkedWorkout = useCallback((exercise: ChallengePlanExercise) => {
-    if (!exercise.workout_vimeo_id) {
+    if (!exercise.workout_vimeo_id && !exercise.workout_video_url) {
       return;
     }
-    router.push({
+    pushRoute(router, {
       pathname: '/workout-library/[id]',
       params: {
         id: exercise.workout_id || exercise.id,
         title: exercise.workout_title || `${exercise.name} Demo`,
         vimeoId: exercise.workout_vimeo_id,
+        videoUrl: exercise.workout_video_url,
+        videoSource: exercise.workout_video_source || 'VIMEO',
         tag: 'Instruction Video',
         thumbnail: exercise.workout_thumbnail || '',
       },

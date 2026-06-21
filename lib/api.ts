@@ -137,6 +137,25 @@ export type BodyMetrics = {
   gender: string;
 };
 
+export type SubscriptionPlan = {
+  id: string;
+  subscriptionTier: string;
+  title: string;
+  description: string;
+  priceMonthly: number | null;
+  priceYearly: number | null;
+  discountedPriceMonthly: number | null;
+  discountedPriceYearly: number | null;
+  discountPercentage: number | null;
+  discountStartDate: string | null;
+  discountEndDate: string | null;
+  isDiscountActive: boolean;
+  isApplicationOnly: boolean;
+  isMostPopular: boolean;
+  iconType: string;
+  features: string[];
+};
+
 export type CoachingApplicationPayload = {
   first_name: string;
   last_name: string;
@@ -390,6 +409,12 @@ export type LongevityMasterclass = {
   title: string;
   description: string;
   thumbnail: string;
+  videoUrl: string;
+  videoSource: string;
+  audioUrl: string;
+  category: string;
+  duration: string;
+  educationalContent: string;
 };
 
 export type LongevityCircle = {
@@ -781,6 +806,7 @@ export async function updateCurrentUserSubscription(payload: {
   subscription_tier: string;
   billing_cycle?: string;
   confirm_payment?: boolean;
+  plan_id?: string;
 }) {
   const user = await apiRequest<AuthUser & { role?: string; is_admin?: boolean; country?: string; profileImage?: string }>(
     '/me/subscription',
@@ -794,6 +820,10 @@ export async function updateCurrentUserSubscription(payload: {
   currentUserFetchedAt = Date.now();
   await persistAuthUser(authUser);
   return user;
+}
+
+export async function fetchSubscriptionPlans() {
+  return apiRequest<{ items: SubscriptionPlan[] }>('/subscription-plans');
 }
 
 export async function uploadCurrentUserProfileImage(payload: {

@@ -45,12 +45,14 @@ import {
   LongevityWeeklyPlanSection,
   LongevityWearableDevice,
   markNativeIntegrationConnected,
+  resolveRemoteAssetUrl,
   type WearableSyncResponse,
   WearableProvider,
   syncLongevityQrImport,
   syncLongevityWearables,
   updateLongevityHabit,
 } from '../../lib/api';
+import CrossPlatformWebView from '../../components/CrossPlatformWebView';
 import { canAccessFeature } from '../../lib/access';
 import {
   authorizeNativeHealthSource,
@@ -84,6 +86,137 @@ function formatWeeklyPlanMessage(plan: LongevityWeeklyPlan) {
 function safeImageUri(value: string | null | undefined) {
   const normalized = String(value || '').trim();
   return normalized || FALLBACK_CARD_IMAGE;
+}
+
+function resolveMasterclassMediaUrl(value: string | null | undefined) {
+  return resolveRemoteAssetUrl(value) || String(value || '').trim();
+}
+
+function buildMasterclassAudioHtml(audioUrl: string) {
+  const escapedUrl = String(audioUrl || '')
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+
+  return `<!DOCTYPE html>
+<html>
+  <head>
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+    <style>
+      html, body {
+        margin: 0;
+        padding: 0;
+        background: #0f172a;
+        overflow: hidden;
+      }
+      .wrap {
+        padding: 8px 10px 0;
+      }
+      audio {
+        width: 100%;
+        height: 42px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <audio controls preload="metadata" src="${escapedUrl}"></audio>
+    </div>
+  </body>
+</html>`;
+}
+
+function normalizeMasterclassVideoUrl(value: string | null | undefined) {
+  const normalized = String(value || '').trim();
+  if (!normalized) {
+    return '';
+  }
+
+  if (
+    /^https?:\/\/.+\.(mp4|mov|m4v|webm)(\?.*)?$/i.test(normalized) ||
+    normalized.includes('/masterclass-videos/')
+  ) {
+    return normalized;
+  }
+
+  try {
+    const parsed = new URL(normalized);
+    const host = parsed.hostname.toLowerCase();
+    const path = parsed.pathname || '';
+
+    if (host === 'youtu.be') {
+      const videoId = path.replace(/^\/+/, '').split('/')[0];
+      return videoId ? `https://www.youtube.com/embed/${videoId}?playsinline=1&rel=0` : '';
+    }
+
+    if (host === 'youtube.com' || host === 'www.youtube.com' || host === 'm.youtube.com') {
+      const videoId = path.startsWith('/embed/')
+        ? path.split('/embed/')[1]?.split('/')[0]
+        : path.startsWith('/shorts/')
+          ? path.split('/shorts/')[1]?.split('/')[0]
+          : parsed.searchParams.get('v') || '';
+      return videoId ? `https://www.youtube.com/embed/${videoId}?playsinline=1&rel=0` : '';
+    }
+
+    if (host === 'player.vimeo.com' && path.startsWith('/video/')) {
+      const videoId = path.split('/video/')[1]?.split('/')[0] || '';
+      return videoId ? `https://player.vimeo.com/video/${videoId}?playsinline=1&title=0&byline=0&portrait=0&dnt=1` : '';
+    }
+
+    if (host === 'vimeo.com' || host === 'www.vimeo.com') {
+      const match = path.match(/\/(\d+)(?:$|[/?#])/);
+      return match?.[1]
+        ? `https://player.vimeo.com/video/${match[1]}?playsinline=1&title=0&byline=0&portrait=0&dnt=1`
+        : '';
+    }
+  } catch {
+    return '';
+  }
+
+  return '';
+}
+
+function buildMasterclassVideoHtml(videoUrl: string) {
+  const escapedUrl = String(videoUrl || '')
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+
+  const isDirectVideo =
+    /^https?:\/\/.+\.(mp4|mov|m4v|webm)(\?.*)?$/i.test(videoUrl) ||
+    videoUrl.includes('/masterclass-videos/');
+
+  return `<!DOCTYPE html>
+<html>
+  <head>
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+    <style>
+      html, body {
+        margin: 0;
+        padding: 0;
+        background: #0f172a;
+        height: 100%;
+        overflow: hidden;
+      }
+      iframe, video {
+        width: 100%;
+        height: 100%;
+        border: 0;
+        background: #0f172a;
+      }
+      video {
+        object-fit: contain;
+      }
+    </style>
+  </head>
+  <body>
+    ${isDirectVideo
+      ? `<video controls playsinline preload="metadata" src="${escapedUrl}"></video>`
+      : `<iframe src="${escapedUrl}" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen referrerpolicy="strict-origin-when-cross-origin"></iframe>`}
+  </body>
+</html>`;
 }
 
 function getHealPlanSectionId(value: string) {
@@ -847,6 +980,7 @@ export default function LongevityOS() {
   const [connectingDeviceId, setConnectingDeviceId] = useState<string | null>(null);
   const [selectedWearableIds, setSelectedWearableIds] = useState<string[]>([]);
   const [showQrImportModal, setShowQrImportModal] = useState(false);
+  const [masterclassVideoModal, setMasterclassVideoModal] = useState<{ title: string; embedUrl: string } | null>(null);
   const [qrPayload, setQrPayload] = useState('');
   const [importingPayload, setImportingPayload] = useState(false);
   const [healthSummary, setHealthSummary] = useState<HealthMetricRecord[]>([]);
@@ -860,6 +994,7 @@ export default function LongevityOS() {
   const [screenError, setScreenError] = useState<{ title: string; message: string } | null>(null);
   const nativeSuccessOpacity = useRef(new Animated.Value(0)).current;
   const nativeSuccessScale = useRef(new Animated.Value(0.7)).current;
+  const useNativeDriver = Platform.OS !== 'web';
   const nativeSuccessTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const nativeFailureTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const nativeDisconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1244,13 +1379,13 @@ export default function LongevityOS() {
         toValue: 1,
         duration: 160,
         easing: Easing.out(Easing.quad),
-        useNativeDriver: true,
+        useNativeDriver,
       }),
       Animated.spring(nativeSuccessScale, {
         toValue: 1,
         friction: 6,
         tension: 120,
-        useNativeDriver: true,
+        useNativeDriver,
       }),
     ]).start();
     nativeSuccessTimerRef.current = setTimeout(() => {
@@ -1780,6 +1915,44 @@ export default function LongevityOS() {
                 </Pressable>
               </Pressable>
             </Modal>
+
+            <Modal
+              visible={Boolean(masterclassVideoModal)}
+              transparent
+              animationType="fade"
+              onRequestClose={() => setMasterclassVideoModal(null)}
+            >
+              <View style={styles.learnVideoModalBackdrop}>
+                <View style={styles.learnVideoModalCard}>
+                  <View style={styles.learnVideoModalHeader}>
+                    <View style={styles.learnVideoModalTitleWrap}>
+                      <Text style={styles.learnVideoModalEyebrow}>{t('Masterclass')}</Text>
+                      <Text style={styles.learnVideoModalTitle} numberOfLines={2}>
+                        {masterclassVideoModal?.title || t('Lesson Video')}
+                      </Text>
+                    </View>
+                    <TouchableOpacity
+                      style={styles.learnVideoModalClose}
+                      activeOpacity={0.88}
+                      onPress={() => setMasterclassVideoModal(null)}
+                    >
+                      <Ionicons name="close" size={20} color="#fff" />
+                    </TouchableOpacity>
+                  </View>
+                  {masterclassVideoModal?.embedUrl ? (
+                    <View style={styles.learnVideoModalPlayerWrap}>
+                      <CrossPlatformWebView
+                        source={{ html: buildMasterclassVideoHtml(masterclassVideoModal.embedUrl) }}
+                        style={styles.learnVideoModalPlayer}
+                        scrollEnabled={false}
+                        javaScriptEnabled
+                        mediaPlaybackRequiresUserAction
+                      />
+                    </View>
+                  ) : null}
+                </View>
+              </View>
+            </Modal>
         </ScrollView>
       );
     })()
@@ -1931,6 +2104,37 @@ export default function LongevityOS() {
               <View style={styles.learnCardBody}>
                 <Text style={styles.learnCardTitle}>{item.title}</Text>
                 <Text style={styles.learnCardDescription}>{item.description}</Text>
+                {item.duration ? <Text style={styles.learnCardMeta}>{item.duration}</Text> : null}
+                {resolveMasterclassMediaUrl(item.audioUrl) ? (
+                  <View style={styles.learnAudioWrap}>
+                    <Text style={styles.learnAudioLabel}>{t('Audio lesson')}</Text>
+                    <CrossPlatformWebView
+                      source={{ html: buildMasterclassAudioHtml(resolveMasterclassMediaUrl(item.audioUrl)) }}
+                      style={styles.learnAudioPlayer}
+                      scrollEnabled={false}
+                      javaScriptEnabled
+                      mediaPlaybackRequiresUserAction
+                    />
+                  </View>
+                ) : null}
+                {resolveMasterclassMediaUrl(item.videoUrl) ? (
+                  <TouchableOpacity
+                    style={styles.learnVideoButton}
+                    activeOpacity={0.88}
+                    onPress={() => {
+                      const rawVideoUrl = resolveMasterclassMediaUrl(item.videoUrl);
+                      const embedUrl = normalizeMasterclassVideoUrl(rawVideoUrl);
+                      if (embedUrl) {
+                        setMasterclassVideoModal({ title: item.title, embedUrl });
+                        return;
+                      }
+                      Linking.openURL(rawVideoUrl);
+                    }}
+                  >
+                    <Ionicons name="play-circle-outline" size={18} color="#04111F" />
+                    <Text style={styles.learnVideoButtonText}>{t('Play lesson video')}</Text>
+                  </TouchableOpacity>
+                ) : null}
               </View>
             </View>
           ))}
@@ -2527,6 +2731,107 @@ const styles = StyleSheet.create({
     fontSize: 12,
     lineHeight: 18,
     fontFamily: 'Inter_400Regular',
+  },
+  learnCardMeta: {
+    color: 'rgba(143, 208, 255, 0.72)',
+    fontSize: 11,
+    lineHeight: 16,
+    fontFamily: 'Inter_600SemiBold',
+    marginTop: 2,
+  },
+  learnAudioWrap: {
+    marginTop: 10,
+    borderRadius: 16,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.06)',
+    backgroundColor: '#0F172A',
+  },
+  learnAudioLabel: {
+    color: '#D7E8FF',
+    fontSize: 11,
+    fontFamily: 'Inter_700Bold',
+    letterSpacing: 0.5,
+    paddingHorizontal: 12,
+    paddingTop: 10,
+  },
+  learnAudioPlayer: {
+    height: 62,
+    backgroundColor: '#0F172A',
+  },
+  learnVideoButton: {
+    marginTop: 10,
+    alignSelf: 'flex-start',
+    borderRadius: 999,
+    backgroundColor: '#22D3EE',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  learnVideoButtonText: {
+    color: '#04111F',
+    fontSize: 11,
+    fontFamily: 'Inter_700Bold',
+    letterSpacing: 0.5,
+  },
+  learnVideoModalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.84)',
+    justifyContent: 'center',
+    paddingHorizontal: 18,
+    paddingVertical: 28,
+  },
+  learnVideoModalCard: {
+    backgroundColor: '#12182B',
+    borderRadius: 24,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+  },
+  learnVideoModalHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 12,
+    marginBottom: 12,
+  },
+  learnVideoModalTitleWrap: {
+    flex: 1,
+    gap: 2,
+  },
+  learnVideoModalEyebrow: {
+    color: 'rgba(143, 208, 255, 0.72)',
+    fontSize: 10,
+    fontFamily: 'Inter_700Bold',
+    letterSpacing: 0.7,
+    textTransform: 'uppercase',
+  },
+  learnVideoModalTitle: {
+    color: '#fff',
+    fontSize: 16,
+    lineHeight: 22,
+    fontFamily: 'Inter_700Bold',
+  },
+  learnVideoModalClose: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.06)',
+  },
+  learnVideoModalPlayerWrap: {
+    width: '100%',
+    height: 240,
+    borderRadius: 16,
+    overflow: 'hidden',
+    backgroundColor: '#0F172A',
+  },
+  learnVideoModalPlayer: {
+    flex: 1,
+    backgroundColor: '#0F172A',
   },
   listCard: {
     backgroundColor: '#12182B',

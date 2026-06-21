@@ -1,5 +1,6 @@
 import { apiRequest } from './api';
 import { fetchCachedResource, getCachedResourceSnapshot, primeCachedResource } from './resourceCache';
+import { NUTRITION_PLAN_LATEST_CACHE_KEY } from './screenData';
 
 export type NutritionMealEntry = {
   name: string;
@@ -107,6 +108,7 @@ export async function updateNutritionMealCompletion(payload: {
     method: 'PATCH',
     body: payload,
   });
+  await primeCachedResource(NUTRITION_PLAN_LATEST_CACHE_KEY, updated);
   return updated;
 }
 

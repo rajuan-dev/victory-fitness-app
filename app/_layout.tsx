@@ -9,7 +9,7 @@ import {
   Inter_700Bold,
 } from '@expo-google-fonts/inter';
 import { Colors } from '../constants/Colors';
-import { fetchCurrentUser, getValidAuthTokens, setAuthFailureHandler } from '../lib/api';
+import { fetchCurrentUser, getAuthUser, getValidAuthTokens, setAuthFailureHandler } from '../lib/api';
 import { getPostAuthRoute, isPublicRoute, isRouteAllowedForPlan } from '../lib/access';
 import { appendRunLog, formatRunLogMessage } from '../lib/runLog';
 import { LanguageProvider } from '../lib/i18n';
@@ -51,6 +51,39 @@ export default function RootLayout() {
     let cancelled = false;
 
     const guard = async () => {
+      const applyAccess = async (user: Awaited<ReturnType<typeof getAuthUser>>) => {
+        if (!user) {
+          return false;
+        }
+
+        if (isPublicRoute(pathname)) {
+          void appendRunLog({
+            level: 'route',
+            title: 'Route redirect',
+            message: `Authenticated user redirected from ${pathname} to ${getPostAuthRoute(user)}.`,
+            route: pathname,
+            context: 'RootLayout',
+          });
+          replaceRoute(router, getPostAuthRoute(user));
+          return true;
+        }
+
+        if (!isRouteAllowedForPlan(pathname, user)) {
+          void appendRunLog({
+            level: 'warning',
+            title: 'Route blocked',
+            message: `Plan access blocked for ${pathname}; redirecting to ${getPostAuthRoute(user)}.`,
+            route: pathname,
+            context: 'RootLayout',
+          });
+          replaceRoute(router, getPostAuthRoute(user));
+          return true;
+        }
+
+        setCheckingAccess(false);
+        return false;
+      };
+
       try {
         const tokens = await getValidAuthTokens();
         if (cancelled) {
@@ -72,34 +105,24 @@ export default function RootLayout() {
           return;
         }
 
+        const cachedUser = await getAuthUser();
+        if (cancelled) {
+          return;
+        }
+
+        if (await applyAccess(cachedUser)) {
+          return;
+        }
+
         const user = await fetchCurrentUser();
         if (cancelled) {
           return;
         }
 
-        if (isPublicRoute(pathname)) {
-          void appendRunLog({
-            level: 'route',
-            title: 'Route redirect',
-            message: `Authenticated user redirected from ${pathname} to ${getPostAuthRoute(user)}.`,
-            route: pathname,
-            context: 'RootLayout',
-          });
-          replaceRoute(router, getPostAuthRoute(user));
+        if (await applyAccess(user)) {
           return;
         }
 
-        if (!isRouteAllowedForPlan(pathname, user)) {
-          void appendRunLog({
-            level: 'warning',
-            title: 'Route blocked',
-            message: `Plan access blocked for ${pathname}; redirecting to ${getPostAuthRoute(user)}.`,
-            route: pathname,
-            context: 'RootLayout',
-          });
-          replaceRoute(router, getPostAuthRoute(user));
-          return;
-        }
         setCheckingAccess(false);
       } catch {
         if (cancelled) {

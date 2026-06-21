@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, Animated } from 'react-native';
+import { View, Text, StyleSheet, Animated, Platform } from 'react-native';
 import { useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { clearAuthTokens, fetchCurrentUser, getValidAuthTokens } from '../lib/api';
@@ -9,6 +9,7 @@ import { replaceRoute } from '../lib/navigation';
 export default function SplashScreen() {
   const router = useRouter();
   const pulseAnim = useRef(new Animated.Value(1)).current;
+  const useNativeDriver = Platform.OS !== 'web';
 
   useEffect(() => {
     Animated.loop(
@@ -16,12 +17,12 @@ export default function SplashScreen() {
         Animated.timing(pulseAnim, {
           toValue: 1.2,
           duration: 1000,
-          useNativeDriver: true,
+          useNativeDriver,
         }),
         Animated.timing(pulseAnim, {
           toValue: 1,
           duration: 1000,
-          useNativeDriver: true,
+          useNativeDriver,
         }),
       ])
     ).start();
