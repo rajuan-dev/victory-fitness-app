@@ -17,6 +17,7 @@ import {
   fetchStrengthWorkoutPlans,
   loadLatestStrengthWorkoutPlan,
   StrengthPlanDayProgress,
+  StrengthPlanSection,
   StrengthPlanResponse,
   updateStrengthWorkoutPlanProgress,
 } from '../../lib/workout-plans';
@@ -37,6 +38,7 @@ export default function StrengthPlanDashboard() {
   // Accordion and Day selection states
   const [expandedPlanId, setExpandedPlanId] = useState<string | null>(null);
   const [selectedDay, setSelectedDay] = useState<string>('Day 1');
+  const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     let cancelled = false;
@@ -94,6 +96,13 @@ export default function StrengthPlanDashboard() {
     );
   };
 
+  const toggleSectionExpand = (sectionKey: string) => {
+    setExpandedSections((current) => ({
+      ...current,
+      [sectionKey]: !current[sectionKey],
+    }));
+  };
+
   const handleStartWorkout = async (plan: StrengthPlanResponse, dayLabel: string) => {
     if (!plan.plan_id) {
       return;
@@ -135,6 +144,32 @@ export default function StrengthPlanDashboard() {
       updatePlanProgressState(updatedPlan);
     } catch (error) {
       Alert.alert(t('Error'), formatAppError(error, t('Unable to update workout progress right now.')).message);
+    } finally {
+      setUpdatingProgressKey(null);
+    }
+  };
+
+  const handleSectionToggle = async (
+    plan: StrengthPlanResponse,
+    dayLabel: string,
+    sectionId: string,
+    completed: boolean
+  ) => {
+    if (!plan.plan_id) {
+      return;
+    }
+
+    const progressKey = `section-${plan.plan_id}-${dayLabel}-${sectionId}`;
+    try {
+      setUpdatingProgressKey(progressKey);
+      const updatedPlan = await updateStrengthWorkoutPlanProgress(plan.plan_id, {
+        day: dayLabel,
+        section_id: sectionId,
+        completed,
+      });
+      updatePlanProgressState(updatedPlan);
+    } catch (error) {
+      Alert.alert(t('Error'), formatAppError(error, t('Unable to update workout section right now.')).message);
     } finally {
       setUpdatingProgressKey(null);
     }
@@ -227,15 +262,25 @@ export default function StrengthPlanDashboard() {
               const dayLabels = plan.days?.map((d) => d.day) ?? [];
               const selectedPlanDay = plan.days?.find((d) => d.day === selectedDay) ?? plan.days?.[0] ?? null;
               const selectedDayProgress = selectedPlanDay ? getDayProgress(plan, selectedPlanDay.day) : undefined;
+              const completedSectionIds = Array.isArray(selectedDayProgress?.completed_section_ids)
+                ? selectedDayProgress.completed_section_ids
+                : [];
               const completedExerciseIds = Array.isArray(selectedDayProgress?.completed_exercise_ids)
                 ? selectedDayProgress.completed_exercise_ids
                 : [];
-              const totalExercises = selectedPlanDay?.exercises?.length ?? 0;
-              const completedExercises = selectedPlanDay
-                ? selectedPlanDay.exercises.filter((exercise) => completedExerciseIds.includes(exercise.id)).length
-                : 0;
+              const daySections = Array.isArray(selectedPlanDay?.sections) ? selectedPlanDay.sections : [];
+              const totalExercises = daySections.reduce((total, section) => total + section.exercises.length, 0);
+              const completedExercises = daySections.reduce(
+                (total, section) => total + section.exercises.filter((exercise) => completedExerciseIds.includes(exercise.id)).length,
+                0
+              );
+              const completedSections = daySections.filter((section) => completedSectionIds.includes(section.id)).length;
+              const totalSections = daySections.length;
               const workoutStarted = Boolean(selectedDayProgress?.started);
               const workoutCompleted = Boolean(selectedDayProgress?.completed);
+              const progressSummaryLabel = totalSections > 0
+                ? `${completedSections}/${totalSections} ${t('sections completed')} · ${completedExercises}/${totalExercises} ${t('exercises completed')}`
+                : 0;
               const startButtonKey = selectedPlanDay ? `start-${plan.plan_id}-${selectedPlanDay.day}` : '';
               const startButtonBusy = updatingProgressKey === startButtonKey;
               const startButtonLabel = workoutCompleted
@@ -243,6 +288,9 @@ export default function StrengthPlanDashboard() {
                 : workoutStarted
                   ? t('CONTINUE WORKOUT')
                   : t('START WORKOUT');
+              const progressSummaryText = typeof progressSummaryLabel === 'string'
+                ? progressSummaryLabel
+                : t('Start this workout to track progress for the day.');
 
               return (
                 <View key={planId ?? `${plan.summary}-${index}`} style={[styles.planCard, isExpanded && styles.planCardExpanded]}>
@@ -328,65 +376,114 @@ export default function StrengthPlanDashboard() {
                               {workoutCompleted ? t('COMPLETED') : workoutStarted ? t('IN PROGRESS') : t('NOT STARTED')}
                             </Text>
                           </View>
-                          <Text style={styles.progressSummaryText}>
-                            {totalExercises > 0
-                              ? `${completedExercises}/${totalExercises} ${t('exercises completed')}`
-                              : t('Start this workout to track progress for the day.')}
-                          </Text>
+                          <Text style={styles.progressSummaryText}>{progressSummaryText}</Text>
                         </View>
                       ) : null}
 
-                      {/* Exercises List */}
-                      {selectedPlanDay && selectedPlanDay.exercises && selectedPlanDay.exercises.length > 0 ? (
+                      {/* Section List */}
+                      {selectedPlanDay && daySections.length > 0 ? (
                         <View style={styles.exerciseList}>
-                          <Text style={styles.sectionHeader}>{t("TODAY'S EXERCISES")}</Text>
-                          {selectedPlanDay.exercises.map((ex) => {
-                            const exerciseCompleted = completedExerciseIds.includes(ex.id);
-                            const exerciseProgressKey = `exercise-${plan.plan_id}-${selectedPlanDay.day}-${ex.id}`;
-                            const exerciseBusy = updatingProgressKey === exerciseProgressKey;
+                          <Text style={styles.sectionHeader}>{t("TODAY'S SECTIONS")}</Text>
+                          {daySections.map((section: StrengthPlanSection) => {
+                            const sectionCompleted = completedSectionIds.includes(section.id);
+                            const sectionProgressKey = `section-${plan.plan_id}-${selectedPlanDay.day}-${section.id}`;
+                            const sectionBusy = updatingProgressKey === sectionProgressKey;
+                            const sectionExpandKey = `${planId}-${selectedPlanDay.day}-${section.id}`;
+                            const sectionExpanded = expandedSections[sectionExpandKey] ?? true;
+                            const sectionCompletedCount = section.exercises.filter((exercise) => completedExerciseIds.includes(exercise.id)).length;
                             return (
-                            <View key={ex.id} style={[styles.exerciseCard, exerciseCompleted && styles.exerciseCardCompleted]}>
-                              <View style={styles.exerciseHeader}>
-                                <View>
-                                  <Text style={styles.exerciseType}>{ex.type.toUpperCase()}</Text>
-                                  <Text style={styles.exerciseName}>{ex.name}</Text>
+                            <View key={section.id} style={[styles.exerciseCard, sectionCompleted && styles.exerciseCardCompleted]}>
+                              <TouchableOpacity
+                                style={styles.sectionRow}
+                                activeOpacity={0.8}
+                                onPress={() => toggleSectionExpand(sectionExpandKey)}
+                              >
+                                <View style={styles.sectionTitleWrap}>
+                                  <Text style={styles.exerciseType}>{t('SECTION')}</Text>
+                                  <Text style={styles.exerciseName}>{section.title}</Text>
+                                  <Text style={styles.sectionMetaText}>
+                                    {`${sectionCompletedCount}/${section.exercises.length} ${t('exercises')} · ${section.estimated_minutes} ${t('min')}`}
+                                  </Text>
                                 </View>
-                                <TouchableOpacity
-                                  style={[styles.exerciseCheckButton, exerciseCompleted && styles.exerciseCheckButtonCompleted]}
-                                  activeOpacity={0.8}
-                                  disabled={exerciseBusy}
-                                  onPress={() => handleExerciseToggle(plan, selectedPlanDay.day, ex.id, !exerciseCompleted)}
-                                >
-                                  {exerciseBusy ? (
-                                    <ActivityIndicator size="small" color={exerciseCompleted ? '#001311' : Colors.accentBlue} />
-                                  ) : (
-                                    <Ionicons
-                                      name={exerciseCompleted ? 'checkmark-circle' : 'checkmark-circle-outline'}
-                                      size={22}
-                                      color={exerciseCompleted ? '#001311' : Colors.accentBlue}
-                                    />
-                                  )}
-                                </TouchableOpacity>
-                              </View>
+                                <View style={styles.sectionActions}>
+                                  <TouchableOpacity
+                                    style={[styles.exerciseCheckButton, sectionCompleted && styles.exerciseCheckButtonCompleted]}
+                                    activeOpacity={0.8}
+                                    disabled={sectionBusy}
+                                    onPress={() => handleSectionToggle(plan, selectedPlanDay.day, section.id, !sectionCompleted)}
+                                  >
+                                    {sectionBusy ? (
+                                      <ActivityIndicator size="small" color={sectionCompleted ? '#001311' : Colors.accentBlue} />
+                                    ) : (
+                                      <Ionicons
+                                        name={sectionCompleted ? 'checkmark-circle' : 'checkmark-circle-outline'}
+                                        size={22}
+                                        color={sectionCompleted ? '#001311' : Colors.accentBlue}
+                                      />
+                                    )}
+                                  </TouchableOpacity>
+                                  <Ionicons
+                                    name={sectionExpanded ? 'chevron-up' : 'chevron-down'}
+                                    size={18}
+                                    color="rgba(255,255,255,0.45)"
+                                  />
+                                </View>
+                              </TouchableOpacity>
 
-                              <View style={styles.exerciseMetrics}>
-                                <View style={styles.metricItem}>
-                                  <Ionicons name="layers-outline" size={16} color={Colors.accentBlue} />
-                                  <Text style={styles.metricValue}>{ex.sets} {t('Sets')}</Text>
+                              {sectionExpanded ? (
+                                <View style={styles.sectionExercises}>
+                                  {section.exercises.map((ex) => {
+                                    const exerciseCompleted = completedExerciseIds.includes(ex.id);
+                                    const exerciseProgressKey = `exercise-${plan.plan_id}-${selectedPlanDay.day}-${ex.id}`;
+                                    const exerciseBusy = updatingProgressKey === exerciseProgressKey;
+                                    return (
+                                <View key={ex.id} style={[styles.exerciseSubCard, exerciseCompleted && styles.exerciseSubCardCompleted]}>
+                                  <View style={styles.exerciseHeader}>
+                                    <View>
+                                      <Text style={styles.exerciseType}>{ex.type.toUpperCase()}</Text>
+                                      <Text style={styles.exerciseName}>{ex.name}</Text>
+                                    </View>
+                                    <TouchableOpacity
+                                      style={[styles.exerciseCheckButton, exerciseCompleted && styles.exerciseCheckButtonCompleted]}
+                                      activeOpacity={0.8}
+                                      disabled={exerciseBusy}
+                                      onPress={() => handleExerciseToggle(plan, selectedPlanDay.day, ex.id, !exerciseCompleted)}
+                                    >
+                                      {exerciseBusy ? (
+                                        <ActivityIndicator size="small" color={exerciseCompleted ? '#001311' : Colors.accentBlue} />
+                                      ) : (
+                                        <Ionicons
+                                          name={exerciseCompleted ? 'checkmark-circle' : 'checkmark-circle-outline'}
+                                          size={22}
+                                          color={exerciseCompleted ? '#001311' : Colors.accentBlue}
+                                        />
+                                      )}
+                                    </TouchableOpacity>
+                                  </View>
+
+                                  <View style={styles.exerciseMetrics}>
+                                    <View style={styles.metricItem}>
+                                      <Ionicons name="layers-outline" size={16} color={Colors.accentBlue} />
+                                      <Text style={styles.metricValue}>{ex.sets} {t('Sets')}</Text>
+                                    </View>
+                                    <View style={styles.metricItem}>
+                                      <Ionicons name="repeat-outline" size={16} color={Colors.accentBlue} />
+                                      <Text style={styles.metricValue}>{ex.reps} {t('Reps')}</Text>
+                                    </View>
+                                    <View style={styles.metricItem}>
+                                      <Ionicons name="fitness-outline" size={16} color={Colors.accentBlue} />
+                                      <Text style={styles.metricValue}>{ex.weight}</Text>
+                                    </View>
+                                    <View style={styles.metricItem}>
+                                      <Ionicons name="timer-outline" size={16} color={Colors.accentBlue} />
+                                      <Text style={styles.metricValue}>{ex.rest} {t('Rest')}</Text>
+                                    </View>
+                                  </View>
                                 </View>
-                                <View style={styles.metricItem}>
-                                  <Ionicons name="repeat-outline" size={16} color={Colors.accentBlue} />
-                                  <Text style={styles.metricValue}>{ex.reps} {t('Reps')}</Text>
+                                    );
+                                  })}
                                 </View>
-                                <View style={styles.metricItem}>
-                                  <Ionicons name="fitness-outline" size={16} color={Colors.accentBlue} />
-                                  <Text style={styles.metricValue}>{ex.weight}</Text>
-                                </View>
-                                <View style={styles.metricItem}>
-                                  <Ionicons name="timer-outline" size={16} color={Colors.accentBlue} />
-                                  <Text style={styles.metricValue}>{ex.rest} {t('Rest')}</Text>
-                                </View>
-                              </View>
+                              ) : null}
                             </View>
                           )})}
                         </View>
@@ -687,6 +784,26 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     marginBottom: 16,
   },
+  sectionRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: 12,
+  },
+  sectionTitleWrap: {
+    flex: 1,
+  },
+  sectionActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  sectionMetaText: {
+    color: 'rgba(255,255,255,0.48)',
+    fontSize: 12,
+    fontFamily: 'Inter_500Medium',
+    marginTop: 6,
+  },
   exerciseType: {
     color: Colors.accentBlue,
     fontSize: 9,
@@ -709,6 +826,21 @@ const styles = StyleSheet.create({
   },
   exerciseCheckButtonCompleted: {
     backgroundColor: '#34D399',
+  },
+  sectionExercises: {
+    gap: 10,
+    marginTop: 14,
+  },
+  exerciseSubCard: {
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    borderRadius: 14,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.05)',
+  },
+  exerciseSubCardCompleted: {
+    borderColor: 'rgba(52,211,153,0.42)',
+    backgroundColor: 'rgba(16,185,129,0.10)',
   },
   exerciseMetrics: {
     flexDirection: 'row',

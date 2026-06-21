@@ -11,12 +11,20 @@ export type StrengthPlanExercise = {
   type: string;
 };
 
+export type StrengthPlanSection = {
+  id: string;
+  title: string;
+  estimated_minutes: number;
+  exercises: StrengthPlanExercise[];
+};
+
 export type StrengthPlanDay = {
   day: string;
   title: string;
   est_time: string;
   volume: string;
   intensity: string;
+  sections: StrengthPlanSection[];
   exercises: StrengthPlanExercise[];
 };
 
@@ -24,6 +32,7 @@ export type StrengthPlanDayProgress = {
   day: string;
   started: boolean;
   completed: boolean;
+  completed_section_ids: string[];
   completed_exercise_ids: string[];
   started_at?: string | null;
   completed_at?: string | null;
@@ -120,6 +129,7 @@ export async function updateStrengthWorkoutPlanProgress(
   planId: string,
   payload: {
     day: string;
+    section_id?: string | null;
     exercise_id?: string | null;
     started?: boolean;
     completed?: boolean;
