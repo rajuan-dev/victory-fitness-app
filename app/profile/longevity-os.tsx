@@ -994,6 +994,7 @@ export default function LongevityOS() {
   const [screenError, setScreenError] = useState<{ title: string; message: string } | null>(null);
   const nativeSuccessOpacity = useRef(new Animated.Value(0)).current;
   const nativeSuccessScale = useRef(new Animated.Value(0.7)).current;
+  const useNativeDriver = Platform.OS !== 'web';
   const nativeSuccessTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const nativeFailureTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const nativeDisconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1378,13 +1379,13 @@ export default function LongevityOS() {
         toValue: 1,
         duration: 160,
         easing: Easing.out(Easing.quad),
-        useNativeDriver: true,
+        useNativeDriver,
       }),
       Animated.spring(nativeSuccessScale, {
         toValue: 1,
         friction: 6,
         tension: 120,
-        useNativeDriver: true,
+        useNativeDriver,
       }),
     ]).start();
     nativeSuccessTimerRef.current = setTimeout(() => {

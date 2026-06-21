@@ -302,6 +302,7 @@ function MealPlanResult({
   const [canAccessTracker, setCanAccessTracker] = useState(false);
   const [canAccessMealAnalysis, setCanAccessMealAnalysis] = useState(false);
   const [restrictedSection, setRestrictedSection] = useState('');
+  const useNativeDriver = Platform.OS !== 'web';
 
   useEffect(() => {
     let cancelled = false;
@@ -1388,7 +1389,7 @@ export default function JournalScreen() {
       toValue: 1,
       duration: 220,
       easing: Easing.out(Easing.back(1.4)),
-      useNativeDriver: true,
+      useNativeDriver,
     }).start();
 
     const playSuccessSound = async () => {

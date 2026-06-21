@@ -9,6 +9,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  Platform,
   useWindowDimensions,
   View,
 } from 'react-native';
@@ -109,6 +110,7 @@ export default function OnboardingScreen() {
   const [checkingAuth, setCheckingAuth] = useState(true);
   const [completing, setCompleting] = useState(false);
   const fadeAnim = useRef(new Animated.Value(1)).current;
+  const useNativeDriver = Platform.OS !== 'web';
 
   useEffect(() => {
     let cancelled = false;
@@ -199,7 +201,7 @@ export default function OnboardingScreen() {
       toValue: 1,
       duration: 220,
       easing: Easing.out(Easing.cubic),
-      useNativeDriver: true,
+      useNativeDriver,
     }).start();
   }, [fadeAnim, index]);
 
