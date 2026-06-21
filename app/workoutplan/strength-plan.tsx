@@ -16,11 +16,14 @@ import {
   deleteStrengthWorkoutPlan,
   fetchStrengthWorkoutPlans,
   loadLatestStrengthWorkoutPlan,
+  StrengthPlanDayProgress,
   StrengthPlanResponse,
+  updateStrengthWorkoutPlanProgress,
 } from '../../lib/workout-plans';
 import { goBackOrReplace } from '../../lib/navigation';
 import { useModuleAccessGuard } from '../../lib/useModuleAccessGuard';
 import { useLanguage } from '../../lib/i18n';
+import { formatAppError } from '../../lib/error';
 
 export default function StrengthPlanDashboard() {
   const checkingAccess = useModuleAccessGuard('/workoutplan');
@@ -29,6 +32,7 @@ export default function StrengthPlanDashboard() {
   const [plans, setPlans] = useState<StrengthPlanResponse[]>([]);
   const [loading, setLoading] = useState(true);
   const [deletingPlanId, setDeletingPlanId] = useState<string | null>(null);
+  const [updatingProgressKey, setUpdatingProgressKey] = useState<string | null>(null);
 
   // Accordion and Day selection states
   const [expandedPlanId, setExpandedPlanId] = useState<string | null>(null);
@@ -80,6 +84,61 @@ export default function StrengthPlanDashboard() {
   if (checkingAccess) {
     return null;
   }
+
+  const getDayProgress = (plan: StrengthPlanResponse, dayLabel: string): StrengthPlanDayProgress | undefined =>
+    Array.isArray(plan.progress) ? plan.progress.find((entry) => entry.day === dayLabel) : undefined;
+
+  const updatePlanProgressState = (nextPlan: StrengthPlanResponse) => {
+    setPlans((current) =>
+      current.map((item) => ((item.plan_id ?? item.summary) === (nextPlan.plan_id ?? nextPlan.summary) ? nextPlan : item))
+    );
+  };
+
+  const handleStartWorkout = async (plan: StrengthPlanResponse, dayLabel: string) => {
+    if (!plan.plan_id) {
+      return;
+    }
+
+    const progressKey = `start-${plan.plan_id}-${dayLabel}`;
+    try {
+      setUpdatingProgressKey(progressKey);
+      const updatedPlan = await updateStrengthWorkoutPlanProgress(plan.plan_id, {
+        day: dayLabel,
+        started: true,
+      });
+      updatePlanProgressState(updatedPlan);
+    } catch (error) {
+      Alert.alert(t('Error'), formatAppError(error, t('Unable to start workout right now.')).message);
+    } finally {
+      setUpdatingProgressKey(null);
+    }
+  };
+
+  const handleExerciseToggle = async (
+    plan: StrengthPlanResponse,
+    dayLabel: string,
+    exerciseId: string,
+    completed: boolean
+  ) => {
+    if (!plan.plan_id) {
+      return;
+    }
+
+    const progressKey = `exercise-${plan.plan_id}-${dayLabel}-${exerciseId}`;
+    try {
+      setUpdatingProgressKey(progressKey);
+      const updatedPlan = await updateStrengthWorkoutPlanProgress(plan.plan_id, {
+        day: dayLabel,
+        exercise_id: exerciseId,
+        completed,
+      });
+      updatePlanProgressState(updatedPlan);
+    } catch (error) {
+      Alert.alert(t('Error'), formatAppError(error, t('Unable to update workout progress right now.')).message);
+    } finally {
+      setUpdatingProgressKey(null);
+    }
+  };
 
   const handleDeletePlan = (targetPlan: StrengthPlanResponse) => {
     const planId = targetPlan.plan_id ?? targetPlan.summary;
@@ -167,6 +226,23 @@ export default function StrengthPlanDashboard() {
               const isExpanded = expandedPlanId === planId;
               const dayLabels = plan.days?.map((d) => d.day) ?? [];
               const selectedPlanDay = plan.days?.find((d) => d.day === selectedDay) ?? plan.days?.[0] ?? null;
+              const selectedDayProgress = selectedPlanDay ? getDayProgress(plan, selectedPlanDay.day) : undefined;
+              const completedExerciseIds = Array.isArray(selectedDayProgress?.completed_exercise_ids)
+                ? selectedDayProgress.completed_exercise_ids
+                : [];
+              const totalExercises = selectedPlanDay?.exercises?.length ?? 0;
+              const completedExercises = selectedPlanDay
+                ? selectedPlanDay.exercises.filter((exercise) => completedExerciseIds.includes(exercise.id)).length
+                : 0;
+              const workoutStarted = Boolean(selectedDayProgress?.started);
+              const workoutCompleted = Boolean(selectedDayProgress?.completed);
+              const startButtonKey = selectedPlanDay ? `start-${plan.plan_id}-${selectedPlanDay.day}` : '';
+              const startButtonBusy = updatingProgressKey === startButtonKey;
+              const startButtonLabel = workoutCompleted
+                ? t('WORKOUT COMPLETED')
+                : workoutStarted
+                  ? t('CONTINUE WORKOUT')
+                  : t('START WORKOUT');
 
               return (
                 <View key={planId ?? `${plan.summary}-${index}`} style={[styles.planCard, isExpanded && styles.planCardExpanded]}>
@@ -244,19 +320,52 @@ export default function StrengthPlanDashboard() {
                         </View>
                       )}
 
+                      {selectedPlanDay ? (
+                        <View style={styles.progressSummaryCard}>
+                          <View style={styles.progressSummaryHeader}>
+                            <Text style={styles.progressSummaryTitle}>{t('DAY PROGRESS')}</Text>
+                            <Text style={[styles.progressSummaryBadge, workoutCompleted && styles.progressSummaryBadgeCompleted]}>
+                              {workoutCompleted ? t('COMPLETED') : workoutStarted ? t('IN PROGRESS') : t('NOT STARTED')}
+                            </Text>
+                          </View>
+                          <Text style={styles.progressSummaryText}>
+                            {totalExercises > 0
+                              ? `${completedExercises}/${totalExercises} ${t('exercises completed')}`
+                              : t('Start this workout to track progress for the day.')}
+                          </Text>
+                        </View>
+                      ) : null}
+
                       {/* Exercises List */}
                       {selectedPlanDay && selectedPlanDay.exercises && selectedPlanDay.exercises.length > 0 ? (
                         <View style={styles.exerciseList}>
                           <Text style={styles.sectionHeader}>{t("TODAY'S EXERCISES")}</Text>
-                          {selectedPlanDay.exercises.map((ex) => (
-                            <View key={ex.id} style={styles.exerciseCard}>
+                          {selectedPlanDay.exercises.map((ex) => {
+                            const exerciseCompleted = completedExerciseIds.includes(ex.id);
+                            const exerciseProgressKey = `exercise-${plan.plan_id}-${selectedPlanDay.day}-${ex.id}`;
+                            const exerciseBusy = updatingProgressKey === exerciseProgressKey;
+                            return (
+                            <View key={ex.id} style={[styles.exerciseCard, exerciseCompleted && styles.exerciseCardCompleted]}>
                               <View style={styles.exerciseHeader}>
                                 <View>
                                   <Text style={styles.exerciseType}>{ex.type.toUpperCase()}</Text>
                                   <Text style={styles.exerciseName}>{ex.name}</Text>
                                 </View>
-                                <TouchableOpacity style={styles.infoIcon}>
-                                  <Ionicons name="information-circle-outline" size={20} color="rgba(255,255,255,0.3)" />
+                                <TouchableOpacity
+                                  style={[styles.exerciseCheckButton, exerciseCompleted && styles.exerciseCheckButtonCompleted]}
+                                  activeOpacity={0.8}
+                                  disabled={exerciseBusy}
+                                  onPress={() => handleExerciseToggle(plan, selectedPlanDay.day, ex.id, !exerciseCompleted)}
+                                >
+                                  {exerciseBusy ? (
+                                    <ActivityIndicator size="small" color={exerciseCompleted ? '#001311' : Colors.accentBlue} />
+                                  ) : (
+                                    <Ionicons
+                                      name={exerciseCompleted ? 'checkmark-circle' : 'checkmark-circle-outline'}
+                                      size={22}
+                                      color={exerciseCompleted ? '#001311' : Colors.accentBlue}
+                                    />
+                                  )}
                                 </TouchableOpacity>
                               </View>
 
@@ -279,20 +388,28 @@ export default function StrengthPlanDashboard() {
                                 </View>
                               </View>
                             </View>
-                          ))}
+                          )})}
                         </View>
                       ) : null}
 
                       {/* Start Workout Button */}
                       <TouchableOpacity
-                        style={styles.startWorkoutBtn}
+                        style={[styles.startWorkoutBtn, workoutCompleted && styles.startWorkoutBtnCompleted]}
                         activeOpacity={0.8}
+                        disabled={!selectedPlanDay || startButtonBusy}
                         onPress={() => {
-                          Alert.alert(t('Workout Started'), t('Your workout session has begun! Enjoy your custom training.'));
+                          if (!selectedPlanDay) {
+                            return;
+                          }
+                          void handleStartWorkout(plan, selectedPlanDay.day);
                         }}
                       >
-                        <Ionicons name="play" size={20} color="#000" />
-                        <Text style={styles.startWorkoutBtnText}>{t('START WORKOUT')}</Text>
+                        {startButtonBusy ? (
+                          <ActivityIndicator size="small" color="#000" />
+                        ) : (
+                          <Ionicons name={workoutCompleted ? 'checkmark-circle' : 'play'} size={20} color="#000" />
+                        )}
+                        <Text style={styles.startWorkoutBtnText}>{startButtonLabel}</Text>
                       </TouchableOpacity>
                     </View>
                   )}
@@ -506,6 +623,42 @@ const styles = StyleSheet.create({
     height: 24,
     backgroundColor: 'rgba(255,255,255,0.06)',
   },
+  progressSummaryCard: {
+    backgroundColor: '#202020',
+    borderRadius: 18,
+    padding: 16,
+    marginBottom: 18,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.05)',
+  },
+  progressSummaryHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 8,
+  },
+  progressSummaryTitle: {
+    color: 'rgba(255,255,255,0.42)',
+    fontSize: 10,
+    fontFamily: 'Inter_700Bold',
+    letterSpacing: 1.2,
+  },
+  progressSummaryBadge: {
+    color: Colors.accentBlue,
+    fontSize: 10,
+    fontFamily: 'Inter_700Bold',
+    letterSpacing: 1,
+  },
+  progressSummaryBadgeCompleted: {
+    color: '#34D399',
+  },
+  progressSummaryText: {
+    color: '#fff',
+    fontSize: 14,
+    lineHeight: 20,
+    fontFamily: 'Inter_600SemiBold',
+  },
   sectionHeader: {
     color: 'rgba(255,255,255,0.3)',
     fontSize: 11,
@@ -523,6 +676,10 @@ const styles = StyleSheet.create({
     padding: 16,
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.02)',
+  },
+  exerciseCardCompleted: {
+    borderColor: 'rgba(52,211,153,0.45)',
+    backgroundColor: 'rgba(16,185,129,0.12)',
   },
   exerciseHeader: {
     flexDirection: 'row',
@@ -542,8 +699,16 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontFamily: 'Inter_700Bold',
   },
-  infoIcon: {
-    marginTop: 2,
+  exerciseCheckButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(6,182,212,0.08)',
+  },
+  exerciseCheckButtonCompleted: {
+    backgroundColor: '#34D399',
   },
   exerciseMetrics: {
     flexDirection: 'row',
@@ -569,6 +734,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 8,
     marginTop: 8,
+  },
+  startWorkoutBtnCompleted: {
+    backgroundColor: '#34D399',
   },
   startWorkoutBtnText: {
     color: '#000',

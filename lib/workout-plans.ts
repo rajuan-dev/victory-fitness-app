@@ -20,10 +20,20 @@ export type StrengthPlanDay = {
   exercises: StrengthPlanExercise[];
 };
 
+export type StrengthPlanDayProgress = {
+  day: string;
+  started: boolean;
+  completed: boolean;
+  completed_exercise_ids: string[];
+  started_at?: string | null;
+  completed_at?: string | null;
+};
+
 export type StrengthPlanResponse = {
   plan_id?: string | null;
   summary: string;
   days: StrengthPlanDay[];
+  progress: StrengthPlanDayProgress[];
   created_at?: string | null;
 };
 
@@ -104,6 +114,23 @@ export async function deleteStrengthWorkoutPlan(planId: string) {
     method: 'DELETE',
   });
   await persistLatestStrengthPlan(null);
+}
+
+export async function updateStrengthWorkoutPlanProgress(
+  planId: string,
+  payload: {
+    day: string;
+    exercise_id?: string | null;
+    started?: boolean;
+    completed?: boolean;
+  }
+) {
+  const plan = await apiRequest<StrengthPlanResponse>(`/ai/workout-plan/strength/${encodeURIComponent(planId)}/progress`, {
+    method: 'PATCH',
+    body: payload,
+  });
+  await persistLatestStrengthPlan(plan);
+  return plan;
 }
 
 export async function createVideoWorkoutPlan(payload: Record<string, unknown>) {
