@@ -1259,11 +1259,20 @@ export async function apiRequest<T>(
     headers['Accept-Language'] = requestLanguage;
   }
 
+  const isFormDataBody = typeof FormData !== 'undefined' && options.body instanceof FormData;
+  if (isFormDataBody) {
+    delete headers['Content-Type'];
+  }
+
   const response = await fetchWithTimeout(`${API_URL}${path}`, {
     method: options.method ?? 'GET',
     headers,
     credentials: 'include',
-    body: options.body ? JSON.stringify(options.body) : undefined,
+    body: isFormDataBody
+      ? options.body as BodyInit
+      : options.body
+        ? JSON.stringify(options.body)
+        : undefined,
   }, options.timeoutMs);
 
   const data = await response.json().catch(() => ({}));

@@ -19,6 +19,7 @@ export default function RootLayout() {
   const router = useRouter();
   const pathname = usePathname();
   const pathnameRef = useRef(pathname);
+  const lastLoggedRouteRef = useRef<string | null>(null);
   const [fontsLoaded] = useFonts({
     Inter_400Regular,
     Inter_600SemiBold,
@@ -57,26 +58,38 @@ export default function RootLayout() {
         }
 
         if (isPublicRoute(pathname)) {
+          const target = getPostAuthRoute(user);
+          if (pathname === target) {
+            setCheckingAccess(false);
+            return false;
+          }
+
           void appendRunLog({
             level: 'route',
             title: 'Route redirect',
-            message: `Authenticated user redirected from ${pathname} to ${getPostAuthRoute(user)}.`,
+            message: `Authenticated user redirected from ${pathname} to ${target}.`,
             route: pathname,
             context: 'RootLayout',
           });
-          replaceRoute(router, getPostAuthRoute(user));
+          replaceRoute(router, target);
           return true;
         }
 
         if (!isRouteAllowedForPlan(pathname, user)) {
+          const target = getPostAuthRoute(user);
+          if (pathname === target) {
+            setCheckingAccess(false);
+            return false;
+          }
+
           void appendRunLog({
             level: 'warning',
             title: 'Route blocked',
-            message: `Plan access blocked for ${pathname}; redirecting to ${getPostAuthRoute(user)}.`,
+            message: `Plan access blocked for ${pathname}; redirecting to ${target}.`,
             route: pathname,
             context: 'RootLayout',
           });
-          replaceRoute(router, getPostAuthRoute(user));
+          replaceRoute(router, target);
           return true;
         }
 
@@ -156,6 +169,11 @@ export default function RootLayout() {
   }, [pathname]);
 
   useEffect(() => {
+    if (lastLoggedRouteRef.current === pathname) {
+      return;
+    }
+
+    lastLoggedRouteRef.current = pathname;
     void appendRunLog({
       level: 'route',
       title: 'Route changed',

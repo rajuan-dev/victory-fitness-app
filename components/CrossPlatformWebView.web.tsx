@@ -39,6 +39,31 @@ type ParsedMedia =
   | { kind: 'iframe'; url: string }
   | { kind: 'unknown'; url: string };
 
+function inferMediaKindFromUrl(url: string): ParsedMedia['kind'] | null {
+  const normalized = String(url || '').trim().toLowerCase();
+  if (!normalized) {
+    return null;
+  }
+
+  if (normalized.startsWith('data:video/') || normalized.startsWith('blob:')) {
+    return 'video';
+  }
+
+  if (normalized.startsWith('data:audio/')) {
+    return 'audio';
+  }
+
+  if (/\.(mp4|mov|m4v|webm)(\?.*)?$/.test(normalized)) {
+    return 'video';
+  }
+
+  if (/\.(mp3|m4a|wav|ogg)(\?.*)?$/.test(normalized)) {
+    return 'audio';
+  }
+
+  return null;
+}
+
 function parseMediaFromHtml(html: string): ParsedMedia | null {
   const normalized = String(html || '').trim();
   if (!normalized) {
@@ -81,7 +106,9 @@ export default function CrossPlatformWebView({
 
   const media = useMemo(() => {
     if (source?.uri) {
-      return { kind: 'iframe', url: source.uri.trim() } as ParsedMedia;
+      const uri = source.uri.trim();
+      const inferredKind = inferMediaKindFromUrl(uri);
+      return { kind: inferredKind || 'iframe', url: uri } as ParsedMedia;
     }
     if (source?.html) {
       const parsed = parseMediaFromHtml(source.html);

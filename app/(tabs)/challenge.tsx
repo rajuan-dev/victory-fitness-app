@@ -16,7 +16,6 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import * as FileSystem from 'expo-file-system/legacy';
 import * as ImagePicker from 'expo-image-picker';
 import CrossPlatformWebView from '../../components/CrossPlatformWebView';
 import { Colors } from '../../constants/Colors';
@@ -24,7 +23,7 @@ import AccessRestrictionModal from '../../components/AccessRestrictionModal';
 import { apiRequest, fetchCurrentUser, getAuthUser, resolveRemoteAssetUrl } from '../../lib/api';
 import { canAccessFeature, normalizeSubscriptionTier } from '../../lib/access';
 import { useLanguage } from '../../lib/i18n';
-import { getCachedResourceSnapshot } from '../../lib/resourceCache';
+import { clearCachedResource, getCachedResourceSnapshot } from '../../lib/resourceCache';
 import {
   CHALLENGE_OVERVIEW_CACHE_KEY,
   COMMUNITY_POSTS_CACHE_KEY,
@@ -162,13 +161,118 @@ type CommunityReactionUser = {
 
 type CommunityMediaAsset = {
   uri: string;
-  base64: string;
   mimeType: string;
   fileName: string | null;
+  fileSize?: number | null;
+  file?: File | null;
   width?: number | null;
   height?: number | null;
   type: 'image' | 'video';
 };
+
+const VIDEO_MIME_TYPES = new Set([
+  'video/mp4',
+  'video/quicktime',
+  'video/webm',
+  'video/x-m4v',
+  'video/ogg',
+]);
+
+const COMMUNITY_VIDEO_UPLOAD_MIME_TYPES = new Set([
+  'video/mp4',
+  'video/quicktime',
+  'video/webm',
+]);
+
+const VIDEO_FILE_EXTENSIONS = ['.mp4', '.mov', '.m4v', '.webm', '.ogg'];
+const COMMUNITY_VIDEO_MAX_SIZE_BYTES = 25 * 1024 * 1024;
+
+function inferCommunityMediaType(asset: ImagePicker.ImagePickerAsset): 'image' | 'video' {
+  const mimeType = String(asset.mimeType || '').trim().toLowerCase();
+  if (VIDEO_MIME_TYPES.has(mimeType)) {
+    return 'video';
+  }
+
+  const fileName = String(asset.fileName || '').trim().toLowerCase();
+  if (VIDEO_FILE_EXTENSIONS.some((extension) => fileName.endsWith(extension))) {
+    return 'video';
+  }
+
+  const uri = String(asset.uri || '').trim().toLowerCase();
+  if (VIDEO_FILE_EXTENSIONS.some((extension) => uri.includes(extension))) {
+    return 'video';
+  }
+
+  if (uri.startsWith('blob:') || uri.startsWith('data:video/')) {
+    return 'video';
+  }
+
+  return asset.type === 'video' ? 'video' : 'image';
+}
+
+function inferCommunityMimeType(asset: ImagePicker.ImagePickerAsset, mediaType: 'image' | 'video'): string {
+  const mimeType = String(asset.mimeType || '').trim().toLowerCase();
+  if (mediaType === 'video') {
+    if (mimeType === 'video/quicktime' || String(asset.fileName || '').toLowerCase().endsWith('.mov')) {
+      return 'video/quicktime';
+    }
+    if (mimeType === 'video/webm' || String(asset.fileName || '').toLowerCase().endsWith('.webm')) {
+      return 'video/webm';
+    }
+    if (mimeType === 'video/mp4' || mimeType === 'video/x-m4v' || String(asset.fileName || '').toLowerCase().endsWith('.mp4') || String(asset.fileName || '').toLowerCase().endsWith('.m4v')) {
+      return 'video/mp4';
+    }
+    return 'video/mp4';
+  }
+
+  if (mimeType.startsWith('image/')) {
+    return mimeType;
+  }
+
+  return 'image/jpeg';
+}
+
+function getCommunityUploadName(asset: ImagePicker.ImagePickerAsset, mediaType: 'image' | 'video') {
+  const fileName = String(asset.fileName || '').trim();
+  if (fileName) {
+    return fileName;
+  }
+  return mediaType === 'video' ? 'community-video.mp4' : 'community-image.jpg';
+}
+
+function buildCommunityUploadFormData(params: {
+  content: string;
+  media: CommunityMediaAsset | null;
+  externalVideoUrl: string;
+}) {
+  const formData = new FormData();
+  formData.append('content', params.content);
+
+  if (params.externalVideoUrl) {
+    formData.append('external_video_url', params.externalVideoUrl);
+  }
+
+  if (params.media) {
+    formData.append('mime_type', params.media.mimeType);
+    formData.append('file_name', params.media.fileName || '');
+    formData.append('media_type', params.media.type);
+
+    if (params.media.file) {
+      formData.append('media_file', params.media.file);
+    } else {
+      formData.append('media_file', {
+        uri: params.media.uri,
+        name: getCommunityUploadName(
+          params.media,
+          params.media.type,
+        ),
+        type: params.media.mimeType,
+      } as any);
+    }
+  }
+
+  return formData;
+}
 function formatCommunityPostTime(value: string, t: (key: string, params?: Record<string, string | number>) => string) {
   const createdAt = new Date(value);
   if (Number.isNaN(createdAt.getTime())) {
@@ -717,32 +821,22 @@ export default function ChallengesScreen() {
     setActiveTab('COMMUNITY');
 
     const applyCommunityPrefill = async () => {
-      try {
-        const imageBase64 = await FileSystem.readAsStringAsync(imageUri, {
-          encoding: FileSystem.EncodingType.Base64,
-        });
-        if (cancelled) {
-          return;
-        }
-
-        setCommunityMedia({
-          uri: imageUri,
-          base64: imageBase64,
-          mimeType: mimeType || 'image/svg+xml',
-          fileName: fileName || 'victory-fitness-progress-report.svg',
-          width: 1080,
-          height: 1920,
-          type: 'image',
-        });
-        setCommunityDraft(prefillStatus || '');
-        setCommunityError('');
-      } catch (error) {
-        if (cancelled) {
-          return;
-        }
-        consumedCommunityPrefillKeyRef.current = '';
-        setCommunityError(error instanceof Error ? error.message : t('Failed to attach the shared report image.'));
+      if (cancelled) {
+        return;
       }
+
+      setCommunityMedia({
+        uri: imageUri,
+        mimeType: mimeType || 'image/svg+xml',
+        fileName: fileName || 'victory-fitness-progress-report.svg',
+        fileSize: null,
+        file: null,
+        width: 1080,
+        height: 1920,
+        type: 'image',
+      });
+      setCommunityDraft(prefillStatus || '');
+      setCommunityError('');
     };
 
     void applyCommunityPrefill();
@@ -869,11 +963,11 @@ export default function ChallengesScreen() {
   const handleCommunityPost = async () => {
     const content = communityDraft.trim();
     const externalVideoUrl = normalizeExternalCommunityVideoUrl(communityVideoLink) || communityVideoLink.trim();
-    if (communityMedia?.base64 && externalVideoUrl) {
+    if (communityMedia && externalVideoUrl) {
       setCommunityError(t('Choose an upload or paste a video link, not both.'));
       return;
     }
-    if (!content && !communityMedia?.base64 && !externalVideoUrl) {
+    if (!content && !communityMedia && !externalVideoUrl) {
       setCommunityError(t('Add a status, choose media, or paste a video link before posting.'));
       return;
     }
@@ -881,21 +975,23 @@ export default function ChallengesScreen() {
     setCommunityPosting(true);
     setCommunityError('');
     try {
+      const formData = buildCommunityUploadFormData({
+        content: content || '',
+        media: communityMedia,
+        externalVideoUrl,
+      });
       const response = await apiRequest<CommunityPost>('/community/posts', {
         method: 'POST',
-        body: {
-          content: content || '',
-          image_base64: communityMedia?.type === 'image' ? communityMedia.base64 : undefined,
-          video_base64: communityMedia?.type === 'video' ? communityMedia.base64 : undefined,
-          external_video_url: externalVideoUrl || undefined,
-          mime_type: communityMedia?.mimeType ?? 'image/jpeg',
-          file_name: communityMedia?.fileName ?? null,
-        },
+        body: formData,
       });
       setCommunityDraft('');
       setCommunityMedia(null);
       setCommunityVideoLink('');
       setCommunityPosts((current) => [response, ...current]);
+      void Promise.allSettled([
+        clearCachedResource(COMMUNITY_POSTS_CACHE_KEY),
+        loadCommunityPosts(false),
+      ]);
     } catch (error) {
       setCommunityError(error instanceof Error ? getCommunityVideoLinkError(error.message, t) : t('Failed to publish post'));
     } finally {
@@ -914,8 +1010,9 @@ export default function ChallengesScreen() {
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ['images', 'videos'],
         allowsEditing: false,
-        quality: 0.9,
-        base64: true,
+        quality: 0.8,
+        base64: false,
+        videoExportPreset: ImagePicker.VideoExportPreset.MediumQuality,
       });
 
       if (result.canceled || result.assets.length === 0) {
@@ -923,24 +1020,26 @@ export default function ChallengesScreen() {
       }
 
       const asset = result.assets[0];
-      const assetType = asset.type === 'video' ? 'video' : 'image';
-      const assetBase64 =
-        asset.base64 ||
-        (asset.uri
-          ? await FileSystem.readAsStringAsync(asset.uri, {
-              encoding: FileSystem.EncodingType.Base64,
-            })
-          : '');
+      const assetType = inferCommunityMediaType(asset);
+      const assetMimeType = inferCommunityMimeType(asset, assetType);
+      const assetSize = Number((asset as { fileSize?: number | null }).fileSize ?? 0) || 0;
 
-      if (!assetBase64) {
-        throw new Error(assetType === 'video' ? 'The selected video could not be processed for upload.' : 'The selected image could not be processed for upload.');
+      if (assetType === 'video' && assetSize > COMMUNITY_VIDEO_MAX_SIZE_BYTES) {
+        Alert.alert(t('Video too large'), t('Please choose a video that is 25MB or smaller.'));
+        return;
+      }
+
+      if (assetType === 'video' && !COMMUNITY_VIDEO_UPLOAD_MIME_TYPES.has(assetMimeType)) {
+        Alert.alert(t('Unsupported video format'), t('Please upload an MP4, MOV, or WEBM video.'));
+        return;
       }
 
       setCommunityMedia({
         uri: asset.uri,
-        base64: assetBase64,
-        mimeType: asset.mimeType || (assetType === 'video' ? 'video/mp4' : 'image/jpeg'),
+        mimeType: assetMimeType,
         fileName: asset.fileName || null,
+        fileSize: asset.fileSize ?? null,
+        file: asset.file ?? null,
         width: asset.width,
         height: asset.height,
         type: assetType,
