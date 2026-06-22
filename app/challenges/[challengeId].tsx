@@ -331,58 +331,87 @@ export default function ChallengeDetailScreen() {
                   <View style={styles.heroDivider} />
                   <View style={styles.heroFooter}>
                     <Text style={styles.pointsText}>+{detail.points} {t('Points')}</Text>
-                    <View style={styles.daySummaryRow}>
-                      <View style={styles.daySummaryCard}>
-                        <Text style={styles.daySummaryValue}>{completedDaysCount}/{Math.max(totalDaysCount, 1)}</Text>
-                        <Text style={styles.daySummaryLabel}>Days done</Text>
+                    <View style={styles.trackerCard}>
+                      <View style={styles.trackerHeader}>
+                        <View>
+                          <Text style={styles.trackerTitle}>Day Tracker</Text>
+                          <Text style={styles.trackerSubtitle}>Tap any day number to open that day.</Text>
+                        </View>
+                        <View style={styles.trackerPill}>
+                          <Text style={styles.trackerPillText}>{completedDaysCount}/{Math.max(totalDaysCount, 1)}</Text>
+                        </View>
                       </View>
-                      <View style={styles.daySummaryCard}>
-                        <Text style={styles.daySummaryValue}>{remainingDaysCount}</Text>
-                        <Text style={styles.daySummaryLabel}>Days left</Text>
+                      <View style={styles.trackerStatsRow}>
+                        <View style={styles.trackerStat}>
+                          <Text style={styles.trackerStatValue}>{completedDaysCount}</Text>
+                          <Text style={styles.trackerStatLabel}>Done</Text>
+                        </View>
+                        <View style={styles.trackerStat}>
+                          <Text style={styles.trackerStatValue}>{remainingDaysCount}</Text>
+                          <Text style={styles.trackerStatLabel}>Left</Text>
+                        </View>
+                        <View style={styles.trackerStat}>
+                          <Text style={styles.trackerStatValue}>{detail.current_day_number || completedDaysCount || 1}</Text>
+                          <Text style={styles.trackerStatLabel}>Current</Text>
+                        </View>
                       </View>
-                      <View style={styles.daySummaryCard}>
-                        <Text style={styles.daySummaryValue}>{detail.current_day_number || completedDaysCount || 1}</Text>
-                        <Text style={styles.daySummaryLabel}>Current day</Text>
+                      <View style={styles.trackerLegendRow}>
+                        <View style={styles.legendItem}>
+                          <View style={[styles.legendDot, styles.legendDotCompleted]} />
+                          <Text style={styles.legendText}>Done</Text>
+                        </View>
+                        <View style={styles.legendItem}>
+                          <View style={[styles.legendDot, styles.legendDotCurrent]} />
+                          <Text style={styles.legendText}>Current</Text>
+                        </View>
+                        <View style={styles.legendItem}>
+                          <View style={[styles.legendDot, styles.legendDotMissed]} />
+                          <Text style={styles.legendText}>Missed</Text>
+                        </View>
                       </View>
                     </View>
-                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.dayStrip}>
-                      {detail.plan_days.map((day) => {
-                        const progress = dayProgressMap.get(day.day_number);
-                        const isCompleted = Boolean(progress?.completed);
-                        const isCurrent = detail.current_day_number === day.day_number && !isCompleted;
-                        const isMissed =
-                          !isCompleted &&
-                          !isCurrent &&
-                          Boolean(detail.current_day_number) &&
-                          day.day_number < (detail.current_day_number || 0);
-                        return (
-                          <TouchableOpacity
-                            key={`detail-day-${day.day_number}`}
-                            activeOpacity={0.85}
-                            accessibilityRole="button"
-                            accessibilityLabel={t('Open day {day} progress', { day: day.day_number })}
-                            onPress={() => openProgressDay(day.day_number)}
-                            style={[
-                              styles.dayChip,
-                              isCompleted && styles.dayChipCompleted,
-                              isCurrent && styles.dayChipCurrent,
-                              isMissed && styles.dayChipMissed,
-                            ]}
-                          >
-                            <Text
+                    <View style={styles.dayStripWrap}>
+                      <Text style={styles.dayStripTitle}>Challenge Days</Text>
+                      <Text style={styles.dayStripSubtitle}>Left to right scroll</Text>
+                      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.dayStrip}>
+                        {detail.plan_days.map((day) => {
+                          const progress = dayProgressMap.get(day.day_number);
+                          const isCompleted = Boolean(progress?.completed);
+                          const isCurrent = detail.current_day_number === day.day_number && !isCompleted;
+                          const isMissed =
+                            !isCompleted &&
+                            !isCurrent &&
+                            Boolean(detail.current_day_number) &&
+                            day.day_number < (detail.current_day_number || 0);
+                          return (
+                            <TouchableOpacity
+                              key={`detail-day-${day.day_number}`}
+                              activeOpacity={0.85}
+                              accessibilityRole="button"
+                              accessibilityLabel={t('Open day {day} progress', { day: day.day_number })}
+                              onPress={() => openProgressDay(day.day_number)}
                               style={[
-                                styles.dayChipText,
-                                isCompleted && styles.dayChipTextCompleted,
-                                isCurrent && styles.dayChipTextCurrent,
-                                isMissed && styles.dayChipTextMissed,
+                                styles.dayChip,
+                                isCompleted && styles.dayChipCompleted,
+                                isCurrent && styles.dayChipCurrent,
+                                isMissed && styles.dayChipMissed,
                               ]}
                             >
-                              {day.day_number}
-                            </Text>
-                          </TouchableOpacity>
-                        );
-                      })}
-                    </ScrollView>
+                              <Text
+                                style={[
+                                  styles.dayChipText,
+                                  isCompleted && styles.dayChipTextCompleted,
+                                  isCurrent && styles.dayChipTextCurrent,
+                                  isMissed && styles.dayChipTextMissed,
+                                ]}
+                              >
+                                {day.day_number}
+                              </Text>
+                            </TouchableOpacity>
+                          );
+                        })}
+                      </ScrollView>
+                    </View>
                     <View style={styles.heroActions}>
                       {showCompleteToday ? (
                         <TouchableOpacity
@@ -604,16 +633,42 @@ const styles = StyleSheet.create({
   },
   heroTitle: { color: '#FFF', fontSize: 28, lineHeight: 36, fontFamily: 'Inter_700Bold', marginBottom: 12 },
   heroDescription: { color: '#E5E7EB', fontSize: 16, lineHeight: 24, fontFamily: 'Inter_400Regular', marginBottom: 18 },
-  dayStrip: { gap: 10, paddingBottom: 16 },
-  dayChip: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
+  dayStripWrap: {
+    borderRadius: 22,
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    paddingBottom: 18,
+    backgroundColor: 'rgba(15,23,42,0.72)',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.16)',
-    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderColor: 'rgba(148,163,184,0.16)',
+  },
+  dayStripTitle: {
+    color: '#F8FAFC',
+    fontSize: 15,
+    fontFamily: 'Inter_700Bold',
+  },
+  dayStripSubtitle: {
+    color: '#94A3B8',
+    fontSize: 12,
+    fontFamily: 'Inter_400Regular',
+    marginTop: 4,
+    marginBottom: 14,
+  },
+  dayStrip: { gap: 12, paddingRight: 8 },
+  dayChip: {
+    width: 54,
+    height: 54,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: 'rgba(148,163,184,0.16)',
+    backgroundColor: 'rgba(255,255,255,0.08)',
     justifyContent: 'center',
     alignItems: 'center',
+    shadowColor: '#020617',
+    shadowOpacity: 0.18,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 4,
   },
   dayChipCompleted: {
     backgroundColor: '#22C55E',
@@ -629,7 +684,7 @@ const styles = StyleSheet.create({
   },
   dayChipText: {
     color: '#E5E7EB',
-    fontSize: 14,
+    fontSize: 16,
     fontFamily: 'Inter_700Bold',
   },
   dayChipTextCompleted: {
@@ -646,27 +701,100 @@ const styles = StyleSheet.create({
   quoteText: { flex: 1, color: '#9CA3AF', fontSize: 15, lineHeight: 24, fontStyle: 'italic', fontFamily: 'Inter_400Regular' },
   heroDivider: { height: 1, backgroundColor: 'rgba(255,255,255,0.08)', marginBottom: 18 },
   heroFooter: { gap: 16 },
-  daySummaryRow: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
-  daySummaryCard: {
-    minWidth: 86,
-    borderRadius: 14,
-    backgroundColor: 'rgba(255,255,255,0.06)',
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    alignItems: 'center',
+  trackerCard: {
+    borderRadius: 24,
+    padding: 18,
+    backgroundColor: 'rgba(30,41,59,0.86)',
+    borderWidth: 1,
+    borderColor: 'rgba(96,165,250,0.14)',
+    gap: 14,
   },
-  daySummaryValue: {
+  trackerHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  trackerTitle: {
     color: '#FFFFFF',
-    fontSize: 15,
+    fontSize: 17,
     fontFamily: 'Inter_700Bold',
   },
-  daySummaryLabel: {
-    color: '#C7D2FE',
-    fontSize: 10,
+  trackerSubtitle: {
+    color: '#94A3B8',
+    fontSize: 12,
+    fontFamily: 'Inter_400Regular',
+    marginTop: 4,
+  },
+  trackerPill: {
+    minWidth: 62,
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(37,99,235,0.22)',
+    borderWidth: 1,
+    borderColor: 'rgba(96,165,250,0.28)',
+  },
+  trackerPillText: {
+    color: '#DBEAFE',
+    fontSize: 13,
+    fontFamily: 'Inter_700Bold',
+  },
+  trackerStatsRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  trackerStat: {
+    flex: 1,
+    borderRadius: 18,
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    paddingVertical: 12,
+    paddingHorizontal: 10,
+    alignItems: 'center',
+  },
+  trackerStatValue: {
+    color: '#FFFFFF',
+    fontSize: 18,
+    fontFamily: 'Inter_700Bold',
+  },
+  trackerStatLabel: {
+    color: '#CBD5E1',
+    fontSize: 11,
     fontFamily: 'Inter_600SemiBold',
-    marginTop: 3,
+    marginTop: 4,
     textTransform: 'uppercase',
     letterSpacing: 0.5,
+  },
+  trackerLegendRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+  },
+  legendItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  legendDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 999,
+  },
+  legendDotCompleted: {
+    backgroundColor: '#22C55E',
+  },
+  legendDotCurrent: {
+    backgroundColor: '#94A3B8',
+  },
+  legendDotMissed: {
+    backgroundColor: '#EF4444',
+  },
+  legendText: {
+    color: '#CBD5E1',
+    fontSize: 11,
+    fontFamily: 'Inter_600SemiBold',
   },
   heroActions: { flexDirection: 'row', alignItems: 'center', gap: 10, width: '100%' },
   pointsText: { color: '#FBBF24', fontSize: 18, fontFamily: 'Inter_700Bold' },
