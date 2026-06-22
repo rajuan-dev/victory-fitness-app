@@ -324,44 +324,6 @@ export default function ChallengeDetailScreen() {
                 <View style={styles.heroCard}>
                   <Text style={styles.heroTitle}>{detail.title}</Text>
                   <Text style={styles.heroDescription}>{detail.description}</Text>
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.dayStrip}>
-                    {detail.plan_days.map((day) => {
-                      const progress = dayProgressMap.get(day.day_number);
-                      const isCompleted = Boolean(progress?.completed);
-                      const isCurrent = detail.current_day_number === day.day_number && !isCompleted;
-                      const isMissed =
-                        !isCompleted &&
-                        !isCurrent &&
-                        Boolean(detail.current_day_number) &&
-                        day.day_number < (detail.current_day_number || 0);
-                      return (
-                        <TouchableOpacity
-                          key={`detail-day-${day.day_number}`}
-                          activeOpacity={0.85}
-                          accessibilityRole="button"
-                          accessibilityLabel={t('Open day {day} progress', { day: day.day_number })}
-                          onPress={() => openProgressDay(day.day_number)}
-                          style={[
-                            styles.dayChip,
-                            isCompleted && styles.dayChipCompleted,
-                            isCurrent && styles.dayChipCurrent,
-                            isMissed && styles.dayChipMissed,
-                          ]}
-                        >
-                          <Text
-                            style={[
-                              styles.dayChipText,
-                              isCompleted && styles.dayChipTextCompleted,
-                              isCurrent && styles.dayChipTextCurrent,
-                              isMissed && styles.dayChipTextMissed,
-                            ]}
-                          >
-                            {day.day_number}
-                          </Text>
-                        </TouchableOpacity>
-                      );
-                    })}
-                  </ScrollView>
                   <View style={styles.quoteWrap}>
                     <View style={styles.quoteBar} />
                     <Text style={styles.quoteText}>"{quoteText}"</Text>
@@ -383,6 +345,44 @@ export default function ChallengeDetailScreen() {
                         <Text style={styles.daySummaryLabel}>Current day</Text>
                       </View>
                     </View>
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.dayStrip}>
+                      {detail.plan_days.map((day) => {
+                        const progress = dayProgressMap.get(day.day_number);
+                        const isCompleted = Boolean(progress?.completed);
+                        const isCurrent = detail.current_day_number === day.day_number && !isCompleted;
+                        const isMissed =
+                          !isCompleted &&
+                          !isCurrent &&
+                          Boolean(detail.current_day_number) &&
+                          day.day_number < (detail.current_day_number || 0);
+                        return (
+                          <TouchableOpacity
+                            key={`detail-day-${day.day_number}`}
+                            activeOpacity={0.85}
+                            accessibilityRole="button"
+                            accessibilityLabel={t('Open day {day} progress', { day: day.day_number })}
+                            onPress={() => openProgressDay(day.day_number)}
+                            style={[
+                              styles.dayChip,
+                              isCompleted && styles.dayChipCompleted,
+                              isCurrent && styles.dayChipCurrent,
+                              isMissed && styles.dayChipMissed,
+                            ]}
+                          >
+                            <Text
+                              style={[
+                                styles.dayChipText,
+                                isCompleted && styles.dayChipTextCompleted,
+                                isCurrent && styles.dayChipTextCurrent,
+                                isMissed && styles.dayChipTextMissed,
+                              ]}
+                            >
+                              {day.day_number}
+                            </Text>
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </ScrollView>
                     <View style={styles.heroActions}>
                       {showCompleteToday ? (
                         <TouchableOpacity
