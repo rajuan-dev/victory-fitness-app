@@ -86,6 +86,13 @@ type ChallengeProgressThread = {
   viewer_plan_progress: ChallengePlanDayProgress[];
 };
 
+type CompletionConfirmState = {
+  dayNumber: number;
+  completed: boolean;
+  action: 'day' | 'section';
+  sectionId?: string;
+};
+
 type UnitPointMap = Record<string, number>;
 type CompletedReportEntry = {
   title: string;
@@ -568,7 +575,7 @@ export default function ChallengeProgressScreen() {
   const [expandedDays, setExpandedDays] = useState<Record<number, boolean>>({});
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({});
   const [videoModal, setVideoModal] = useState<{ title: string; videoUrl: string } | null>(null);
-  const [dayCompletionConfirm, setDayCompletionConfirm] = useState<{ dayNumber: number; completed: boolean } | null>(null);
+  const [dayCompletionConfirm, setDayCompletionConfirm] = useState<CompletionConfirmState | null>(null);
   const [reportAction, setReportAction] = useState<'download' | 'community' | ''>('');
   const [errorDialog, setErrorDialog] = useState<{ title: string; message: string } | null>(null);
 
@@ -709,6 +716,28 @@ export default function ChallengeProgressScreen() {
     }
   }, [applyPlanProgress, challengeId]);
 
+  const toggleSectionCompletion = useCallback(async (dayNumber: number, sectionId: string, completed: boolean) => {
+    if (!challengeId) {
+      return;
+    }
+    const key = `section-${dayNumber}-${sectionId}`;
+    setCompletionUpdatingKey(key);
+    try {
+      const response = await apiRequest<ChallengePlanProgressResponse>(
+        `/challenges/${encodeURIComponent(challengeId)}/plan/days/${dayNumber}/sections/${encodeURIComponent(sectionId)}/complete`,
+        {
+          method: 'POST',
+          body: { completed },
+        }
+      );
+      applyPlanProgress(response);
+    } catch (error) {
+      setErrorDialog(formatAppError(error, 'Failed to update day completion.'));
+    } finally {
+      setCompletionUpdatingKey('');
+    }
+  }, [applyPlanProgress, challengeId]);
+
   const toggleDayCompletion = useCallback(async (dayNumber: number, completed: boolean) => {
     if (!challengeId) {
       return;
@@ -737,8 +766,17 @@ export default function ChallengeProgressScreen() {
       return;
     }
     blurFocusedElement();
-    setDayCompletionConfirm({ dayNumber, completed });
+    setDayCompletionConfirm({ dayNumber, completed, action: 'day' });
   }, [blurFocusedElement, toggleDayCompletion]);
+
+  const confirmSectionDayCompletion = useCallback((dayNumber: number, sectionId: string, completed: boolean) => {
+    if (!completed) {
+      void toggleSectionCompletion(dayNumber, sectionId, completed);
+      return;
+    }
+    blurFocusedElement();
+    setDayCompletionConfirm({ dayNumber, completed, action: 'section', sectionId });
+  }, [blurFocusedElement, toggleSectionCompletion]);
 
   const closeDayCompletionConfirm = useCallback(() => {
     blurFocusedElement();
@@ -749,10 +787,14 @@ export default function ChallengeProgressScreen() {
     if (!dayCompletionConfirm) {
       return;
     }
-    const { dayNumber, completed } = dayCompletionConfirm;
+    const { dayNumber, completed, action, sectionId } = dayCompletionConfirm;
     closeDayCompletionConfirm();
+    if (action === 'section' && sectionId) {
+      void toggleSectionCompletion(dayNumber, sectionId, completed);
+      return;
+    }
     void toggleDayCompletion(dayNumber, completed);
-  }, [closeDayCompletionConfirm, dayCompletionConfirm, toggleDayCompletion]);
+  }, [closeDayCompletionConfirm, dayCompletionConfirm, toggleDayCompletion, toggleSectionCompletion]);
 
   const handleDownloadReport = useCallback(async () => {
     if (!thread) {
@@ -1049,10 +1091,10 @@ export default function ChallengeProgressScreen() {
                                     dayProgress?.completed && styles.compactButtonCompleted,
                                     (!canUpdateProgress || dayProgress?.completed) && styles.buttonDisabled,
                                   ]}
-                                  disabled={!canUpdateProgress || dayProgress?.completed || completionUpdatingKey === `day-${day.day_number}`}
-                                  onPress={() => confirmDayCompletion(day.day_number, !Boolean(dayProgress?.completed))}
+                                  disabled={!canUpdateProgress || dayProgress?.completed || completionUpdatingKey === `section-${day.day_number}-${section.id}`}
+                                  onPress={() => confirmSectionDayCompletion(day.day_number, section.id, !Boolean(dayProgress?.completed))}
                                 >
-                                  {completionUpdatingKey === `day-${day.day_number}` ? (
+                                  {completionUpdatingKey === `section-${day.day_number}-${section.id}` ? (
                                     <ActivityIndicator size="small" color={dayProgress?.completed ? '#001311' : Colors.primary} />
                                   ) : (
                                     <Text style={[styles.compactButtonText, dayProgress?.completed && styles.compactButtonTextCompleted]}>
