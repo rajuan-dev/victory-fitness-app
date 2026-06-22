@@ -132,18 +132,27 @@ export default function ChallengeDetailScreen() {
     return map;
   }, [detail?.viewer_plan_progress]);
 
-  const currentCalendarDay = useMemo(() => {
+  const completedDaysCount = detail?.viewer_progress_days_completed || 0;
+  const totalDaysCount = detail?.duration_days || detail?.plan_days.length || 0;
+
+  const elapsedDays = useMemo(() => {
     if (!detail?.started_at) {
-      return detail?.current_day_number || 1;
+      return 0;
     }
     const startDate = new Date(detail.started_at);
     const startLocalDate = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate());
     const today = new Date();
     const todayLocalDate = new Date(today.getFullYear(), today.getMonth(), today.getDate());
     const msDiff = todayLocalDate.getTime() - startLocalDate.getTime();
-    const elapsedDays = Math.floor(msDiff / (1000 * 60 * 60 * 24));
-    return Math.max(1, elapsedDays + 1);
-  }, [detail?.started_at, detail?.current_day_number]);
+    return Math.max(0, Math.floor(msDiff / (1000 * 60 * 60 * 24)));
+  }, [detail?.started_at]);
+
+  const currentCalendarDay = useMemo(() => {
+    if (!detail?.started_at) {
+      return detail?.current_day_number || 1;
+    }
+    return Math.min(Math.max(1, elapsedDays + 1), totalDaysCount || 1);
+  }, [detail?.started_at, detail?.current_day_number, elapsedDays, totalDaysCount]);
 
   const isCurrentDayCompleted = useMemo(() => {
     return Boolean(dayProgressMap.get(currentCalendarDay)?.completed || detail?.completed_today);
@@ -266,9 +275,12 @@ export default function ChallengeDetailScreen() {
   const ctaDisabled = !detail || starting || detail.has_joined || (!detail.can_start && !detail.has_joined);
   const showCompleteToday = Boolean(detail?.has_joined && detail?.viewer_membership_status === 'ACTIVE');
   const completeButtonLabel = isCurrentDayCompleted ? t('Completed Today') : t('Mark Complete');
-  const completedDaysCount = detail?.viewer_progress_days_completed || 0;
-  const totalDaysCount = detail?.duration_days || detail?.plan_days.length || 0;
-  const remainingDaysCount = Math.max(totalDaysCount - completedDaysCount, 0);
+  const remainingDaysCount = useMemo(() => {
+    if (!detail?.started_at) {
+      return Math.max(totalDaysCount - completedDaysCount, 0);
+    }
+    return Math.max(totalDaysCount - elapsedDays, 0);
+  }, [detail?.started_at, totalDaysCount, completedDaysCount, elapsedDays]);
   const openProgressDay = useCallback((dayNumber: number) => {
     if (!challengeId) {
       return;

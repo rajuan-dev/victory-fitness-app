@@ -617,17 +617,18 @@ export default function ChallengeProgressScreen() {
   }, [dayProgressMap, thread]);
 
   const currentCalendarDay = useMemo(() => {
+    const totalDays = thread?.duration_days || thread?.plan_days.length || 1;
     if (!thread?.started_at) {
-      return currentPlanDayNumber || 1;
+      return Math.min(currentPlanDayNumber || 1, totalDays);
     }
     const startDate = new Date(thread.started_at);
     const startLocalDate = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate());
     const today = new Date();
     const todayLocalDate = new Date(today.getFullYear(), today.getMonth(), today.getDate());
     const msDiff = todayLocalDate.getTime() - startLocalDate.getTime();
-    const elapsedDays = Math.floor(msDiff / (1000 * 60 * 60 * 24));
-    return Math.max(1, elapsedDays + 1);
-  }, [thread?.started_at, currentPlanDayNumber]);
+    const elapsedDays = Math.max(0, Math.floor(msDiff / (1000 * 60 * 60 * 24)));
+    return Math.min(Math.max(1, elapsedDays + 1), totalDays);
+  }, [thread?.started_at, currentPlanDayNumber, thread?.duration_days, thread?.plan_days.length]);
 
   const unitPointMap = useMemo(
     () => buildUnitPointMap(thread?.plan_days || [], thread?.points || 0),
@@ -635,15 +636,29 @@ export default function ChallengeProgressScreen() {
   );
 
   const getInitialExpandedDays = useCallback((planDays: ChallengePlanDay[], progressDays: ChallengePlanDayProgress[]) => {
+    const expanded: Record<number, boolean> = {};
     if (requestedDayNumber && planDays.some((day) => day.day_number === requestedDayNumber)) {
-      return { [requestedDayNumber]: true };
+      expanded[requestedDayNumber] = true;
     }
 
-    const nextIncompleteDay = planDays.find(
-      (day) => !progressDays.find((item) => item.day_number === day.day_number)?.completed,
-    );
-    return nextIncompleteDay ? { [nextIncompleteDay.day_number]: true } : {};
-  }, [requestedDayNumber]);
+    for (const day of planDays) {
+      const isCompleted = progressDays.find((item) => item.day_number === day.day_number)?.completed;
+      if (day.day_number <= currentCalendarDay && !isCompleted) {
+        expanded[day.day_number] = true;
+      }
+    }
+
+    if (Object.keys(expanded).length === 0) {
+      const firstIncomplete = planDays.find(
+        (day) => !progressDays.find((item) => item.day_number === day.day_number)?.completed,
+      );
+      if (firstIncomplete) {
+        expanded[firstIncomplete.day_number] = true;
+      }
+    }
+
+    return expanded;
+  }, [requestedDayNumber, currentCalendarDay]);
 
   const loadThread = useCallback(async (showLoader = false) => {
     if (!challengeId) {
@@ -1039,7 +1054,7 @@ export default function ChallengeProgressScreen() {
               {thread.plan_days.map((day) => {
                 const dayProgress = dayProgressMap.get(day.day_number);
                 const isExpanded = Boolean(expandedDays[day.day_number]);
-                const isCurrentDay = currentCalendarDay === day.day_number;
+                const isCurrentDay = currentCalendarDay === day.day_number && !dayProgress?.completed;
                 const isMissed = !dayProgress?.completed && !isCurrentDay && day.day_number < currentCalendarDay;
                 const progressFraction = getDayProgressFraction(day, dayProgress);
                 const dayPoints = getDayPoints(day, unitPointMap);
