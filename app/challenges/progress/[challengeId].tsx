@@ -86,6 +86,13 @@ type ChallengeProgressThread = {
   viewer_plan_progress: ChallengePlanDayProgress[];
 };
 
+type SectionCompletionConfirmState = {
+  dayNumber: number;
+  sectionId: string;
+  sectionTitle: string;
+  completed: boolean;
+};
+
 type UnitPointMap = Record<string, number>;
 type CompletedReportEntry = {
   title: string;
@@ -569,6 +576,7 @@ export default function ChallengeProgressScreen() {
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({});
   const [videoModal, setVideoModal] = useState<{ title: string; videoUrl: string } | null>(null);
   const [dayCompletionConfirm, setDayCompletionConfirm] = useState<{ dayNumber: number; completed: boolean } | null>(null);
+  const [sectionCompletionConfirm, setSectionCompletionConfirm] = useState<SectionCompletionConfirmState | null>(null);
   const [reportAction, setReportAction] = useState<'download' | 'community' | ''>('');
   const [errorDialog, setErrorDialog] = useState<{ title: string; message: string } | null>(null);
 
@@ -776,6 +784,29 @@ export default function ChallengeProgressScreen() {
     void toggleDayCompletion(dayNumber, completed);
   }, [closeDayCompletionConfirm, dayCompletionConfirm, toggleDayCompletion]);
 
+  const confirmSectionCompletion = useCallback((dayNumber: number, sectionId: string, sectionTitle: string, completed: boolean) => {
+    if (!completed) {
+      void toggleSectionCompletion(dayNumber, sectionId, completed);
+      return;
+    }
+    blurFocusedElement();
+    setSectionCompletionConfirm({ dayNumber, sectionId, sectionTitle, completed });
+  }, [blurFocusedElement, toggleSectionCompletion]);
+
+  const closeSectionCompletionConfirm = useCallback(() => {
+    blurFocusedElement();
+    setSectionCompletionConfirm(null);
+  }, [blurFocusedElement]);
+
+  const handleConfirmSectionCompletion = useCallback(() => {
+    if (!sectionCompletionConfirm) {
+      return;
+    }
+    const { dayNumber, sectionId, completed } = sectionCompletionConfirm;
+    closeSectionCompletionConfirm();
+    void toggleSectionCompletion(dayNumber, sectionId, completed);
+  }, [closeSectionCompletionConfirm, sectionCompletionConfirm, toggleSectionCompletion]);
+
   const handleDownloadReport = useCallback(async () => {
     if (!thread) {
       return;
@@ -859,6 +890,30 @@ export default function ChallengeProgressScreen() {
                 <Text style={styles.confirmModalSecondaryText}>Cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity style={styles.confirmModalPrimaryButton} onPress={handleConfirmDayCompletion} activeOpacity={0.85}>
+                <Text style={styles.confirmModalPrimaryText}>Confirm</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+      <Modal
+        visible={Boolean(sectionCompletionConfirm)}
+        transparent
+        animationType="fade"
+        onRequestClose={closeSectionCompletionConfirm}
+      >
+        <View style={styles.confirmModalBackdrop}>
+          <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={closeSectionCompletionConfirm} />
+          <View style={styles.confirmModalCard}>
+            <Text style={styles.confirmModalTitle}>Complete section</Text>
+            <Text style={styles.confirmModalText}>
+              {`Are you sure you want to mark ${sectionCompletionConfirm?.sectionTitle || 'this section'} as complete?`}
+            </Text>
+            <View style={styles.confirmModalActions}>
+              <TouchableOpacity style={styles.confirmModalSecondaryButton} onPress={closeSectionCompletionConfirm} activeOpacity={0.85}>
+                <Text style={styles.confirmModalSecondaryText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.confirmModalPrimaryButton} onPress={handleConfirmSectionCompletion} activeOpacity={0.85}>
                 <Text style={styles.confirmModalPrimaryText}>Confirm</Text>
               </TouchableOpacity>
             </View>
@@ -1073,7 +1128,7 @@ export default function ChallengeProgressScreen() {
                                     (!canUpdateProgress || sectionCompleted) && styles.buttonDisabled,
                                   ]}
                                   disabled={!canUpdateProgress || sectionCompleted || completionUpdatingKey === `section-${day.day_number}-${section.id}`}
-                                  onPress={() => void toggleSectionCompletion(day.day_number, section.id, !sectionCompleted)}
+                                  onPress={() => confirmSectionCompletion(day.day_number, section.id, section.title, !sectionCompleted)}
                                 >
                                   {completionUpdatingKey === `section-${day.day_number}-${section.id}` ? (
                                     <ActivityIndicator size="small" color="#001311" />
