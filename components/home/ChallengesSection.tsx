@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Dimensions, Image, Alert, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Image, Alert, ActivityIndicator, useWindowDimensions } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
@@ -8,8 +8,6 @@ import { apiRequest } from '../../lib/api';
 import { fetchChallengeOverviewData, CHALLENGE_OVERVIEW_CACHE_KEY } from '../../lib/screenData';
 import { getCachedResourceSnapshot } from '../../lib/resourceCache';
 import { useLanguage } from '../../lib/i18n';
-
-const { width } = Dimensions.get('window');
 
 type ActiveChallenge = {
   id: string;
@@ -182,9 +180,9 @@ function ChallengeCard({
   );
 }
 
-function ChallengeSkeletonCard() {
+function ChallengeSkeletonCard({ cardWidth }: { cardWidth: number }) {
   return (
-    <View style={styles.skeletonCard}>
+    <View style={[styles.skeletonCard, { width: cardWidth }]}>
       <View style={styles.skeletonImage} />
       <View style={styles.skeletonHeaderRow}>
         <View style={styles.skeletonTitleBlock} />
@@ -204,6 +202,7 @@ function ChallengeSkeletonCard() {
 export default function ChallengesSection({ refreshToken = 0 }: { refreshToken?: number }) {
   const router = useRouter();
   const { t } = useLanguage();
+  const { width: windowWidth } = useWindowDimensions();
   const cachedOverview = getCachedResourceSnapshot<ChallengeOverview>(CHALLENGE_OVERVIEW_CACHE_KEY);
   const hasCachedCards = Boolean(
     cachedOverview &&
@@ -214,7 +213,9 @@ export default function ChallengesSection({ refreshToken = 0 }: { refreshToken?:
   const [loading, setLoading] = React.useState(!cachedOverview);
   const [loadError, setLoadError] = React.useState('');
   const [joiningId, setJoiningId] = React.useState('');
+  const [sectionWidth, setSectionWidth] = React.useState(0);
   const hasMountedRef = React.useRef(false);
+  const cardWidth = Math.max(sectionWidth || windowWidth - 32, 0);
 
   const loadChallenges = React.useCallback(async (showLoader = true) => {
 
@@ -394,7 +395,13 @@ export default function ChallengesSection({ refreshToken = 0 }: { refreshToken?:
   }, [loadChallenges, refreshToken]);
 
   return (
-    <View style={styles.section}>
+    <View
+      style={styles.section}
+      onLayout={(event) => {
+        const nextWidth = Math.round(event.nativeEvent.layout.width);
+        setSectionWidth((current) => (current === nextWidth ? current : nextWidth));
+      }}
+    >
       <View style={styles.sectionHeader}>
         <Text style={styles.sectionTitle}>{t('CHALLENGES')}</Text>
         <TouchableOpacity style={styles.headerInviteBtn} onPress={() => router.push('/challenge')}>
@@ -411,8 +418,8 @@ export default function ChallengesSection({ refreshToken = 0 }: { refreshToken?:
 
       {loading ? (
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.challengesScroll}>
-          <ChallengeSkeletonCard />
-          <ChallengeSkeletonCard />
+          <ChallengeSkeletonCard cardWidth={cardWidth} />
+          <ChallengeSkeletonCard cardWidth={cardWidth} />
         </ScrollView>
       ) : cards.length === 0 ? (
         <View style={styles.emptyCard}>
@@ -426,12 +433,12 @@ export default function ChallengesSection({ refreshToken = 0 }: { refreshToken?:
           contentContainerStyle={styles.challengesScroll}
           bounces
           alwaysBounceHorizontal
-          snapToInterval={width - 56}
+          snapToInterval={cardWidth + 12}
           decelerationRate="fast"
           snapToAlignment="start"
         >
           {cards.map((card) => (
-            <View key={card.id} style={styles.cardWrap}>
+            <View key={card.id} style={[styles.cardWrap, { width: cardWidth }]}>
               <ChallengeCard {...card} />
             </View>
           ))}
@@ -501,10 +508,8 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   cardWrap: {
-    width: width - 56,
-    paddingHorizontal: 12,
+    paddingRight: 12,
     paddingVertical: 8,
-    marginRight: 4,
   },
   challengeLibraryCard: {
     backgroundColor: '#343B4D',
@@ -702,9 +707,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#343B4D',
     borderRadius: 18,
     padding: 16,
-    width: width - 56,
-    marginRight: 4,
-    marginHorizontal: 12,
+    marginRight: 12,
     marginVertical: 8,
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.05)',

@@ -189,8 +189,21 @@ const COMMUNITY_IMAGE_MAX_SIZE_BYTES = 1 * 1024 * 1024;
 const COMMUNITY_VIDEO_MAX_SIZE_BYTES = 20 * 1024 * 1024;
 
 function inferCommunityMediaType(asset: ImagePicker.ImagePickerAsset): 'image' | 'video' {
+  if (asset.type === 'image') {
+    return 'image';
+  }
+  if (asset.type === 'video') {
+    return 'video';
+  }
+
   const mimeType = String(asset.mimeType || '').trim().toLowerCase();
+  if (mimeType.startsWith('image/')) {
+    return 'image';
+  }
   if (VIDEO_MIME_TYPES.has(mimeType)) {
+    return 'video';
+  }
+  if (mimeType.startsWith('video/')) {
     return 'video';
   }
 
@@ -208,7 +221,7 @@ function inferCommunityMediaType(asset: ImagePicker.ImagePickerAsset): 'image' |
     return 'video';
   }
 
-  return asset.type === 'video' ? 'video' : 'image';
+  return 'image';
 }
 
 function inferCommunityMimeType(asset: ImagePicker.ImagePickerAsset, mediaType: 'image' | 'video'): string {
