@@ -1,9 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Image,
   KeyboardAvoidingView,
+  Modal,
   Platform,
   RefreshControl,
   ScrollView,
@@ -120,6 +120,15 @@ export default function ChallengeDetailScreen() {
   const [sending, setSending] = useState(false);
   const [message, setMessage] = useState('');
   const [errorDialog, setErrorDialog] = useState<{ title: string; message: string } | null>(null);
+  const [completeDayConfirmVisible, setCompleteDayConfirmVisible] = useState(false);
+
+  const dayProgressMap = useMemo(() => {
+    const map = new Map<number, ChallengePlanDayProgress>();
+    for (const progress of detail?.viewer_plan_progress || []) {
+      map.set(progress.day_number, progress);
+    }
+    return map;
+  }, [detail?.viewer_plan_progress]);
 
   const loadDetail = useCallback(async (showLoader = false) => {
     if (!challengeId) {
@@ -200,35 +209,29 @@ export default function ChallengeDetailScreen() {
     if (!challengeId || !detail?.can_complete_today || !detail.current_day_number || completingToday) {
       return;
     }
-    Alert.alert(
-      t('Complete today?'),
-      t('Mark day {day} as complete?', { day: detail.current_day_number }),
-      [
-        { text: t('Cancel'), style: 'cancel' },
-        {
-          text: t('Confirm'),
-          onPress: () => {
-            void (async () => {
-              setCompletingToday(true);
-              try {
-                await apiRequest(
-                  `/challenges/${encodeURIComponent(challengeId)}/complete-today`,
-                  {
-                    method: 'POST',
-                  }
-                );
-                await loadDetail(false);
-              } catch (error) {
-                setErrorDialog(formatAppError(error, t('Unable to complete today right now.')));
-              } finally {
-                setCompletingToday(false);
-              }
-            })();
-          },
-        },
-      ],
-    );
+    setCompleteDayConfirmVisible(true);
   }, [challengeId, completingToday, detail?.can_complete_today, detail?.current_day_number, loadDetail]);
+
+  const confirmCompleteToday = useCallback(async () => {
+    if (!challengeId || !detail?.can_complete_today || !detail.current_day_number || completingToday) {
+      return;
+    }
+    setCompleteDayConfirmVisible(false);
+    setCompletingToday(true);
+    try {
+      await apiRequest(
+        `/challenges/${encodeURIComponent(challengeId)}/current-day/complete`,
+        {
+          method: 'POST',
+        }
+      );
+      await loadDetail(false);
+    } catch (error) {
+      setErrorDialog(formatAppError(error, t('Unable to complete today right now.')));
+    } finally {
+      setCompletingToday(false);
+    }
+  }, [challengeId, completingToday, detail?.can_complete_today, detail?.current_day_number, loadDetail, t]);
 
   const ctaLabel = detail?.viewer_membership_status === 'ACTIVE'
     ? t('In Progress')
@@ -239,6 +242,9 @@ export default function ChallengeDetailScreen() {
   const ctaDisabled = !detail || starting || detail.has_joined || (!detail.can_start && !detail.has_joined);
   const showCompleteToday = Boolean(detail?.has_joined && detail?.viewer_membership_status === 'ACTIVE');
   const completeButtonLabel = detail?.completed_today ? t('Completed Today') : t('Mark Complete');
+  const completedDaysCount = detail?.viewer_progress_days_completed || 0;
+  const totalDaysCount = detail?.duration_days || detail?.plan_days.length || 0;
+  const remainingDaysCount = Math.max(totalDaysCount - completedDaysCount, 0);
 
   if (checkingAccess) {
     return null;
@@ -247,6 +253,30 @@ export default function ChallengeDetailScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <Stack.Screen options={{ headerShown: false }} />
+      <Modal
+        visible={completeDayConfirmVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setCompleteDayConfirmVisible(false)}
+      >
+        <View style={styles.confirmModalBackdrop}>
+          <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={() => setCompleteDayConfirmVisible(false)} />
+          <View style={styles.confirmModalCard}>
+            <Text style={styles.confirmModalTitle}>{t('Complete today?')}</Text>
+            <Text style={styles.confirmModalText}>
+              {t('Mark day {day} as complete?', { day: detail?.current_day_number || 0 })}
+            </Text>
+            <View style={styles.confirmModalActions}>
+              <TouchableOpacity style={styles.confirmModalSecondaryButton} onPress={() => setCompleteDayConfirmVisible(false)} activeOpacity={0.85}>
+                <Text style={styles.confirmModalSecondaryText}>{t('Cancel')}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.confirmModalPrimaryButton} onPress={() => void confirmCompleteToday()} activeOpacity={0.85}>
+                <Text style={styles.confirmModalPrimaryText}>{t('Confirm')}</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
       <View style={styles.header}>
         <Text style={styles.headerTitle}>{t('Challenges')}</Text>
         <Ionicons name="notifications-outline" size={24} color="#E5E7EB" />
@@ -280,6 +310,33 @@ export default function ChallengeDetailScreen() {
                 <View style={styles.heroCard}>
                   <Text style={styles.heroTitle}>{detail.title}</Text>
                   <Text style={styles.heroDescription}>{detail.description}</Text>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.dayStrip}>
+                    {detail.plan_days.map((day) => {
+                      const progress = dayProgressMap.get(day.day_number);
+                      const isCompleted = Boolean(progress?.completed);
+                      const isCurrent = detail.current_day_number === day.day_number && !isCompleted;
+                      return (
+                        <View
+                          key={`detail-day-${day.day_number}`}
+                          style={[
+                            styles.dayChip,
+                            isCompleted && styles.dayChipCompleted,
+                            isCurrent && styles.dayChipCurrent,
+                          ]}
+                        >
+                          <Text
+                            style={[
+                              styles.dayChipText,
+                              isCompleted && styles.dayChipTextCompleted,
+                              isCurrent && styles.dayChipTextCurrent,
+                            ]}
+                          >
+                            {day.day_number}
+                          </Text>
+                        </View>
+                      );
+                    })}
+                  </ScrollView>
                   <View style={styles.quoteWrap}>
                     <View style={styles.quoteBar} />
                     <Text style={styles.quoteText}>"{quoteText}"</Text>
@@ -287,6 +344,20 @@ export default function ChallengeDetailScreen() {
                   <View style={styles.heroDivider} />
                   <View style={styles.heroFooter}>
                     <Text style={styles.pointsText}>+{detail.points} {t('Points')}</Text>
+                    <View style={styles.daySummaryRow}>
+                      <View style={styles.daySummaryCard}>
+                        <Text style={styles.daySummaryValue}>{completedDaysCount}/{Math.max(totalDaysCount, 1)}</Text>
+                        <Text style={styles.daySummaryLabel}>Days done</Text>
+                      </View>
+                      <View style={styles.daySummaryCard}>
+                        <Text style={styles.daySummaryValue}>{remainingDaysCount}</Text>
+                        <Text style={styles.daySummaryLabel}>Days left</Text>
+                      </View>
+                      <View style={styles.daySummaryCard}>
+                        <Text style={styles.daySummaryValue}>{detail.current_day_number || completedDaysCount || 1}</Text>
+                        <Text style={styles.daySummaryLabel}>Current day</Text>
+                      </View>
+                    </View>
                     <View style={styles.heroActions}>
                       {showCompleteToday ? (
                         <TouchableOpacity
@@ -418,6 +489,72 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#123A78' },
   flex: { flex: 1 },
   centered: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  confirmModalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.72)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  confirmModalCard: {
+    width: '100%',
+    maxWidth: 360,
+    backgroundColor: '#101827',
+    borderRadius: 22,
+    paddingHorizontal: 20,
+    paddingTop: 22,
+    paddingBottom: 18,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+  },
+  confirmModalTitle: {
+    color: '#FFF',
+    fontSize: 20,
+    fontFamily: 'Inter_700Bold',
+    textAlign: 'center',
+    marginBottom: 10,
+  },
+  confirmModalText: {
+    color: '#D1D5DB',
+    fontSize: 14,
+    lineHeight: 21,
+    fontFamily: 'Inter_400Regular',
+    textAlign: 'center',
+    marginBottom: 18,
+  },
+  confirmModalActions: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 12,
+  },
+  confirmModalSecondaryButton: {
+    minWidth: 108,
+    minHeight: 44,
+    paddingHorizontal: 16,
+    borderRadius: 14,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.08)',
+  },
+  confirmModalSecondaryText: {
+    color: '#FFF',
+    fontSize: 14,
+    fontFamily: 'Inter_700Bold',
+  },
+  confirmModalPrimaryButton: {
+    minWidth: 108,
+    minHeight: 44,
+    paddingHorizontal: 16,
+    borderRadius: 14,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: Colors.primary,
+  },
+  confirmModalPrimaryText: {
+    color: '#001311',
+    fontSize: 14,
+    fontFamily: 'Inter_700Bold',
+  },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -442,11 +579,63 @@ const styles = StyleSheet.create({
   },
   heroTitle: { color: '#FFF', fontSize: 28, lineHeight: 36, fontFamily: 'Inter_700Bold', marginBottom: 12 },
   heroDescription: { color: '#E5E7EB', fontSize: 16, lineHeight: 24, fontFamily: 'Inter_400Regular', marginBottom: 18 },
+  dayStrip: { gap: 10, paddingBottom: 16 },
+  dayChip: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.16)',
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  dayChipCompleted: {
+    backgroundColor: Colors.primary,
+    borderColor: Colors.primary,
+  },
+  dayChipCurrent: {
+    borderColor: '#F59E0B',
+    backgroundColor: 'rgba(245,158,11,0.18)',
+  },
+  dayChipText: {
+    color: '#E5E7EB',
+    fontSize: 14,
+    fontFamily: 'Inter_700Bold',
+  },
+  dayChipTextCompleted: {
+    color: '#001311',
+  },
+  dayChipTextCurrent: {
+    color: '#FCD34D',
+  },
   quoteWrap: { flexDirection: 'row', gap: 12, marginBottom: 20 },
   quoteBar: { width: 4, borderRadius: 999, backgroundColor: '#FBBF24' },
   quoteText: { flex: 1, color: '#9CA3AF', fontSize: 15, lineHeight: 24, fontStyle: 'italic', fontFamily: 'Inter_400Regular' },
   heroDivider: { height: 1, backgroundColor: 'rgba(255,255,255,0.08)', marginBottom: 18 },
   heroFooter: { gap: 16 },
+  daySummaryRow: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
+  daySummaryCard: {
+    minWidth: 86,
+    borderRadius: 14,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    alignItems: 'center',
+  },
+  daySummaryValue: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontFamily: 'Inter_700Bold',
+  },
+  daySummaryLabel: {
+    color: '#C7D2FE',
+    fontSize: 10,
+    fontFamily: 'Inter_600SemiBold',
+    marginTop: 3,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
   heroActions: { flexDirection: 'row', alignItems: 'center', gap: 10, width: '100%' },
   pointsText: { color: '#FBBF24', fontSize: 18, fontFamily: 'Inter_700Bold' },
   primaryButton: {
