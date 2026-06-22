@@ -31,7 +31,7 @@ import {
   fetchCommunityPostsData,
 } from '../../lib/screenData';
 import { useModuleAccessGuard } from '../../lib/useModuleAccessGuard';
-import { replaceRoute } from '../../lib/navigation';
+import { pushRoute, replaceRoute } from '../../lib/navigation';
 
 const { width } = Dimensions.get('window');
 
@@ -185,11 +185,25 @@ const COMMUNITY_VIDEO_UPLOAD_MIME_TYPES = new Set([
 ]);
 
 const VIDEO_FILE_EXTENSIONS = ['.mp4', '.mov', '.m4v', '.webm', '.ogg'];
-const COMMUNITY_VIDEO_MAX_SIZE_BYTES = 25 * 1024 * 1024;
+const COMMUNITY_IMAGE_MAX_SIZE_BYTES = 1 * 1024 * 1024;
+const COMMUNITY_VIDEO_MAX_SIZE_BYTES = 20 * 1024 * 1024;
 
 function inferCommunityMediaType(asset: ImagePicker.ImagePickerAsset): 'image' | 'video' {
+  if (asset.type === 'image') {
+    return 'image';
+  }
+  if (asset.type === 'video') {
+    return 'video';
+  }
+
   const mimeType = String(asset.mimeType || '').trim().toLowerCase();
+  if (mimeType.startsWith('image/')) {
+    return 'image';
+  }
   if (VIDEO_MIME_TYPES.has(mimeType)) {
+    return 'video';
+  }
+  if (mimeType.startsWith('video/')) {
     return 'video';
   }
 
@@ -207,7 +221,7 @@ function inferCommunityMediaType(asset: ImagePicker.ImagePickerAsset): 'image' |
     return 'video';
   }
 
-  return asset.type === 'video' ? 'video' : 'image';
+  return 'image';
 }
 
 function inferCommunityMimeType(asset: ImagePicker.ImagePickerAsset, mediaType: 'image' | 'video'): string {
@@ -238,6 +252,12 @@ function getCommunityUploadName(asset: ImagePicker.ImagePickerAsset, mediaType: 
     return fileName;
   }
   return mediaType === 'video' ? 'community-video.mp4' : 'community-image.jpg';
+}
+
+function getCommunityMediaSizeBytes(asset: ImagePicker.ImagePickerAsset) {
+  const fileSize = Number((asset as { fileSize?: number | null }).fileSize ?? 0) || 0;
+  const fileObjectSize = Number((asset.file as { size?: number } | undefined)?.size ?? 0) || 0;
+  return Math.max(fileSize, fileObjectSize);
 }
 
 function buildCommunityUploadFormData(params: {
@@ -1022,10 +1042,15 @@ export default function ChallengesScreen() {
       const asset = result.assets[0];
       const assetType = inferCommunityMediaType(asset);
       const assetMimeType = inferCommunityMimeType(asset, assetType);
-      const assetSize = Number((asset as { fileSize?: number | null }).fileSize ?? 0) || 0;
+      const assetSize = getCommunityMediaSizeBytes(asset);
+
+      if (assetType === 'image' && assetSize > COMMUNITY_IMAGE_MAX_SIZE_BYTES) {
+        Alert.alert(t('Image too large'), t('Please choose an image that is 1MB or smaller.'));
+        return;
+      }
 
       if (assetType === 'video' && assetSize > COMMUNITY_VIDEO_MAX_SIZE_BYTES) {
-        Alert.alert(t('Video too large'), t('Please choose a video that is 25MB or smaller.'));
+        Alert.alert(t('Video too large'), t('Please choose a video that is 20MB or smaller.'));
         return;
       }
 
@@ -1199,7 +1224,7 @@ export default function ChallengesScreen() {
   };
 
   const handleInviteChallenge = (challenge: ReadyChallenge) => {
-    router.push({
+    pushRoute(router, {
       pathname: '/challenge',
       params: {
         tab: 'COMMUNITY',
@@ -1374,7 +1399,7 @@ export default function ChallengesScreen() {
                     key={ch.id}
                     style={styles.activeCard}
                     activeOpacity={0.88}
-                    onPress={() => router.push(`/challenges/progress/${ch.challenge_id}` as any)}
+                    onPress={() => pushRoute(router, `/challenges/progress/${ch.challenge_id}` as any)}
                   >
                     <View style={styles.activeCardTop}>
                       <View style={[styles.activeColorDot, { backgroundColor: ch.color }]} />

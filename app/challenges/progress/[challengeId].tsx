@@ -1,8 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Modal,
+  Platform,
   RefreshControl,
   ScrollView,
   Share,
@@ -84,6 +84,13 @@ type ChallengeProgressThread = {
   viewer_progress_days_completed: number;
   viewer_points_earned: number;
   viewer_plan_progress: ChallengePlanDayProgress[];
+};
+
+type CompletionConfirmState = {
+  dayNumber: number;
+  completed: boolean;
+  action: 'day' | 'section';
+  sectionId?: string;
 };
 
 type UnitPointMap = Record<string, number>;
@@ -568,8 +575,19 @@ export default function ChallengeProgressScreen() {
   const [expandedDays, setExpandedDays] = useState<Record<number, boolean>>({});
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({});
   const [videoModal, setVideoModal] = useState<{ title: string; videoUrl: string } | null>(null);
+  const [dayCompletionConfirm, setDayCompletionConfirm] = useState<CompletionConfirmState | null>(null);
   const [reportAction, setReportAction] = useState<'download' | 'community' | ''>('');
   const [errorDialog, setErrorDialog] = useState<{ title: string; message: string } | null>(null);
+
+  const blurFocusedElement = useCallback(() => {
+    if (Platform.OS !== 'web') {
+      return;
+    }
+    const activeElement = globalThis.document?.activeElement as { blur?: () => void } | null | undefined;
+    if (activeElement && typeof activeElement.blur === 'function') {
+      activeElement.blur();
+    }
+  }, []);
 
   const canUpdateProgress = useMemo(
     () => Boolean(thread && thread.viewer_membership_status === 'ACTIVE' && thread.status === 'ACTIVE'),
@@ -714,7 +732,7 @@ export default function ChallengeProgressScreen() {
       );
       applyPlanProgress(response);
     } catch (error) {
-      setErrorDialog(formatAppError(error, 'Failed to update section completion.'));
+      setErrorDialog(formatAppError(error, 'Failed to update day completion.'));
     } finally {
       setCompletionUpdatingKey('');
     }
@@ -747,21 +765,36 @@ export default function ChallengeProgressScreen() {
       void toggleDayCompletion(dayNumber, completed);
       return;
     }
+    blurFocusedElement();
+    setDayCompletionConfirm({ dayNumber, completed, action: 'day' });
+  }, [blurFocusedElement, toggleDayCompletion]);
 
-    Alert.alert(
-      'Mark day done',
-      `Are you sure you want to mark day ${dayNumber} as complete?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Confirm',
-          onPress: () => {
-            void toggleDayCompletion(dayNumber, completed);
-          },
-        },
-      ],
-    );
-  }, [toggleDayCompletion]);
+  const confirmSectionDayCompletion = useCallback((dayNumber: number, sectionId: string, completed: boolean) => {
+    if (!completed) {
+      void toggleSectionCompletion(dayNumber, sectionId, completed);
+      return;
+    }
+    blurFocusedElement();
+    setDayCompletionConfirm({ dayNumber, completed, action: 'section', sectionId });
+  }, [blurFocusedElement, toggleSectionCompletion]);
+
+  const closeDayCompletionConfirm = useCallback(() => {
+    blurFocusedElement();
+    setDayCompletionConfirm(null);
+  }, [blurFocusedElement]);
+
+  const handleConfirmDayCompletion = useCallback(() => {
+    if (!dayCompletionConfirm) {
+      return;
+    }
+    const { dayNumber, completed, action, sectionId } = dayCompletionConfirm;
+    closeDayCompletionConfirm();
+    if (action === 'section' && sectionId) {
+      void toggleSectionCompletion(dayNumber, sectionId, completed);
+      return;
+    }
+    void toggleDayCompletion(dayNumber, completed);
+  }, [closeDayCompletionConfirm, dayCompletionConfirm, toggleDayCompletion, toggleSectionCompletion]);
 
   const handleDownloadReport = useCallback(async () => {
     if (!thread) {
@@ -828,6 +861,30 @@ export default function ChallengeProgressScreen() {
         message={errorDialog?.message ?? ''}
         onClose={() => setErrorDialog(null)}
       />
+      <Modal
+        visible={Boolean(dayCompletionConfirm)}
+        transparent
+        animationType="fade"
+        onRequestClose={closeDayCompletionConfirm}
+      >
+        <View style={styles.confirmModalBackdrop}>
+          <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={closeDayCompletionConfirm} />
+          <View style={styles.confirmModalCard}>
+            <Text style={styles.confirmModalTitle}>Mark day done</Text>
+            <Text style={styles.confirmModalText}>
+              {`Are you sure you want to mark day ${dayCompletionConfirm?.dayNumber || ''} as complete?`}
+            </Text>
+            <View style={styles.confirmModalActions}>
+              <TouchableOpacity style={styles.confirmModalSecondaryButton} onPress={closeDayCompletionConfirm} activeOpacity={0.85}>
+                <Text style={styles.confirmModalSecondaryText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.confirmModalPrimaryButton} onPress={handleConfirmDayCompletion} activeOpacity={0.85}>
+                <Text style={styles.confirmModalPrimaryText}>Confirm</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
       <Modal
         visible={Boolean(videoModal)}
         animationType="slide"
@@ -938,7 +995,7 @@ export default function ChallengeProgressScreen() {
 
             <View style={styles.legendCard}>
               <Text style={styles.legendTitle}>Daily Progress</Text>
-              <Text style={styles.legendText}>Tap a day row or the arrow to open its sections. Tap a section row to open exercises and mark each one complete.</Text>
+              <Text style={styles.legendText}>Tap a day row or the arrow to open its sections. Using the section button will mark that full day complete for your progress.</Text>
             </View>
 
             <View style={styles.dayList}>
@@ -1004,7 +1061,6 @@ export default function ChallengeProgressScreen() {
                           const sectionCompleted = Boolean(completedSectionIds.includes(section.id));
                           const completedCount = sectionCompleted ? section.exercises.length : getSectionCompletedCount(section, completedExerciseIds);
                           const totalCount = section.exercises.length;
-
                           return (
                             <View key={section.id} style={[styles.sectionCard, sectionCompleted && styles.sectionCardCompleted]}>
                               <TouchableOpacity style={styles.sectionRow} activeOpacity={0.88} onPress={() => toggleSectionExpanded(sectionKey)}>
@@ -1032,17 +1088,17 @@ export default function ChallengeProgressScreen() {
                                 <TouchableOpacity
                                   style={[
                                     styles.compactButton,
-                                    sectionCompleted && styles.compactButtonCompleted,
-                                    (!canUpdateProgress || sectionCompleted) && styles.buttonDisabled,
+                                    dayProgress?.completed && styles.compactButtonCompleted,
+                                    (!canUpdateProgress || dayProgress?.completed) && styles.buttonDisabled,
                                   ]}
-                                  disabled={!canUpdateProgress || sectionCompleted || completionUpdatingKey === `section-${day.day_number}-${section.id}`}
-                                  onPress={() => void toggleSectionCompletion(day.day_number, section.id, !sectionCompleted)}
+                                  disabled={!canUpdateProgress || dayProgress?.completed || completionUpdatingKey === `section-${day.day_number}-${section.id}`}
+                                  onPress={() => confirmSectionDayCompletion(day.day_number, section.id, !Boolean(dayProgress?.completed))}
                                 >
                                   {completionUpdatingKey === `section-${day.day_number}-${section.id}` ? (
-                                    <ActivityIndicator size="small" color="#001311" />
+                                    <ActivityIndicator size="small" color={dayProgress?.completed ? '#001311' : Colors.primary} />
                                   ) : (
-                                    <Text style={[styles.compactButtonText, sectionCompleted && styles.compactButtonTextCompleted]}>
-                                      {sectionCompleted ? 'Completed' : 'Complete section'}
+                                    <Text style={[styles.compactButtonText, dayProgress?.completed && styles.compactButtonTextCompleted]}>
+                                      {dayProgress?.completed ? 'Day completed' : 'Complete day'}
                                     </Text>
                                   )}
                                 </TouchableOpacity>
@@ -1143,6 +1199,72 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.background },
   flex: { flex: 1 },
   centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  confirmModalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.72)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  confirmModalCard: {
+    width: '100%',
+    maxWidth: 360,
+    backgroundColor: '#101827',
+    borderRadius: 22,
+    paddingHorizontal: 20,
+    paddingTop: 22,
+    paddingBottom: 18,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+  },
+  confirmModalTitle: {
+    color: Colors.text,
+    fontSize: 20,
+    fontFamily: 'Inter_700Bold',
+    textAlign: 'center',
+    marginBottom: 10,
+  },
+  confirmModalText: {
+    color: Colors.textSecondary,
+    fontSize: 14,
+    lineHeight: 21,
+    fontFamily: 'Inter_400Regular',
+    textAlign: 'center',
+    marginBottom: 18,
+  },
+  confirmModalActions: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 12,
+  },
+  confirmModalSecondaryButton: {
+    minWidth: 108,
+    minHeight: 44,
+    paddingHorizontal: 16,
+    borderRadius: 14,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.08)',
+  },
+  confirmModalSecondaryText: {
+    color: Colors.text,
+    fontSize: 14,
+    fontFamily: 'Inter_700Bold',
+  },
+  confirmModalPrimaryButton: {
+    minWidth: 108,
+    minHeight: 44,
+    paddingHorizontal: 16,
+    borderRadius: 14,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: Colors.primary,
+  },
+  confirmModalPrimaryText: {
+    color: '#001311',
+    fontSize: 14,
+    fontFamily: 'Inter_700Bold',
+  },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
