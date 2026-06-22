@@ -1,8 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Modal,
+  Platform,
   RefreshControl,
   ScrollView,
   Share,
@@ -568,8 +568,19 @@ export default function ChallengeProgressScreen() {
   const [expandedDays, setExpandedDays] = useState<Record<number, boolean>>({});
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({});
   const [videoModal, setVideoModal] = useState<{ title: string; videoUrl: string } | null>(null);
+  const [dayCompletionConfirm, setDayCompletionConfirm] = useState<{ dayNumber: number; completed: boolean } | null>(null);
   const [reportAction, setReportAction] = useState<'download' | 'community' | ''>('');
   const [errorDialog, setErrorDialog] = useState<{ title: string; message: string } | null>(null);
+
+  const blurFocusedElement = useCallback(() => {
+    if (Platform.OS !== 'web') {
+      return;
+    }
+    const activeElement = globalThis.document?.activeElement as { blur?: () => void } | null | undefined;
+    if (activeElement && typeof activeElement.blur === 'function') {
+      activeElement.blur();
+    }
+  }, []);
 
   const canUpdateProgress = useMemo(
     () => Boolean(thread && thread.viewer_membership_status === 'ACTIVE' && thread.status === 'ACTIVE'),
@@ -747,21 +758,23 @@ export default function ChallengeProgressScreen() {
       void toggleDayCompletion(dayNumber, completed);
       return;
     }
+    blurFocusedElement();
+    setDayCompletionConfirm({ dayNumber, completed });
+  }, [blurFocusedElement, toggleDayCompletion]);
 
-    Alert.alert(
-      'Mark day done',
-      `Are you sure you want to mark day ${dayNumber} as complete?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Confirm',
-          onPress: () => {
-            void toggleDayCompletion(dayNumber, completed);
-          },
-        },
-      ],
-    );
-  }, [toggleDayCompletion]);
+  const closeDayCompletionConfirm = useCallback(() => {
+    blurFocusedElement();
+    setDayCompletionConfirm(null);
+  }, [blurFocusedElement]);
+
+  const handleConfirmDayCompletion = useCallback(() => {
+    if (!dayCompletionConfirm) {
+      return;
+    }
+    const { dayNumber, completed } = dayCompletionConfirm;
+    closeDayCompletionConfirm();
+    void toggleDayCompletion(dayNumber, completed);
+  }, [closeDayCompletionConfirm, dayCompletionConfirm, toggleDayCompletion]);
 
   const handleDownloadReport = useCallback(async () => {
     if (!thread) {
@@ -828,6 +841,30 @@ export default function ChallengeProgressScreen() {
         message={errorDialog?.message ?? ''}
         onClose={() => setErrorDialog(null)}
       />
+      <Modal
+        visible={Boolean(dayCompletionConfirm)}
+        transparent
+        animationType="fade"
+        onRequestClose={closeDayCompletionConfirm}
+      >
+        <View style={styles.confirmModalBackdrop}>
+          <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={closeDayCompletionConfirm} />
+          <View style={styles.confirmModalCard}>
+            <Text style={styles.confirmModalTitle}>Mark day done</Text>
+            <Text style={styles.confirmModalText}>
+              {`Are you sure you want to mark day ${dayCompletionConfirm?.dayNumber || ''} as complete?`}
+            </Text>
+            <View style={styles.confirmModalActions}>
+              <TouchableOpacity style={styles.confirmModalSecondaryButton} onPress={closeDayCompletionConfirm} activeOpacity={0.85}>
+                <Text style={styles.confirmModalSecondaryText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.confirmModalPrimaryButton} onPress={handleConfirmDayCompletion} activeOpacity={0.85}>
+                <Text style={styles.confirmModalPrimaryText}>Confirm</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
       <Modal
         visible={Boolean(videoModal)}
         animationType="slide"
@@ -1143,6 +1180,72 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.background },
   flex: { flex: 1 },
   centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  confirmModalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.72)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  confirmModalCard: {
+    width: '100%',
+    maxWidth: 360,
+    backgroundColor: '#101827',
+    borderRadius: 22,
+    paddingHorizontal: 20,
+    paddingTop: 22,
+    paddingBottom: 18,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+  },
+  confirmModalTitle: {
+    color: Colors.text,
+    fontSize: 20,
+    fontFamily: 'Inter_700Bold',
+    textAlign: 'center',
+    marginBottom: 10,
+  },
+  confirmModalText: {
+    color: Colors.textSecondary,
+    fontSize: 14,
+    lineHeight: 21,
+    fontFamily: 'Inter_400Regular',
+    textAlign: 'center',
+    marginBottom: 18,
+  },
+  confirmModalActions: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 12,
+  },
+  confirmModalSecondaryButton: {
+    minWidth: 108,
+    minHeight: 44,
+    paddingHorizontal: 16,
+    borderRadius: 14,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.08)',
+  },
+  confirmModalSecondaryText: {
+    color: Colors.text,
+    fontSize: 14,
+    fontFamily: 'Inter_700Bold',
+  },
+  confirmModalPrimaryButton: {
+    minWidth: 108,
+    minHeight: 44,
+    paddingHorizontal: 16,
+    borderRadius: 14,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: Colors.primary,
+  },
+  confirmModalPrimaryText: {
+    color: '#001311',
+    fontSize: 14,
+    fontFamily: 'Inter_700Bold',
+  },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
