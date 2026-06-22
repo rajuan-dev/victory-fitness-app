@@ -8,6 +8,7 @@ import { apiRequest } from '../../lib/api';
 import { fetchChallengeOverviewData, CHALLENGE_OVERVIEW_CACHE_KEY } from '../../lib/screenData';
 import { getCachedResourceSnapshot } from '../../lib/resourceCache';
 import { useLanguage } from '../../lib/i18n';
+import { pushRoute } from '../../lib/navigation';
 
 type ActiveChallenge = {
   id: string;
@@ -243,8 +244,8 @@ export default function ChallengesSection({ refreshToken = 0 }: { refreshToken?:
         progress: challenge.progress,
         daysLeftLabel: `${challenge.days_left} days left`,
         isJoining: false,
-        onPrimaryPress: () => router.push(`/challenges/progress/${challenge.challenge_id}` as any),
-        onSecondaryPress: () => router.push(`/challenges/chat/${challenge.challenge_id}` as any),
+        onPrimaryPress: () => pushRoute(router, `/challenges/progress/${challenge.challenge_id}` as any),
+        onSecondaryPress: () => pushRoute(router, `/challenges/chat/${challenge.challenge_id}` as any),
       }));
 
       const readyCards: HomeChallengeCard[] = readyChallenges.map((challenge) => ({
@@ -278,7 +279,7 @@ export default function ChallengesSection({ refreshToken = 0 }: { refreshToken?:
           }
         },
         onSecondaryPress: () =>
-          router.push({
+          pushRoute(router, {
             pathname: '/challenge',
             params: {
               tab: 'COMMUNITY',
@@ -331,8 +332,8 @@ export default function ChallengesSection({ refreshToken = 0 }: { refreshToken?:
       progress: challenge.progress,
       daysLeftLabel: `${challenge.days_left} days left`,
       isJoining: false,
-      onPrimaryPress: () => router.push(`/challenges/progress/${challenge.challenge_id}` as any),
-      onSecondaryPress: () => router.push(`/challenges/chat/${challenge.challenge_id}` as any),
+      onPrimaryPress: () => pushRoute(router, `/challenges/progress/${challenge.challenge_id}` as any),
+      onSecondaryPress: () => pushRoute(router, `/challenges/chat/${challenge.challenge_id}` as any),
     }));
 
     const readyCards: HomeChallengeCard[] = readyChallenges.map((challenge) => ({
@@ -366,7 +367,7 @@ export default function ChallengesSection({ refreshToken = 0 }: { refreshToken?:
         }
       },
       onSecondaryPress: () =>
-        router.push({
+        pushRoute(router, {
           pathname: '/challenge',
           params: {
             tab: 'COMMUNITY',

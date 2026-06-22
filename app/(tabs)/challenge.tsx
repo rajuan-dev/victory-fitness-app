@@ -31,7 +31,7 @@ import {
   fetchCommunityPostsData,
 } from '../../lib/screenData';
 import { useModuleAccessGuard } from '../../lib/useModuleAccessGuard';
-import { replaceRoute } from '../../lib/navigation';
+import { pushRoute, replaceRoute } from '../../lib/navigation';
 
 const { width } = Dimensions.get('window');
 
@@ -1224,7 +1224,7 @@ export default function ChallengesScreen() {
   };
 
   const handleInviteChallenge = (challenge: ReadyChallenge) => {
-    router.push({
+    pushRoute(router, {
       pathname: '/challenge',
       params: {
         tab: 'COMMUNITY',
@@ -1399,7 +1399,7 @@ export default function ChallengesScreen() {
                     key={ch.id}
                     style={styles.activeCard}
                     activeOpacity={0.88}
-                    onPress={() => router.push(`/challenges/progress/${ch.challenge_id}` as any)}
+                    onPress={() => pushRoute(router, `/challenges/progress/${ch.challenge_id}` as any)}
                   >
                     <View style={styles.activeCardTop}>
                       <View style={[styles.activeColorDot, { backgroundColor: ch.color }]} />
