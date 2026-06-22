@@ -21,6 +21,7 @@ import { apiRequest } from '../../lib/api';
 import { ErrorPopupModal } from '../../components/ErrorPopupModal';
 import { formatAppError } from '../../lib/error';
 import { useLanguage } from '../../lib/i18n';
+import { pushRoute } from '../../lib/navigation';
 import { getCachedResourceSnapshot } from '../../lib/resourceCache';
 import { fetchChallengeDetailData, getChallengeDetailCacheKey } from '../../lib/screenData';
 import { useModuleAccessGuard } from '../../lib/useModuleAccessGuard';
@@ -245,6 +246,19 @@ export default function ChallengeDetailScreen() {
   const completedDaysCount = detail?.viewer_progress_days_completed || 0;
   const totalDaysCount = detail?.duration_days || detail?.plan_days.length || 0;
   const remainingDaysCount = Math.max(totalDaysCount - completedDaysCount, 0);
+  const openProgressDay = useCallback((dayNumber: number) => {
+    if (!challengeId) {
+      return;
+    }
+
+    pushRoute(router, {
+      pathname: '/challenges/progress/[challengeId]',
+      params: {
+        challengeId,
+        day: String(dayNumber),
+      },
+    });
+  }, [challengeId, router]);
 
   if (checkingAccess) {
     return null;
@@ -321,8 +335,12 @@ export default function ChallengeDetailScreen() {
                         Boolean(detail.current_day_number) &&
                         day.day_number < (detail.current_day_number || 0);
                       return (
-                        <View
+                        <TouchableOpacity
                           key={`detail-day-${day.day_number}`}
+                          activeOpacity={0.85}
+                          accessibilityRole="button"
+                          accessibilityLabel={t('Open day {day} progress', { day: day.day_number })}
+                          onPress={() => openProgressDay(day.day_number)}
                           style={[
                             styles.dayChip,
                             isCompleted && styles.dayChipCompleted,
@@ -340,7 +358,7 @@ export default function ChallengeDetailScreen() {
                           >
                             {day.day_number}
                           </Text>
-                        </View>
+                        </TouchableOpacity>
                       );
                     })}
                   </ScrollView>

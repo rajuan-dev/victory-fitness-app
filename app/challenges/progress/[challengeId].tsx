@@ -564,8 +564,13 @@ async function buildChallengeProgressReportAsset(challengeId: string) {
 
 export default function ChallengeProgressScreen() {
   const router = useRouter();
-  const params = useLocalSearchParams<{ challengeId?: string }>();
+  const params = useLocalSearchParams<{ challengeId?: string; day?: string }>();
   const challengeId = Array.isArray(params.challengeId) ? params.challengeId[0] : params.challengeId;
+  const requestedDayParam = Array.isArray(params.day) ? params.day[0] : params.day;
+  const requestedDayNumber = useMemo(() => {
+    const parsed = Number(requestedDayParam);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+  }, [requestedDayParam]);
   const cachedThread = challengeId ? getCachedResourceSnapshot<ChallengeProgressThread>(getChallengeProgressCacheKey(challengeId)) : null;
 
   const [thread, setThread] = useState<ChallengeProgressThread | null>(cachedThread ?? null);
@@ -615,6 +620,17 @@ export default function ChallengeProgressScreen() {
     [thread?.plan_days, thread?.points],
   );
 
+  const getInitialExpandedDays = useCallback((planDays: ChallengePlanDay[], progressDays: ChallengePlanDayProgress[]) => {
+    if (requestedDayNumber && planDays.some((day) => day.day_number === requestedDayNumber)) {
+      return { [requestedDayNumber]: true };
+    }
+
+    const nextIncompleteDay = planDays.find(
+      (day) => !progressDays.find((item) => item.day_number === day.day_number)?.completed,
+    );
+    return nextIncompleteDay ? { [nextIncompleteDay.day_number]: true } : {};
+  }, [requestedDayNumber]);
+
   const loadThread = useCallback(async (showLoader = false) => {
     if (!challengeId) {
       return;
@@ -633,8 +649,7 @@ export default function ChallengeProgressScreen() {
         if (Object.keys(current).length > 0) {
           return current;
         }
-        const nextIncompleteDay = response.plan_days.find((day) => !response.viewer_plan_progress.find((item) => item.day_number === day.day_number)?.completed);
-        return nextIncompleteDay ? { [nextIncompleteDay.day_number]: true } : {};
+        return getInitialExpandedDays(response.plan_days, response.viewer_plan_progress);
       });
     } catch (error) {
       setErrorDialog(formatAppError(error, 'Failed to load challenge progress.'));
@@ -642,7 +657,15 @@ export default function ChallengeProgressScreen() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [cachedThread, challengeId]);
+  }, [cachedThread, challengeId, getInitialExpandedDays]);
+
+  useEffect(() => {
+    if (!thread) {
+      return;
+    }
+
+    setExpandedDays(getInitialExpandedDays(thread.plan_days, thread.viewer_plan_progress));
+  }, [getInitialExpandedDays, thread]);
 
   useEffect(() => {
     void loadThread(true);
