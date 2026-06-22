@@ -84,6 +84,7 @@ type ChallengeProgressThread = {
   viewer_progress_days_completed: number;
   viewer_points_earned: number;
   viewer_plan_progress: ChallengePlanDayProgress[];
+  started_at?: string;
 };
 
 type CompletionConfirmState = {
@@ -615,6 +616,19 @@ export default function ChallengeProgressScreen() {
     return nextIncompleteDay?.day_number ?? null;
   }, [dayProgressMap, thread]);
 
+  const currentCalendarDay = useMemo(() => {
+    if (!thread?.started_at) {
+      return currentPlanDayNumber || 1;
+    }
+    const startDate = new Date(thread.started_at);
+    const startLocalDate = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate());
+    const today = new Date();
+    const todayLocalDate = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    const msDiff = todayLocalDate.getTime() - startLocalDate.getTime();
+    const elapsedDays = Math.floor(msDiff / (1000 * 60 * 60 * 24));
+    return Math.max(1, elapsedDays + 1);
+  }, [thread?.started_at, currentPlanDayNumber]);
+
   const unitPointMap = useMemo(
     () => buildUnitPointMap(thread?.plan_days || [], thread?.points || 0),
     [thread?.plan_days, thread?.points],
@@ -937,7 +951,7 @@ export default function ChallengeProgressScreen() {
                   allowsInlineMediaPlayback
                   setSupportMultipleWindows={false}
                   javaScriptCanOpenWindowsAutomatically={false}
-                  onShouldStartLoadWithRequest={(request) => isAllowedWorkoutPlayerRequest(request.url)}
+                  onShouldStartLoadWithRequest={(request: any) => isAllowedWorkoutPlayerRequest(request.url)}
                   startInLoadingState
                   renderLoading={() => (
                     <View style={styles.videoModalLoadingWrap}>
@@ -1025,7 +1039,8 @@ export default function ChallengeProgressScreen() {
               {thread.plan_days.map((day) => {
                 const dayProgress = dayProgressMap.get(day.day_number);
                 const isExpanded = Boolean(expandedDays[day.day_number]);
-                const isCurrentDay = currentPlanDayNumber === day.day_number;
+                const isCurrentDay = currentCalendarDay === day.day_number;
+                const isMissed = !dayProgress?.completed && !isCurrentDay && day.day_number < currentCalendarDay;
                 const progressFraction = getDayProgressFraction(day, dayProgress);
                 const dayPoints = getDayPoints(day, unitPointMap);
                 const completedExerciseIds = Array.isArray(dayProgress?.completed_exercise_ids) ? dayProgress.completed_exercise_ids : [];
@@ -1040,11 +1055,24 @@ export default function ChallengeProgressScreen() {
                 const allSectionsCompleted = day.sections.every((section) => completedSectionIds.includes(section.id));
 
                 return (
-                  <View key={`day-${day.day_number}`} style={[styles.dayCard, dayProgress?.completed && styles.dayCardCompleted]}>
+                  <View key={`day-${day.day_number}`} style={[
+                    styles.dayCard,
+                    dayProgress?.completed && styles.dayCardCompleted,
+                    isMissed && styles.dayCardMissed,
+                  ]}>
                     <TouchableOpacity style={styles.dayRow} activeOpacity={0.88} onPress={() => toggleDayExpanded(day.day_number)}>
                       <View style={styles.dayLeft}>
-                        <View style={[styles.dayNumberBadge, isCurrentDay && styles.dayNumberBadgeCurrent, dayProgress?.completed && styles.dayNumberBadgeCompleted]}>
-                          <Text style={[styles.dayNumberText, dayProgress?.completed && styles.dayNumberTextCompleted]}>D{day.day_number}</Text>
+                        <View style={[
+                          styles.dayNumberBadge,
+                          isCurrentDay && styles.dayNumberBadgeCurrent,
+                          dayProgress?.completed && styles.dayNumberBadgeCompleted,
+                          isMissed && styles.dayNumberBadgeMissed,
+                        ]}>
+                          <Text style={[
+                            styles.dayNumberText,
+                            dayProgress?.completed && styles.dayNumberTextCompleted,
+                            isMissed && styles.dayNumberTextMissed,
+                          ]}>D{day.day_number}</Text>
                         </View>
                         <View style={styles.dayTextWrap}>
                           <Text style={styles.dayTitle}>{day.title}</Text>
@@ -1068,6 +1096,7 @@ export default function ChallengeProgressScreen() {
                         {dayExerciseCount > 0 ? `${completedExerciseCount}/${dayExerciseCount} exercises completed` : `${day.sections.length} sections`}
                       </Text>
                       {isCurrentDay && !dayProgress?.completed ? <Text style={styles.dayCurrentLabel}>Today</Text> : null}
+                      {isMissed ? <Text style={styles.dayMissedLabel}>Missed</Text> : null}
                     </View>
 
                     {isExpanded ? (
@@ -1419,6 +1448,21 @@ const styles = StyleSheet.create({
   dayCardCompleted: {
     backgroundColor: '#0E1A16',
     borderColor: 'rgba(34,197,94,0.24)',
+  },
+  dayCardMissed: {
+    backgroundColor: 'rgba(239, 68, 68, 0.05)',
+    borderColor: 'rgba(239, 68, 68, 0.24)',
+  },
+  dayNumberBadgeMissed: {
+    backgroundColor: '#EF4444',
+  },
+  dayNumberTextMissed: {
+    color: '#FFF',
+  },
+  dayMissedLabel: {
+    color: '#EF4444',
+    fontSize: 11,
+    fontFamily: 'Inter_700Bold',
   },
   dayRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 12 },
   dayLeft: { flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 },

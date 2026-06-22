@@ -1389,7 +1389,7 @@ export default function JournalScreen() {
       toValue: 1,
       duration: 220,
       easing: Easing.out(Easing.back(1.4)),
-      useNativeDriver,
+      useNativeDriver: true,
     }).start();
 
     const playSuccessSound = async () => {

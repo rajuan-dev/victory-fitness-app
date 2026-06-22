@@ -246,7 +246,7 @@ function inferCommunityMimeType(asset: ImagePicker.ImagePickerAsset, mediaType: 
   return 'image/jpeg';
 }
 
-function getCommunityUploadName(asset: ImagePicker.ImagePickerAsset, mediaType: 'image' | 'video') {
+function getCommunityUploadName(asset: any, mediaType: 'image' | 'video') {
   const fileName = String(asset.fileName || '').trim();
   if (fileName) {
     return fileName;
@@ -254,7 +254,7 @@ function getCommunityUploadName(asset: ImagePicker.ImagePickerAsset, mediaType: 
   return mediaType === 'video' ? 'community-video.mp4' : 'community-image.jpg';
 }
 
-function getCommunityMediaSizeBytes(asset: ImagePicker.ImagePickerAsset) {
+function getCommunityMediaSizeBytes(asset: any) {
   const fileSize = Number((asset as { fileSize?: number | null }).fileSize ?? 0) || 0;
   const fileObjectSize = Number((asset.file as { size?: number } | undefined)?.size ?? 0) || 0;
   return Math.max(fileSize, fileObjectSize);
@@ -1399,7 +1399,7 @@ export default function ChallengesScreen() {
                     key={ch.id}
                     style={styles.activeCard}
                     activeOpacity={0.88}
-                    onPress={() => pushRoute(router, `/challenges/progress/${ch.challenge_id}` as any)}
+                    onPress={() => pushRoute(router, `/challenges/${ch.challenge_id}` as any)}
                   >
                     <View style={styles.activeCardTop}>
                       <View style={[styles.activeColorDot, { backgroundColor: ch.color }]} />
@@ -1587,10 +1587,14 @@ export default function ChallengesScreen() {
                               <Ionicons name="person-add-outline" size={15} color="#D9EEFF" />
                               <Text style={styles.challengeInviteBtnText}>{t('Invite')}</Text>
                             </TouchableOpacity>
-                            <View style={[styles.challengeStatusBtn, styles.challengeStatusBtnActive]}>
+                            <TouchableOpacity
+                              style={[styles.challengeStatusBtn, styles.challengeStatusBtnActive]}
+                              activeOpacity={0.88}
+                              onPress={() => router.push(`/challenges/${challengeRouteId}` as any)}
+                            >
                               <Ionicons name="checkmark" size={15} color="#052E16" />
                               <Text style={styles.challengeStatusBtnText}>{t('In Progress')}</Text>
-                            </View>
+                            </TouchableOpacity>
                           </>
                         ) : ch.state === 'COMPLETED' ? (
                           <TouchableOpacity

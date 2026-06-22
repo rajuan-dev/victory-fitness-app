@@ -28,5 +28,5 @@ type CrossPlatformWebViewProps = {
 };
 
 export default function CrossPlatformWebView(props: CrossPlatformWebViewProps) {
-  return <WebView {...props} />;
+  return <WebView {...props as any} />;
 }

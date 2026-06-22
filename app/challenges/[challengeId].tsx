@@ -96,6 +96,7 @@ type ChallengeDetail = {
   can_complete_today: boolean;
   completed_today: boolean;
   messages: ChallengeChatMessage[];
+  started_at?: string;
 };
 
 function formatMessageTime(value: string) {
@@ -130,6 +131,27 @@ export default function ChallengeDetailScreen() {
     }
     return map;
   }, [detail?.viewer_plan_progress]);
+
+  const currentCalendarDay = useMemo(() => {
+    if (!detail?.started_at) {
+      return detail?.current_day_number || 1;
+    }
+    const startDate = new Date(detail.started_at);
+    const startLocalDate = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate());
+    const today = new Date();
+    const todayLocalDate = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    const msDiff = todayLocalDate.getTime() - startLocalDate.getTime();
+    const elapsedDays = Math.floor(msDiff / (1000 * 60 * 60 * 24));
+    return Math.max(1, elapsedDays + 1);
+  }, [detail?.started_at, detail?.current_day_number]);
+
+  const isCurrentDayCompleted = useMemo(() => {
+    return Boolean(dayProgressMap.get(currentCalendarDay)?.completed);
+  }, [dayProgressMap, currentCalendarDay]);
+
+  const canCompleteToday = useMemo(() => {
+    return Boolean(detail?.has_joined && detail?.viewer_membership_status === 'ACTIVE' && !isCurrentDayCompleted);
+  }, [detail?.has_joined, detail?.viewer_membership_status, isCurrentDayCompleted]);
 
   const loadDetail = useCallback(async (showLoader = false) => {
     if (!challengeId) {
@@ -207,23 +229,24 @@ export default function ChallengeDetailScreen() {
   }, [challengeId, detail?.can_post, loadDetail, message, sending]);
 
   const handleCompleteToday = useCallback(async () => {
-    if (!challengeId || !detail?.can_complete_today || !detail.current_day_number || completingToday) {
+    if (!challengeId || !canCompleteToday || completingToday) {
       return;
     }
     setCompleteDayConfirmVisible(true);
-  }, [challengeId, completingToday, detail?.can_complete_today, detail?.current_day_number, loadDetail]);
+  }, [challengeId, completingToday, canCompleteToday]);
 
   const confirmCompleteToday = useCallback(async () => {
-    if (!challengeId || !detail?.can_complete_today || !detail.current_day_number || completingToday) {
+    if (!challengeId || !canCompleteToday || completingToday) {
       return;
     }
     setCompleteDayConfirmVisible(false);
     setCompletingToday(true);
     try {
       await apiRequest(
-        `/challenges/${encodeURIComponent(challengeId)}/current-day/complete`,
+        `/challenges/${encodeURIComponent(challengeId)}/plan/days/${currentCalendarDay}/complete`,
         {
           method: 'POST',
+          body: { completed: true },
         }
       );
       await loadDetail(false);
@@ -232,7 +255,7 @@ export default function ChallengeDetailScreen() {
     } finally {
       setCompletingToday(false);
     }
-  }, [challengeId, completingToday, detail?.can_complete_today, detail?.current_day_number, loadDetail, t]);
+  }, [challengeId, completingToday, canCompleteToday, currentCalendarDay, loadDetail, t]);
 
   const ctaLabel = detail?.viewer_membership_status === 'ACTIVE'
     ? t('In Progress')
@@ -242,7 +265,7 @@ export default function ChallengeDetailScreen() {
 
   const ctaDisabled = !detail || starting || detail.has_joined || (!detail.can_start && !detail.has_joined);
   const showCompleteToday = Boolean(detail?.has_joined && detail?.viewer_membership_status === 'ACTIVE');
-  const completeButtonLabel = detail?.completed_today ? t('Completed Today') : t('Mark Complete');
+  const completeButtonLabel = isCurrentDayCompleted ? t('Completed Today') : t('Mark Complete');
   const completedDaysCount = detail?.viewer_progress_days_completed || 0;
   const totalDaysCount = detail?.duration_days || detail?.plan_days.length || 0;
   const remainingDaysCount = Math.max(totalDaysCount - completedDaysCount, 0);
@@ -278,7 +301,7 @@ export default function ChallengeDetailScreen() {
           <View style={styles.confirmModalCard}>
             <Text style={styles.confirmModalTitle}>{t('Complete today?')}</Text>
             <Text style={styles.confirmModalText}>
-              {t('Mark day {day} as complete?', { day: detail?.current_day_number || 0 })}
+              {t('Mark day {day} as complete?', { day: currentCalendarDay })}
             </Text>
             <View style={styles.confirmModalActions}>
               <TouchableOpacity style={styles.confirmModalSecondaryButton} onPress={() => setCompleteDayConfirmVisible(false)} activeOpacity={0.85}>
@@ -351,7 +374,7 @@ export default function ChallengeDetailScreen() {
                           <Text style={styles.trackerStatLabel}>Left</Text>
                         </View>
                         <View style={styles.trackerStat}>
-                          <Text style={styles.trackerStatValue}>{detail.current_day_number || completedDaysCount || 1}</Text>
+                          <Text style={styles.trackerStatValue}>{currentCalendarDay}</Text>
                           <Text style={styles.trackerStatLabel}>Current</Text>
                         </View>
                       </View>
@@ -377,12 +400,11 @@ export default function ChallengeDetailScreen() {
                         {detail.plan_days.map((day) => {
                           const progress = dayProgressMap.get(day.day_number);
                           const isCompleted = Boolean(progress?.completed);
-                          const isCurrent = detail.current_day_number === day.day_number && !isCompleted;
+                          const isCurrent = currentCalendarDay === day.day_number && !isCompleted;
                           const isMissed =
                             !isCompleted &&
                             !isCurrent &&
-                            Boolean(detail.current_day_number) &&
-                            day.day_number < (detail.current_day_number || 0);
+                            day.day_number < currentCalendarDay;
                           return (
                             <TouchableOpacity
                               key={`detail-day-${day.day_number}`}
@@ -415,10 +437,10 @@ export default function ChallengeDetailScreen() {
                     <View style={styles.heroActions}>
                       {showCompleteToday ? (
                         <TouchableOpacity
-                          style={[styles.secondaryButton, (!detail.can_complete_today || completingToday) && styles.primaryButtonDisabled]}
+                          style={[styles.secondaryButton, (!canCompleteToday || completingToday) && styles.primaryButtonDisabled]}
                           activeOpacity={0.88}
                           onPress={() => void handleCompleteToday()}
-                          disabled={!detail.can_complete_today || completingToday}
+                          disabled={!canCompleteToday || completingToday}
                         >
                           {completingToday ? (
                             <ActivityIndicator color="#EAF4FF" size="small" />
