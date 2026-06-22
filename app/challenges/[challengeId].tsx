@@ -23,6 +23,7 @@ import { formatAppError } from '../../lib/error';
 import { useLanguage } from '../../lib/i18n';
 import { getCachedResourceSnapshot } from '../../lib/resourceCache';
 import { fetchChallengeDetailData, getChallengeDetailCacheKey } from '../../lib/screenData';
+import { useModuleAccessGuard } from '../../lib/useModuleAccessGuard';
 
 type ChallengePlanDayProgress = {
   day_number: number;
@@ -107,6 +108,7 @@ function formatMessageTime(value: string) {
 export default function ChallengeDetailScreen() {
   const router = useRouter();
   const { t } = useLanguage();
+  const checkingAccess = useModuleAccessGuard('/challenge');
   const params = useLocalSearchParams<{ challengeId?: string }>();
   const challengeId = Array.isArray(params.challengeId) ? params.challengeId[0] : params.challengeId;
   const cachedDetail = challengeId ? getCachedResourceSnapshot<ChallengeDetail>(getChallengeDetailCacheKey(challengeId)) : null;
@@ -140,8 +142,11 @@ export default function ChallengeDetailScreen() {
   }, [cachedDetail, challengeId, t]);
 
   useEffect(() => {
+    if (checkingAccess) {
+      return;
+    }
     void loadDetail(true);
-  }, [loadDetail]);
+  }, [checkingAccess, loadDetail]);
 
   const quoteText = useMemo(() => {
     const source = (detail?.plan_text || detail?.description || '').trim();
@@ -234,6 +239,10 @@ export default function ChallengeDetailScreen() {
   const ctaDisabled = !detail || starting || detail.has_joined || (!detail.can_start && !detail.has_joined);
   const showCompleteToday = Boolean(detail?.has_joined && detail?.viewer_membership_status === 'ACTIVE');
   const completeButtonLabel = detail?.completed_today ? t('Completed Today') : t('Mark Complete');
+
+  if (checkingAccess) {
+    return null;
+  }
 
   return (
     <SafeAreaView style={styles.container}>
