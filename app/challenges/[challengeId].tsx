@@ -243,9 +243,10 @@ export default function ChallengeDetailScreen() {
     setCompletingToday(true);
     try {
       await apiRequest(
-        `/challenges/${encodeURIComponent(challengeId)}/current-day/complete`,
+        `/challenges/${encodeURIComponent(challengeId)}/plan/days/${currentCalendarDay}/complete`,
         {
           method: 'POST',
+          body: { completed: true },
         }
       );
       await loadDetail(false);
