@@ -86,13 +86,6 @@ type ChallengeProgressThread = {
   viewer_plan_progress: ChallengePlanDayProgress[];
 };
 
-type SectionCompletionConfirmState = {
-  dayNumber: number;
-  sectionId: string;
-  sectionTitle: string;
-  completed: boolean;
-};
-
 type UnitPointMap = Record<string, number>;
 type CompletedReportEntry = {
   title: string;
@@ -576,7 +569,6 @@ export default function ChallengeProgressScreen() {
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({});
   const [videoModal, setVideoModal] = useState<{ title: string; videoUrl: string } | null>(null);
   const [dayCompletionConfirm, setDayCompletionConfirm] = useState<{ dayNumber: number; completed: boolean } | null>(null);
-  const [sectionCompletionConfirm, setSectionCompletionConfirm] = useState<SectionCompletionConfirmState | null>(null);
   const [reportAction, setReportAction] = useState<'download' | 'community' | ''>('');
   const [errorDialog, setErrorDialog] = useState<{ title: string; message: string } | null>(null);
 
@@ -717,28 +709,6 @@ export default function ChallengeProgressScreen() {
     }
   }, [applyPlanProgress, challengeId]);
 
-  const toggleSectionCompletion = useCallback(async (dayNumber: number, sectionId: string, completed: boolean) => {
-    if (!challengeId) {
-      return;
-    }
-    const key = `section-${dayNumber}-${sectionId}`;
-    setCompletionUpdatingKey(key);
-    try {
-      const response = await apiRequest<ChallengePlanProgressResponse>(
-        `/challenges/${encodeURIComponent(challengeId)}/plan/days/${dayNumber}/sections/${encodeURIComponent(sectionId)}/complete`,
-        {
-          method: 'POST',
-          body: { completed },
-        }
-      );
-      applyPlanProgress(response);
-    } catch (error) {
-      setErrorDialog(formatAppError(error, 'Failed to update section completion.'));
-    } finally {
-      setCompletionUpdatingKey('');
-    }
-  }, [applyPlanProgress, challengeId]);
-
   const toggleDayCompletion = useCallback(async (dayNumber: number, completed: boolean) => {
     if (!challengeId) {
       return;
@@ -783,29 +753,6 @@ export default function ChallengeProgressScreen() {
     closeDayCompletionConfirm();
     void toggleDayCompletion(dayNumber, completed);
   }, [closeDayCompletionConfirm, dayCompletionConfirm, toggleDayCompletion]);
-
-  const confirmSectionCompletion = useCallback((dayNumber: number, sectionId: string, sectionTitle: string, completed: boolean) => {
-    if (!completed) {
-      void toggleSectionCompletion(dayNumber, sectionId, completed);
-      return;
-    }
-    blurFocusedElement();
-    setSectionCompletionConfirm({ dayNumber, sectionId, sectionTitle, completed });
-  }, [blurFocusedElement, toggleSectionCompletion]);
-
-  const closeSectionCompletionConfirm = useCallback(() => {
-    blurFocusedElement();
-    setSectionCompletionConfirm(null);
-  }, [blurFocusedElement]);
-
-  const handleConfirmSectionCompletion = useCallback(() => {
-    if (!sectionCompletionConfirm) {
-      return;
-    }
-    const { dayNumber, sectionId, completed } = sectionCompletionConfirm;
-    closeSectionCompletionConfirm();
-    void toggleSectionCompletion(dayNumber, sectionId, completed);
-  }, [closeSectionCompletionConfirm, sectionCompletionConfirm, toggleSectionCompletion]);
 
   const handleDownloadReport = useCallback(async () => {
     if (!thread) {
@@ -890,30 +837,6 @@ export default function ChallengeProgressScreen() {
                 <Text style={styles.confirmModalSecondaryText}>Cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity style={styles.confirmModalPrimaryButton} onPress={handleConfirmDayCompletion} activeOpacity={0.85}>
-                <Text style={styles.confirmModalPrimaryText}>Confirm</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
-      <Modal
-        visible={Boolean(sectionCompletionConfirm)}
-        transparent
-        animationType="fade"
-        onRequestClose={closeSectionCompletionConfirm}
-      >
-        <View style={styles.confirmModalBackdrop}>
-          <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={closeSectionCompletionConfirm} />
-          <View style={styles.confirmModalCard}>
-            <Text style={styles.confirmModalTitle}>Complete section</Text>
-            <Text style={styles.confirmModalText}>
-              {`Are you sure you want to mark ${sectionCompletionConfirm?.sectionTitle || 'this section'} as complete?`}
-            </Text>
-            <View style={styles.confirmModalActions}>
-              <TouchableOpacity style={styles.confirmModalSecondaryButton} onPress={closeSectionCompletionConfirm} activeOpacity={0.85}>
-                <Text style={styles.confirmModalSecondaryText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.confirmModalPrimaryButton} onPress={handleConfirmSectionCompletion} activeOpacity={0.85}>
                 <Text style={styles.confirmModalPrimaryText}>Confirm</Text>
               </TouchableOpacity>
             </View>
@@ -1030,7 +953,7 @@ export default function ChallengeProgressScreen() {
 
             <View style={styles.legendCard}>
               <Text style={styles.legendTitle}>Daily Progress</Text>
-              <Text style={styles.legendText}>Tap a day row or the arrow to open its sections. Tap a section row to open exercises and mark each one complete.</Text>
+              <Text style={styles.legendText}>Tap a day row or the arrow to open its sections. Using the section button will mark that full day complete for your progress.</Text>
             </View>
 
             <View style={styles.dayList}>
@@ -1096,7 +1019,6 @@ export default function ChallengeProgressScreen() {
                           const sectionCompleted = Boolean(completedSectionIds.includes(section.id));
                           const completedCount = sectionCompleted ? section.exercises.length : getSectionCompletedCount(section, completedExerciseIds);
                           const totalCount = section.exercises.length;
-
                           return (
                             <View key={section.id} style={[styles.sectionCard, sectionCompleted && styles.sectionCardCompleted]}>
                               <TouchableOpacity style={styles.sectionRow} activeOpacity={0.88} onPress={() => toggleSectionExpanded(sectionKey)}>
@@ -1124,17 +1046,17 @@ export default function ChallengeProgressScreen() {
                                 <TouchableOpacity
                                   style={[
                                     styles.compactButton,
-                                    sectionCompleted && styles.compactButtonCompleted,
-                                    (!canUpdateProgress || sectionCompleted) && styles.buttonDisabled,
+                                    dayProgress?.completed && styles.compactButtonCompleted,
+                                    (!canUpdateProgress || dayProgress?.completed) && styles.buttonDisabled,
                                   ]}
-                                  disabled={!canUpdateProgress || sectionCompleted || completionUpdatingKey === `section-${day.day_number}-${section.id}`}
-                                  onPress={() => confirmSectionCompletion(day.day_number, section.id, section.title, !sectionCompleted)}
+                                  disabled={!canUpdateProgress || dayProgress?.completed || completionUpdatingKey === `day-${day.day_number}`}
+                                  onPress={() => confirmDayCompletion(day.day_number, !Boolean(dayProgress?.completed))}
                                 >
-                                  {completionUpdatingKey === `section-${day.day_number}-${section.id}` ? (
-                                    <ActivityIndicator size="small" color="#001311" />
+                                  {completionUpdatingKey === `day-${day.day_number}` ? (
+                                    <ActivityIndicator size="small" color={dayProgress?.completed ? '#001311' : Colors.primary} />
                                   ) : (
-                                    <Text style={[styles.compactButtonText, sectionCompleted && styles.compactButtonTextCompleted]}>
-                                      {sectionCompleted ? 'Completed' : 'Complete section'}
+                                    <Text style={[styles.compactButtonText, dayProgress?.completed && styles.compactButtonTextCompleted]}>
+                                      {dayProgress?.completed ? 'Day completed' : 'Complete day'}
                                     </Text>
                                   )}
                                 </TouchableOpacity>
