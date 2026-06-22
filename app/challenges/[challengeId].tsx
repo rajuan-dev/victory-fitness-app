@@ -315,6 +315,11 @@ export default function ChallengeDetailScreen() {
                       const progress = dayProgressMap.get(day.day_number);
                       const isCompleted = Boolean(progress?.completed);
                       const isCurrent = detail.current_day_number === day.day_number && !isCompleted;
+                      const isMissed =
+                        !isCompleted &&
+                        !isCurrent &&
+                        Boolean(detail.current_day_number) &&
+                        day.day_number < (detail.current_day_number || 0);
                       return (
                         <View
                           key={`detail-day-${day.day_number}`}
@@ -322,6 +327,7 @@ export default function ChallengeDetailScreen() {
                             styles.dayChip,
                             isCompleted && styles.dayChipCompleted,
                             isCurrent && styles.dayChipCurrent,
+                            isMissed && styles.dayChipMissed,
                           ]}
                         >
                           <Text
@@ -329,6 +335,7 @@ export default function ChallengeDetailScreen() {
                               styles.dayChipText,
                               isCompleted && styles.dayChipTextCompleted,
                               isCurrent && styles.dayChipTextCurrent,
+                              isMissed && styles.dayChipTextMissed,
                             ]}
                           >
                             {day.day_number}
@@ -591,12 +598,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   dayChipCompleted: {
-    backgroundColor: Colors.primary,
-    borderColor: Colors.primary,
+    backgroundColor: '#22C55E',
+    borderColor: '#22C55E',
   },
   dayChipCurrent: {
-    borderColor: '#F59E0B',
-    backgroundColor: 'rgba(245,158,11,0.18)',
+    borderColor: 'rgba(148,163,184,0.82)',
+    backgroundColor: 'rgba(148,163,184,0.2)',
+  },
+  dayChipMissed: {
+    borderColor: '#EF4444',
+    backgroundColor: 'rgba(239,68,68,0.18)',
   },
   dayChipText: {
     color: '#E5E7EB',
@@ -604,10 +615,13 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter_700Bold',
   },
   dayChipTextCompleted: {
-    color: '#001311',
+    color: '#052E16',
   },
   dayChipTextCurrent: {
-    color: '#FCD34D',
+    color: '#E5E7EB',
+  },
+  dayChipTextMissed: {
+    color: '#FCA5A5',
   },
   quoteWrap: { flexDirection: 'row', gap: 12, marginBottom: 20 },
   quoteBar: { width: 4, borderRadius: 999, backgroundColor: '#FBBF24' },
