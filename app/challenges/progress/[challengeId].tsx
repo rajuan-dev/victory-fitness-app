@@ -15,7 +15,7 @@ import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as FileSystem from 'expo-file-system/legacy';
-import CrossPlatformWebView from '../../../components/CrossPlatformWebView';
+import CrossPlatformWebView from '../../../components/CrossPlatformWebView.native';
 import { Colors } from '../../../constants/Colors';
 import { apiRequest } from '../../../lib/api';
 import { ErrorPopupModal } from '../../../components/ErrorPopupModal';
@@ -84,6 +84,7 @@ type ChallengeProgressThread = {
   viewer_progress_days_completed: number;
   viewer_points_earned: number;
   viewer_plan_progress: ChallengePlanDayProgress[];
+  started_at?: string;
 };
 
 type CompletionConfirmState = {
@@ -564,8 +565,13 @@ async function buildChallengeProgressReportAsset(challengeId: string) {
 
 export default function ChallengeProgressScreen() {
   const router = useRouter();
-  const params = useLocalSearchParams<{ challengeId?: string }>();
+  const params = useLocalSearchParams<{ challengeId?: string; day?: string }>();
   const challengeId = Array.isArray(params.challengeId) ? params.challengeId[0] : params.challengeId;
+  const requestedDayParam = Array.isArray(params.day) ? params.day[0] : params.day;
+  const requestedDayNumber = useMemo(() => {
+    const parsed = Number(requestedDayParam);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+  }, [requestedDayParam]);
   const cachedThread = challengeId ? getCachedResourceSnapshot<ChallengeProgressThread>(getChallengeProgressCacheKey(challengeId)) : null;
 
   const [thread, setThread] = useState<ChallengeProgressThread | null>(cachedThread ?? null);
@@ -610,10 +616,49 @@ export default function ChallengeProgressScreen() {
     return nextIncompleteDay?.day_number ?? null;
   }, [dayProgressMap, thread]);
 
+  const currentCalendarDay = useMemo(() => {
+    const totalDays = thread?.duration_days || thread?.plan_days.length || 1;
+    if (!thread?.started_at) {
+      return Math.min(currentPlanDayNumber || 1, totalDays);
+    }
+    const startDate = new Date(thread.started_at);
+    const startLocalDate = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate());
+    const today = new Date();
+    const todayLocalDate = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    const msDiff = todayLocalDate.getTime() - startLocalDate.getTime();
+    const elapsedDays = Math.max(0, Math.floor(msDiff / (1000 * 60 * 60 * 24)));
+    return Math.min(Math.max(1, elapsedDays + 1), totalDays);
+  }, [thread?.started_at, currentPlanDayNumber, thread?.duration_days, thread?.plan_days.length]);
+
   const unitPointMap = useMemo(
     () => buildUnitPointMap(thread?.plan_days || [], thread?.points || 0),
     [thread?.plan_days, thread?.points],
   );
+
+  const getInitialExpandedDays = useCallback((planDays: ChallengePlanDay[], progressDays: ChallengePlanDayProgress[]) => {
+    const expanded: Record<number, boolean> = {};
+    if (requestedDayNumber && planDays.some((day) => day.day_number === requestedDayNumber)) {
+      expanded[requestedDayNumber] = true;
+    }
+
+    for (const day of planDays) {
+      const isCompleted = progressDays.find((item) => item.day_number === day.day_number)?.completed;
+      if (day.day_number <= currentCalendarDay && !isCompleted) {
+        expanded[day.day_number] = true;
+      }
+    }
+
+    if (Object.keys(expanded).length === 0) {
+      const firstIncomplete = planDays.find(
+        (day) => !progressDays.find((item) => item.day_number === day.day_number)?.completed,
+      );
+      if (firstIncomplete) {
+        expanded[firstIncomplete.day_number] = true;
+      }
+    }
+
+    return expanded;
+  }, [requestedDayNumber, currentCalendarDay]);
 
   const loadThread = useCallback(async (showLoader = false) => {
     if (!challengeId) {
@@ -633,8 +678,7 @@ export default function ChallengeProgressScreen() {
         if (Object.keys(current).length > 0) {
           return current;
         }
-        const nextIncompleteDay = response.plan_days.find((day) => !response.viewer_plan_progress.find((item) => item.day_number === day.day_number)?.completed);
-        return nextIncompleteDay ? { [nextIncompleteDay.day_number]: true } : {};
+        return getInitialExpandedDays(response.plan_days, response.viewer_plan_progress);
       });
     } catch (error) {
       setErrorDialog(formatAppError(error, 'Failed to load challenge progress.'));
@@ -642,7 +686,15 @@ export default function ChallengeProgressScreen() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [cachedThread, challengeId]);
+  }, [cachedThread, challengeId, getInitialExpandedDays]);
+
+  useEffect(() => {
+    if (!thread) {
+      return;
+    }
+
+    setExpandedDays(getInitialExpandedDays(thread.plan_days, thread.viewer_plan_progress));
+  }, [getInitialExpandedDays, thread]);
 
   useEffect(() => {
     void loadThread(true);
@@ -914,7 +966,7 @@ export default function ChallengeProgressScreen() {
                   allowsInlineMediaPlayback
                   setSupportMultipleWindows={false}
                   javaScriptCanOpenWindowsAutomatically={false}
-                  onShouldStartLoadWithRequest={(request) => isAllowedWorkoutPlayerRequest(request.url)}
+                  onShouldStartLoadWithRequest={(request: any) => isAllowedWorkoutPlayerRequest(request.url)}
                   startInLoadingState
                   renderLoading={() => (
                     <View style={styles.videoModalLoadingWrap}>
@@ -1002,7 +1054,8 @@ export default function ChallengeProgressScreen() {
               {thread.plan_days.map((day) => {
                 const dayProgress = dayProgressMap.get(day.day_number);
                 const isExpanded = Boolean(expandedDays[day.day_number]);
-                const isCurrentDay = currentPlanDayNumber === day.day_number;
+                const isCurrentDay = currentCalendarDay === day.day_number && !dayProgress?.completed;
+                const isMissed = !dayProgress?.completed && !isCurrentDay && day.day_number < currentCalendarDay;
                 const progressFraction = getDayProgressFraction(day, dayProgress);
                 const dayPoints = getDayPoints(day, unitPointMap);
                 const completedExerciseIds = Array.isArray(dayProgress?.completed_exercise_ids) ? dayProgress.completed_exercise_ids : [];
@@ -1017,11 +1070,24 @@ export default function ChallengeProgressScreen() {
                 const allSectionsCompleted = day.sections.every((section) => completedSectionIds.includes(section.id));
 
                 return (
-                  <View key={`day-${day.day_number}`} style={[styles.dayCard, dayProgress?.completed && styles.dayCardCompleted]}>
+                  <View key={`day-${day.day_number}`} style={[
+                    styles.dayCard,
+                    dayProgress?.completed && styles.dayCardCompleted,
+                    isMissed && styles.dayCardMissed,
+                  ]}>
                     <TouchableOpacity style={styles.dayRow} activeOpacity={0.88} onPress={() => toggleDayExpanded(day.day_number)}>
                       <View style={styles.dayLeft}>
-                        <View style={[styles.dayNumberBadge, isCurrentDay && styles.dayNumberBadgeCurrent, dayProgress?.completed && styles.dayNumberBadgeCompleted]}>
-                          <Text style={[styles.dayNumberText, dayProgress?.completed && styles.dayNumberTextCompleted]}>D{day.day_number}</Text>
+                        <View style={[
+                          styles.dayNumberBadge,
+                          isCurrentDay && styles.dayNumberBadgeCurrent,
+                          dayProgress?.completed && styles.dayNumberBadgeCompleted,
+                          isMissed && styles.dayNumberBadgeMissed,
+                        ]}>
+                          <Text style={[
+                            styles.dayNumberText,
+                            dayProgress?.completed && styles.dayNumberTextCompleted,
+                            isMissed && styles.dayNumberTextMissed,
+                          ]}>D{day.day_number}</Text>
                         </View>
                         <View style={styles.dayTextWrap}>
                           <Text style={styles.dayTitle}>{day.title}</Text>
@@ -1045,6 +1111,7 @@ export default function ChallengeProgressScreen() {
                         {dayExerciseCount > 0 ? `${completedExerciseCount}/${dayExerciseCount} exercises completed` : `${day.sections.length} sections`}
                       </Text>
                       {isCurrentDay && !dayProgress?.completed ? <Text style={styles.dayCurrentLabel}>Today</Text> : null}
+                      {isMissed ? <Text style={styles.dayMissedLabel}>Missed</Text> : null}
                     </View>
 
                     {isExpanded ? (
@@ -1396,6 +1463,21 @@ const styles = StyleSheet.create({
   dayCardCompleted: {
     backgroundColor: '#0E1A16',
     borderColor: 'rgba(34,197,94,0.24)',
+  },
+  dayCardMissed: {
+    backgroundColor: 'rgba(239, 68, 68, 0.05)',
+    borderColor: 'rgba(239, 68, 68, 0.24)',
+  },
+  dayNumberBadgeMissed: {
+    backgroundColor: '#EF4444',
+  },
+  dayNumberTextMissed: {
+    color: '#FFF',
+  },
+  dayMissedLabel: {
+    color: '#EF4444',
+    fontSize: 11,
+    fontFamily: 'Inter_700Bold',
   },
   dayRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 12 },
   dayLeft: { flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 },

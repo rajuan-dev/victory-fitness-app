@@ -178,7 +178,7 @@ export default function WorkoutPlayerScreen() {
             allowsInlineMediaPlayback
             setSupportMultipleWindows={false}
             javaScriptCanOpenWindowsAutomatically={false}
-            onShouldStartLoadWithRequest={(request) => isAllowedWorkoutPlayerRequest(request.url)}
+            onShouldStartLoadWithRequest={(request: any) => isAllowedWorkoutPlayerRequest(request.url)}
             startInLoadingState
             renderLoading={() => (
               <View style={styles.loadingWrap}>

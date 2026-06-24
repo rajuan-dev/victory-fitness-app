@@ -5,7 +5,7 @@ type RouterLike = {
   push?: (href: string | { pathname: string; params?: Record<string, string> }) => void;
 };
 
-function blurActiveElementBeforeNavigation() {
+export function blurActiveElementBeforeNavigation() {
   if (typeof document === 'undefined') {
     return;
   }

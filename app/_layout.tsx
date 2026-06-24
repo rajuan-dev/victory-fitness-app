@@ -13,7 +13,7 @@ import { fetchCurrentUser, getAuthUser, getValidAuthTokens, setAuthFailureHandle
 import { getPostAuthRoute, isPublicRoute, isRouteAllowedForPlan } from '../lib/access';
 import { appendRunLog, formatRunLogMessage } from '../lib/runLog';
 import { LanguageProvider } from '../lib/i18n';
-import { replaceRoute } from '../lib/navigation';
+import { blurActiveElementBeforeNavigation, replaceRoute } from '../lib/navigation';
 
 export default function RootLayout() {
   const router = useRouter();
@@ -166,6 +166,10 @@ export default function RootLayout() {
 
   useEffect(() => {
     pathnameRef.current = pathname;
+  }, [pathname]);
+
+  useEffect(() => {
+    blurActiveElementBeforeNavigation();
   }, [pathname]);
 
   useEffect(() => {

@@ -244,7 +244,7 @@ export default function ChallengesSection({ refreshToken = 0 }: { refreshToken?:
         progress: challenge.progress,
         daysLeftLabel: `${challenge.days_left} days left`,
         isJoining: false,
-        onPrimaryPress: () => pushRoute(router, `/challenges/progress/${challenge.challenge_id}` as any),
+        onPrimaryPress: () => pushRoute(router, `/challenges/${challenge.challenge_id}` as any),
         onSecondaryPress: () => pushRoute(router, `/challenges/chat/${challenge.challenge_id}` as any),
       }));
 
@@ -332,7 +332,7 @@ export default function ChallengesSection({ refreshToken = 0 }: { refreshToken?:
       progress: challenge.progress,
       daysLeftLabel: `${challenge.days_left} days left`,
       isJoining: false,
-      onPrimaryPress: () => pushRoute(router, `/challenges/progress/${challenge.challenge_id}` as any),
+      onPrimaryPress: () => pushRoute(router, `/challenges/${challenge.challenge_id}` as any),
       onSecondaryPress: () => pushRoute(router, `/challenges/chat/${challenge.challenge_id}` as any),
     }));
 
