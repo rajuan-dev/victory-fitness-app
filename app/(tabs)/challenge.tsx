@@ -627,7 +627,7 @@ export default function ChallengesScreen() {
   const hasCompletedChallenges = false;
   const hasVisibleChallengeSections =
     challengeOverview.ready_to_start.length > 0 || challengeOverview.active_challenges.length > 0 || challengeOverview.completed_challenges.length > 0;
-  const allowedCommunityAudiences = useMemo(() => {
+  const accessibleCommunityAudiences = useMemo(() => {
     if (!canAccessCommunity) {
       return [] as string[];
     }
@@ -635,20 +635,30 @@ export default function ChallengesScreen() {
       return [...COMMUNITY_AUDIENCE_FILTERS];
     }
     const hierarchy: Record<string, string[]> = {
-      SILVER: ['SILVER'],
-      GOLD: ['SILVER', 'GOLD'],
-      PLATINUM: ['SILVER', 'GOLD', 'PLATINUM'],
+      SILVER: ['ALL', 'SILVER'],
+      GOLD: ['ALL', 'SILVER', 'GOLD'],
+      PLATINUM: ['ALL', 'SILVER', 'GOLD', 'PLATINUM'],
       INNER_CIRCLE: ['ALL', 'SILVER', 'GOLD', 'PLATINUM', 'INNER_CIRCLE'],
     };
     return hierarchy[subscriptionTier] ?? [];
   }, [canAccessCommunity, isCommunityAdmin, subscriptionTier]);
+  const availableCommunityFilters = useMemo(() => {
+    if (!canAccessCommunity) {
+      return [] as (typeof COMMUNITY_AUDIENCE_FILTERS)[number][];
+    }
+    return ['ALL', ...accessibleCommunityAudiences] as (typeof COMMUNITY_AUDIENCE_FILTERS)[number][];
+  }, [accessibleCommunityAudiences, canAccessCommunity]);
   const filteredCommunityPosts = useMemo(() => {
     const visiblePosts = communityPosts.filter((post) => !optimisticDeletedPostIds[post.id]);
+    const roleVisiblePosts = visiblePosts.filter((post) => {
+      const audience = String(post.audience || '').toUpperCase() as (typeof COMMUNITY_AUDIENCE_FILTERS)[number];
+      return accessibleCommunityAudiences.includes(audience);
+    });
     if (!selectedCommunityFilters.length || selectedCommunityFilters.includes('ALL')) {
-      return visiblePosts;
+      return roleVisiblePosts;
     }
-    return visiblePosts.filter((post) => selectedCommunityFilters.includes(String(post.audience || '').toUpperCase() as (typeof COMMUNITY_AUDIENCE_FILTERS)[number]));
-  }, [communityPosts, optimisticDeletedPostIds, selectedCommunityFilters]);
+    return roleVisiblePosts.filter((post) => selectedCommunityFilters.includes(String(post.audience || '').toUpperCase() as (typeof COMMUNITY_AUDIENCE_FILTERS)[number]));
+  }, [accessibleCommunityAudiences, communityPosts, optimisticDeletedPostIds, selectedCommunityFilters]);
   useEffect(() => {
     let isMounted = true;
 
@@ -808,20 +818,20 @@ export default function ChallengesScreen() {
 
   useEffect(() => {
     setSelectedCommunityFilters((current) => {
-      const next = current.filter((filterKey) => allowedCommunityAudiences.includes(filterKey));
-      if (next.includes('ALL') && allowedCommunityAudiences.includes('ALL')) {
+      const next = current.filter((filterKey) => availableCommunityFilters.includes(filterKey));
+      if (next.includes('ALL') && availableCommunityFilters.includes('ALL')) {
         return ['ALL'];
       }
       if (next.length > 0) {
         return next;
       }
-      return allowedCommunityAudiences.includes('ALL')
+      return availableCommunityFilters.includes('ALL')
         ? ['ALL']
-        : allowedCommunityAudiences.length > 0
-          ? [allowedCommunityAudiences[0] as (typeof COMMUNITY_AUDIENCE_FILTERS)[number]]
+        : availableCommunityFilters.length > 0
+          ? [availableCommunityFilters[0] as (typeof COMMUNITY_AUDIENCE_FILTERS)[number]]
           : [];
     });
-  }, [allowedCommunityAudiences]);
+  }, [availableCommunityFilters]);
 
   useEffect(() => {
     const source = Array.isArray(params.prefillSource) ? params.prefillSource[0] : params.prefillSource;
@@ -1746,7 +1756,7 @@ export default function ChallengesScreen() {
               >
                 <View style={styles.communityFilterModalCard}>
                   {COMMUNITY_AUDIENCE_FILTERS.map((filterKey) => {
-                    const isAllowed = allowedCommunityAudiences.includes(filterKey);
+                    const isAllowed = availableCommunityFilters.includes(filterKey);
                     const isActive = selectedCommunityFilters.includes(filterKey);
                     return (
                       <TouchableOpacity
@@ -1768,7 +1778,7 @@ export default function ChallengesScreen() {
                               if (next.length > 0) {
                                 return next;
                               }
-                              return allowedCommunityAudiences.includes('ALL')
+                              return availableCommunityFilters.includes('ALL')
                                 ? ['ALL']
                                 : [filterKey];
                             }
