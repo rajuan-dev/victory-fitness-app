@@ -4,6 +4,7 @@ import {
   Text,
   StyleSheet,
   ScrollView,
+  Pressable,
   TouchableOpacity,
   TextInput,
   Dimensions,
@@ -567,6 +568,7 @@ export default function ChallengesScreen() {
   const [commentSubmitting, setCommentSubmitting] = useState<Record<string, boolean>>({});
   const [reactionSubmitting, setReactionSubmitting] = useState<Record<string, boolean>>({});
   const [deleteSubmitting, setDeleteSubmitting] = useState<Record<string, boolean>>({});
+  const [deleteTargetPost, setDeleteTargetPost] = useState<CommunityPost | null>(null);
   const [selectedCommunityPost, setSelectedCommunityPost] = useState<CommunityPost | null>(null);
   const [currentCommunityUser, setCurrentCommunityUser] = useState<CurrentCommunityUser>({
     name: t('You'),
@@ -1255,10 +1257,12 @@ export default function ChallengesScreen() {
       });
       setCommunityPosts((current) => current.filter((post) => post.id !== postId));
       setSelectedCommunityPost((current) => (current?.id === postId ? null : current));
+      void clearCachedResource(COMMUNITY_POSTS_CACHE_KEY);
     } catch (error) {
       setCommunityError(error instanceof Error ? error.message : t('Failed to delete post'));
     } finally {
       setDeleteSubmitting((current) => ({ ...current, [postId]: false }));
+      setDeleteTargetPost((current) => (current?.id === postId ? null : current));
     }
   };
 
@@ -1267,19 +1271,15 @@ export default function ChallengesScreen() {
       return;
     }
 
-    Alert.alert(t('Delete post'), t('Are you sure you want to delete this post?'), [
-      {
-        text: t('Cancel'),
-        style: 'cancel',
-      },
-      {
-        text: t('Delete'),
-        style: 'destructive',
-        onPress: () => {
-          void performDeleteCommunityPost(postId);
-        },
-      },
-    ]);
+    const targetPost =
+      communityPosts.find((post) => post.id === postId)
+      ?? (selectedCommunityPost?.id === postId ? selectedCommunityPost : null);
+
+    if (!targetPost) {
+      return;
+    }
+
+    setDeleteTargetPost(targetPost);
   };
 
   return (
@@ -2047,6 +2047,66 @@ export default function ChallengesScreen() {
           replaceRoute(router, '/(tabs)');
         }}
       />
+      <Modal
+        visible={deleteTargetPost !== null}
+        transparent
+        animationType="fade"
+        onRequestClose={() => {
+          if (!deleteTargetPost || deleteSubmitting[deleteTargetPost.id]) {
+            return;
+          }
+          setDeleteTargetPost(null);
+        }}
+      >
+        <View style={styles.confirmOverlay}>
+          <Pressable
+            style={StyleSheet.absoluteFill}
+            onPress={() => {
+              if (!deleteTargetPost || deleteSubmitting[deleteTargetPost.id]) {
+                return;
+              }
+              setDeleteTargetPost(null);
+            }}
+          />
+          <View style={styles.confirmCard}>
+            <View style={styles.confirmIconWrap}>
+              <Ionicons name="trash-outline" size={24} color="#F87171" />
+            </View>
+            <Text style={styles.confirmTitle}>{t('Delete post')}</Text>
+            <Text style={styles.confirmText}>{t('Are you sure you want to delete this post?')}</Text>
+            <View style={styles.confirmActions}>
+              <TouchableOpacity
+                style={styles.confirmCancelButton}
+                activeOpacity={0.85}
+                onPress={() => setDeleteTargetPost(null)}
+                disabled={!deleteTargetPost || deleteSubmitting[deleteTargetPost.id]}
+              >
+                <Text style={styles.confirmCancelText}>{t('Cancel')}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.confirmDeleteButton,
+                  deleteTargetPost && deleteSubmitting[deleteTargetPost.id] ? styles.confirmDeleteButtonDisabled : null,
+                ]}
+                activeOpacity={0.85}
+                onPress={() => {
+                  if (!deleteTargetPost) {
+                    return;
+                  }
+                  void performDeleteCommunityPost(deleteTargetPost.id);
+                }}
+                disabled={!deleteTargetPost || deleteSubmitting[deleteTargetPost.id]}
+              >
+                {deleteTargetPost && deleteSubmitting[deleteTargetPost.id] ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <Text style={styles.confirmDeleteText}>{t('Delete')}</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       <Modal
         visible={selectedCommunityPost !== null}
@@ -3335,6 +3395,83 @@ const styles = StyleSheet.create({
   },
   postActionTextActive: {
     color: '#FCA5A5',
+  },
+  confirmOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(3,8,20,0.66)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+  },
+  confirmCard: {
+    width: '100%',
+    maxWidth: 360,
+    backgroundColor: '#13132A',
+    borderRadius: 22,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+    paddingHorizontal: 20,
+    paddingVertical: 22,
+  },
+  confirmIconWrap: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: 'rgba(248,113,113,0.14)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 14,
+  },
+  confirmTitle: {
+    color: '#FFFFFF',
+    fontSize: 18,
+    fontFamily: 'Inter_700Bold',
+    marginBottom: 8,
+  },
+  confirmText: {
+    color: 'rgba(255,255,255,0.72)',
+    fontSize: 14,
+    lineHeight: 21,
+    fontFamily: 'Inter_400Regular',
+  },
+  confirmActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 12,
+    marginTop: 20,
+  },
+  confirmCancelButton: {
+    minWidth: 96,
+    height: 44,
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.12)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.04)',
+  },
+  confirmCancelText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontFamily: 'Inter_600SemiBold',
+  },
+  confirmDeleteButton: {
+    minWidth: 96,
+    height: 44,
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#EF4444',
+  },
+  confirmDeleteButtonDisabled: {
+    opacity: 0.72,
+  },
+  confirmDeleteText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontFamily: 'Inter_700Bold',
   },
   postModalOverlay: {
     flex: 1,
