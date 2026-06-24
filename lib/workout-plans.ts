@@ -99,7 +99,8 @@ export async function createStrengthWorkoutPlan(payload: Record<string, unknown>
 }
 
 export async function fetchLatestStrengthWorkoutPlan() {
-  const plan = await apiRequest<StrengthPlanResponse>('/ai/workout-plan/strength/latest');
+  const response = await apiRequest<StrengthPlanListResponse>('/ai/workout-plan/strength');
+  const plan = response.items[0] ?? null;
   await persistLatestStrengthPlan(plan);
   return plan;
 }
