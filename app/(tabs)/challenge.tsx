@@ -133,6 +133,7 @@ type CommunityPost = {
   reactions?: CommunityReactionUser[];
   created_at: string;
   updated_at: string;
+  is_pending_upload?: boolean;
 };
 
 type CommunityVideoKind = 'direct' | 'embed' | 'none';
@@ -293,6 +294,16 @@ function buildCommunityUploadFormData(params: {
   }
 
   return formData;
+}
+
+function getOptimisticCommunityAudience(subscriptionTier: string, isCommunityAdmin: boolean): string {
+  if (isCommunityAdmin) {
+    return 'ALL';
+  }
+  if (subscriptionTier === 'GOLD' || subscriptionTier === 'PLATINUM' || subscriptionTier === 'INNER_CIRCLE') {
+    return subscriptionTier;
+  }
+  return 'SILVER';
 }
 function formatCommunityPostTime(value: string, t: (key: string, params?: Record<string, string | number>) => string) {
   const createdAt = new Date(value);
@@ -1008,25 +1019,58 @@ export default function ChallengesScreen() {
 
     setCommunityPosting(true);
     setCommunityError('');
+    const postingMedia = communityMedia;
+    const postingVideoLink = externalVideoUrl;
+    const postingDraft = content;
+    const optimisticPostId = `pending-${Date.now()}`;
+    const optimisticVideoUrl =
+      postingMedia?.type === 'video'
+        ? (getCommunityVideoUrl(postingMedia.uri) || postingMedia.uri)
+        : (!postingMedia?.uri && postingVideoLink ? (getCommunityVideoUrl(postingVideoLink) || postingVideoLink) : '');
+    const optimisticPost: CommunityPost = {
+      id: optimisticPostId,
+      author_id: 'me',
+      author_name: currentCommunityUser.name || t('You'),
+      author_role: '',
+      author_profile_image: currentCommunityUser.profileImage || '',
+      audience: getOptimisticCommunityAudience(subscriptionTier, isCommunityAdmin),
+      content: postingDraft,
+      image_url: postingMedia?.type === 'image' ? postingMedia.uri : '',
+      video_url: optimisticVideoUrl,
+      like_count: 0,
+      comment_count: 0,
+      viewer_has_liked: false,
+      can_delete: false,
+      comments: [],
+      reactions: [],
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      is_pending_upload: true,
+    };
+    setCommunityDraft('');
+    setCommunityMedia(null);
+    setCommunityVideoLink('');
+    setCommunityPosts((current) => [optimisticPost, ...current]);
     try {
       const formData = buildCommunityUploadFormData({
-        content: content || '',
-        media: communityMedia,
-        externalVideoUrl,
+        content: postingDraft || '',
+        media: postingMedia,
+        externalVideoUrl: postingVideoLink,
       });
       const response = await apiRequest<CommunityPost>('/community/posts', {
         method: 'POST',
         body: formData,
       });
-      setCommunityDraft('');
-      setCommunityMedia(null);
-      setCommunityVideoLink('');
-      setCommunityPosts((current) => [response, ...current]);
+      setCommunityPosts((current) => current.map((post) => (post.id === optimisticPostId ? response : post)));
       void Promise.allSettled([
         clearCachedResource(COMMUNITY_POSTS_CACHE_KEY),
         loadCommunityPosts(false),
       ]);
     } catch (error) {
+      setCommunityPosts((current) => current.filter((post) => post.id !== optimisticPostId));
+      setCommunityDraft(postingDraft);
+      setCommunityMedia(postingMedia);
+      setCommunityVideoLink(postingVideoLink);
       setCommunityError(error instanceof Error ? getCommunityVideoLinkError(error.message, t) : t('Failed to publish post'));
     } finally {
       setCommunityPosting(false);
@@ -1910,6 +1954,12 @@ export default function ChallengesScreen() {
                       javaScriptEnabled
                       mediaPlaybackRequiresUserAction
                     />
+                    {communityPosting ? (
+                      <View style={styles.communityUploadOverlay}>
+                        <ActivityIndicator size="small" color="#FFFFFF" />
+                        <Text style={styles.communityUploadOverlayText}>{t('Uploading video...')}</Text>
+                      </View>
+                    ) : null}
                   </View>
                 ) : (
                   <Image source={{ uri: communityMedia.uri }} style={styles.communityPreviewImage} />
@@ -1969,16 +2019,36 @@ export default function ChallengesScreen() {
 
                   {post.content ? <Text style={styles.postBody}>{post.content}</Text> : null}
                   {getImageSource(post.image_url) ? (
-                    <Image source={getImageSource(post.image_url)!} style={styles.postImagePreview} />
+                    <View style={styles.postMediaFrame}>
+                      <Image source={getImageSource(post.image_url)!} style={styles.postImagePreview} />
+                      {post.is_pending_upload ? (
+                        <View style={styles.postUploadingOverlay}>
+                          <ActivityIndicator size="small" color="#FFFFFF" />
+                          <Text style={styles.postUploadingText}>{t('Uploading...')}</Text>
+                        </View>
+                      ) : null}
+                    </View>
                   ) : getCommunityVideoUrl(post.video_url) ? (
-                    <View style={styles.postVideoPreviewWrap}>
-                      <CrossPlatformWebView
-                        source={{ html: buildCommunityVideoHtml(getCommunityVideoUrl(post.video_url)) }}
-                        style={styles.postVideoPreview}
-                        scrollEnabled={false}
-                        javaScriptEnabled
-                        mediaPlaybackRequiresUserAction
-                      />
+                    <View style={styles.postMediaFrame}>
+                      <View style={styles.postVideoPreviewWrap}>
+                        <CrossPlatformWebView
+                          source={{ html: buildCommunityVideoHtml(getCommunityVideoUrl(post.video_url)) }}
+                          style={styles.postVideoPreview}
+                          scrollEnabled={false}
+                          javaScriptEnabled
+                          mediaPlaybackRequiresUserAction
+                        />
+                      </View>
+                      <View style={styles.postVideoBadge}>
+                        <Ionicons name="videocam" size={14} color="#FFFFFF" />
+                        <Text style={styles.postVideoBadgeText}>{t('Video')}</Text>
+                      </View>
+                      {post.is_pending_upload ? (
+                        <View style={styles.postUploadingOverlay}>
+                          <ActivityIndicator size="small" color="#FFFFFF" />
+                          <Text style={styles.postUploadingText}>{t('Uploading video...')}</Text>
+                        </View>
+                      ) : null}
                     </View>
                   ) : null}
                 </TouchableOpacity>
@@ -3313,6 +3383,18 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#0B1020',
   },
+  communityUploadOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(3,8,20,0.62)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+  },
+  communityUploadOverlayText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontFamily: 'Inter_700Bold',
+  },
   communityPreviewRemove: {
     alignSelf: 'flex-end',
     paddingHorizontal: 10,
@@ -3398,24 +3480,56 @@ const styles = StyleSheet.create({
     lineHeight: 22,
     marginBottom: 14,
   },
+  postMediaFrame: {
+    position: 'relative',
+    marginBottom: 14,
+  },
   postImagePreview: {
     width: '100%',
     height: 140,
     borderRadius: 14,
     resizeMode: 'cover',
-    marginBottom: 14,
   },
   postVideoPreviewWrap: {
     width: '100%',
     height: 200,
     borderRadius: 14,
     overflow: 'hidden',
-    marginBottom: 14,
     backgroundColor: '#0B1020',
   },
   postVideoPreview: {
     flex: 1,
     backgroundColor: '#0B1020',
+  },
+  postVideoBadge: {
+    position: 'absolute',
+    top: 12,
+    right: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: 'rgba(11,16,32,0.76)',
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  postVideoBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontFamily: 'Inter_700Bold',
+  },
+  postUploadingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(3,8,20,0.62)',
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+  },
+  postUploadingText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontFamily: 'Inter_700Bold',
   },
   postFooter: {
     flexDirection: 'row',
