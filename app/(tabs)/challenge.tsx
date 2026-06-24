@@ -568,6 +568,7 @@ export default function ChallengesScreen() {
   const [commentSubmitting, setCommentSubmitting] = useState<Record<string, boolean>>({});
   const [reactionSubmitting, setReactionSubmitting] = useState<Record<string, boolean>>({});
   const [deleteSubmitting, setDeleteSubmitting] = useState<Record<string, boolean>>({});
+  const [optimisticDeletedPostIds, setOptimisticDeletedPostIds] = useState<Record<string, boolean>>({});
   const [deleteTargetPost, setDeleteTargetPost] = useState<CommunityPost | null>(null);
   const [selectedCommunityPost, setSelectedCommunityPost] = useState<CommunityPost | null>(null);
   const [currentCommunityUser, setCurrentCommunityUser] = useState<CurrentCommunityUser>({
@@ -642,11 +643,12 @@ export default function ChallengesScreen() {
     return hierarchy[subscriptionTier] ?? [];
   }, [canAccessCommunity, isCommunityAdmin, subscriptionTier]);
   const filteredCommunityPosts = useMemo(() => {
+    const visiblePosts = communityPosts.filter((post) => !optimisticDeletedPostIds[post.id]);
     if (!selectedCommunityFilters.length || selectedCommunityFilters.includes('ALL')) {
-      return communityPosts;
+      return visiblePosts;
     }
-    return communityPosts.filter((post) => selectedCommunityFilters.includes(String(post.audience || '').toUpperCase() as (typeof COMMUNITY_AUDIENCE_FILTERS)[number]));
-  }, [communityPosts, selectedCommunityFilters]);
+    return visiblePosts.filter((post) => selectedCommunityFilters.includes(String(post.audience || '').toUpperCase() as (typeof COMMUNITY_AUDIENCE_FILTERS)[number]));
+  }, [communityPosts, optimisticDeletedPostIds, selectedCommunityFilters]);
   useEffect(() => {
     let isMounted = true;
 
@@ -1249,16 +1251,51 @@ export default function ChallengesScreen() {
       return;
     }
 
+    let removedPost: CommunityPost | null = null;
+    let removedIndex = -1;
+
     setDeleteSubmitting((current) => ({ ...current, [postId]: true }));
     setCommunityError('');
+    setOptimisticDeletedPostIds((current) => ({ ...current, [postId]: true }));
+    setCommunityPosts((current) => {
+      removedIndex = current.findIndex((post) => post.id === postId);
+      if (removedIndex === -1) {
+        return current;
+      }
+      removedPost = current[removedIndex];
+      return current.filter((post) => post.id !== postId);
+    });
+    setSelectedCommunityPost((current) => (current?.id === postId ? null : current));
+    setDeleteTargetPost((current) => (current?.id === postId ? null : current));
+
     try {
       await apiRequest(`/community/posts/${encodeURIComponent(postId)}`, {
         method: 'DELETE',
       });
-      setCommunityPosts((current) => current.filter((post) => post.id !== postId));
-      setSelectedCommunityPost((current) => (current?.id === postId ? null : current));
-      void clearCachedResource(COMMUNITY_POSTS_CACHE_KEY);
+      await clearCachedResource(COMMUNITY_POSTS_CACHE_KEY);
+      await loadCommunityPosts(false);
+      setOptimisticDeletedPostIds((current) => {
+        const next = { ...current };
+        delete next[postId];
+        return next;
+      });
     } catch (error) {
+      setOptimisticDeletedPostIds((current) => {
+        const next = { ...current };
+        delete next[postId];
+        return next;
+      });
+      if (removedPost) {
+        setCommunityPosts((current) => {
+          if (current.some((post) => post.id === postId)) {
+            return current;
+          }
+          const next = [...current];
+          const insertIndex = removedIndex >= 0 ? Math.min(removedIndex, next.length) : next.length;
+          next.splice(insertIndex, 0, removedPost);
+          return next;
+        });
+      }
       setCommunityError(error instanceof Error ? error.message : t('Failed to delete post'));
     } finally {
       setDeleteSubmitting((current) => ({ ...current, [postId]: false }));
