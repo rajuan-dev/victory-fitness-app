@@ -15,7 +15,7 @@ import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as FileSystem from 'expo-file-system/legacy';
-import CrossPlatformWebView from '../../../components/CrossPlatformWebView';
+import CrossPlatformWebView from '../../../components/CrossPlatformWebView.native';
 import { Colors } from '../../../constants/Colors';
 import { apiRequest } from '../../../lib/api';
 import { ErrorPopupModal } from '../../../components/ErrorPopupModal';
