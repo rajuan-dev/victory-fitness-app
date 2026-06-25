@@ -456,7 +456,7 @@ export default function PostLoginOnboardingFlow({ user }: Props) {
                 style={styles.notesInput}
               />
 
-              <Text style={styles.questionTitle}>4. How many days per week can you realistically commit, and how much time per session?</Text>
+              <Text style={styles.questionTitle}>4. How many days per week can you realistically commit?</Text>
               <View style={styles.optionGridSingle}>
                 {DAYS_OPTIONS.map((option) => (
                   <Pressable
@@ -469,6 +469,8 @@ export default function PostLoginOnboardingFlow({ user }: Props) {
                 ))}
               </View>
               {errors.daysPerWeek ? <Text style={styles.errorText}>{errors.daysPerWeek}</Text> : null}
+
+              <Text style={styles.questionTitle}>5. How much time can you commit per session?</Text>
               <View style={styles.optionGridSingle}>
                 {SESSION_OPTIONS.map((option) => (
                   <Pressable
@@ -482,7 +484,7 @@ export default function PostLoginOnboardingFlow({ user }: Props) {
               </View>
               {errors.timePerSession ? <Text style={styles.errorText}>{errors.timePerSession}</Text> : null}
 
-              <Text style={styles.questionTitle}>5. What equipment or environment do you have access to?</Text>
+              <Text style={styles.questionTitle}>6. What equipment or environment do you have access to?</Text>
               <View style={styles.optionGridSingle}>
                 {EQUIPMENT_OPTIONS.map((option) => (
                   <Pressable
