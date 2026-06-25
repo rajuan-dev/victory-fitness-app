@@ -44,6 +44,9 @@ function resolveApiUrl(url: string): string {
 
 const API_URL = resolveApiUrl(RAW_API_URL);
 const REQUEST_TIMEOUT_MS = 8_000;
+const APP_REQUEST_CREDENTIALS: RequestCredentials = 'omit';
+const APP_CLIENT_HEADER_NAME = 'X-Victory-Client';
+const APP_CLIENT_HEADER_VALUE = 'app';
 let apiLanguage: string | undefined;
 
 export function setApiLanguage(language?: string) {
@@ -728,8 +731,9 @@ export async function logout() {
       headers: {
         Accept: 'application/json',
         'Content-Type': 'application/json',
+        [APP_CLIENT_HEADER_NAME]: APP_CLIENT_HEADER_VALUE,
       },
-      credentials: 'include',
+      credentials: APP_REQUEST_CREDENTIALS,
     });
   } catch {
     // Local logout should still succeed if the network request fails.
@@ -1158,8 +1162,9 @@ async function refreshWithSessionToken(sessionToken: string): Promise<AuthTokens
       headers: {
         Accept: 'application/json',
         'Content-Type': 'application/json',
+        [APP_CLIENT_HEADER_NAME]: APP_CLIENT_HEADER_VALUE,
       },
-      credentials: 'include',
+      credentials: APP_REQUEST_CREDENTIALS,
       body: JSON.stringify({ session_token: sessionToken }),
     });
   } catch {
@@ -1248,6 +1253,7 @@ export async function apiRequest<T>(
   const headers: Record<string, string> = {
     Accept: 'application/json',
     'Content-Type': 'application/json',
+    [APP_CLIENT_HEADER_NAME]: APP_CLIENT_HEADER_VALUE,
   };
 
   if (requestTokens?.access_token) {
@@ -1267,7 +1273,7 @@ export async function apiRequest<T>(
   const response = await fetchWithTimeout(`${API_URL}${path}`, {
     method: options.method ?? 'GET',
     headers,
-    credentials: 'include',
+    credentials: APP_REQUEST_CREDENTIALS,
     body: isFormDataBody
       ? options.body as BodyInit
       : options.body
