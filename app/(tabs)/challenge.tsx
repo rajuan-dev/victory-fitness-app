@@ -1340,13 +1340,14 @@ export default function ChallengesScreen() {
         return next;
       });
       if (removedPost) {
+        const postToRestore = removedPost;
         setCommunityPosts((current) => {
           if (current.some((post) => post.id === postId)) {
             return current;
           }
           const next = [...current];
           const insertIndex = removedIndex >= 0 ? Math.min(removedIndex, next.length) : next.length;
-          next.splice(insertIndex, 0, removedPost);
+          next.splice(insertIndex, 0, postToRestore);
           return next;
         });
       }
