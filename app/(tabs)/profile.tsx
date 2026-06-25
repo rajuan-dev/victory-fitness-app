@@ -77,7 +77,9 @@ const MENU_SECTIONS = [
 
 const LANGUAGE_OPTIONS = [
   { key: 'en', label: 'English' },
+  { key: 'it', label: 'Italian' },
   { key: 'de', label: 'German' },
+  { key: 'es', label: 'Spanish' },
 ] as const;
 
 function getDynamicRankIcon(rank: string) {
@@ -198,7 +200,19 @@ export default function ProfileScreen() {
   }, [bodyMetrics.age, bodyMetrics.gender, bodyMetrics.height, bodyMetrics.weight, t]);
 
   const languageLabel = React.useMemo(
-    () => (language === 'de' ? t('German') : t('English')),
+    () => {
+      switch (language) {
+        case 'de':
+          return t('German');
+        case 'it':
+          return t('Italian');
+        case 'es':
+          return t('Spanish');
+        case 'en':
+        default:
+          return t('English');
+      }
+    },
     [language, t],
   );
 
