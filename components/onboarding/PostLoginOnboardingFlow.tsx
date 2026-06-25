@@ -408,7 +408,7 @@ export default function PostLoginOnboardingFlow({ user }: Props) {
               <Text style={styles.stepText}>Answer these five questions so we can shape the right plan recommendation.</Text>
 
               <Text style={styles.questionTitle}>1. What is your primary goal?</Text>
-              <View style={styles.optionGrid}>
+              <View style={styles.optionGridSingle}>
                 {PRIMARY_GOAL_OPTIONS.map((option) => (
                   <Pressable
                     key={option}
@@ -422,7 +422,7 @@ export default function PostLoginOnboardingFlow({ user }: Props) {
               {errors.primaryGoal ? <Text style={styles.errorText}>{errors.primaryGoal}</Text> : null}
 
               <Text style={styles.questionTitle}>2. How would you describe your current activity level?</Text>
-              <View style={styles.optionGrid}>
+              <View style={styles.optionGridSingle}>
                 {ACTIVITY_LEVEL_OPTIONS.map((option) => (
                   <Pressable
                     key={option}
@@ -436,7 +436,7 @@ export default function PostLoginOnboardingFlow({ user }: Props) {
               {errors.activityLevel ? <Text style={styles.errorText}>{errors.activityLevel}</Text> : null}
 
               <Text style={styles.questionTitle}>3. Do you currently have, or have you had in the last 12 months, any injuries, pain, or medical conditions we should know about?</Text>
-              <View style={styles.optionGrid}>
+              <View style={styles.optionGridSingle}>
                 {HEALTH_CONCERN_OPTIONS.map((option) => (
                   <Pressable
                     key={option}
@@ -457,7 +457,7 @@ export default function PostLoginOnboardingFlow({ user }: Props) {
               />
 
               <Text style={styles.questionTitle}>4. How many days per week can you realistically commit, and how much time per session?</Text>
-              <View style={styles.optionGrid}>
+              <View style={styles.optionGridSingle}>
                 {DAYS_OPTIONS.map((option) => (
                   <Pressable
                     key={option}
@@ -469,7 +469,7 @@ export default function PostLoginOnboardingFlow({ user }: Props) {
                 ))}
               </View>
               {errors.daysPerWeek ? <Text style={styles.errorText}>{errors.daysPerWeek}</Text> : null}
-              <View style={styles.optionGrid}>
+              <View style={styles.optionGridSingle}>
                 {SESSION_OPTIONS.map((option) => (
                   <Pressable
                     key={option}
@@ -483,7 +483,7 @@ export default function PostLoginOnboardingFlow({ user }: Props) {
               {errors.timePerSession ? <Text style={styles.errorText}>{errors.timePerSession}</Text> : null}
 
               <Text style={styles.questionTitle}>5. What equipment or environment do you have access to?</Text>
-              <View style={styles.optionGrid}>
+              <View style={styles.optionGridSingle}>
                 {EQUIPMENT_OPTIONS.map((option) => (
                   <Pressable
                     key={option}
@@ -671,9 +671,13 @@ const styles = StyleSheet.create({
     gap: 10,
     marginBottom: 8,
   },
+  optionGridSingle: {
+    flexDirection: 'column',
+    gap: 10,
+    marginBottom: 8,
+  },
   optionCard: {
-    minWidth: '47%',
-    flexGrow: 1,
+    width: '100%',
     backgroundColor: Colors.accentSurface,
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.08)',
