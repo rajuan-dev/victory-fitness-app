@@ -2,7 +2,7 @@ import React from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { setApiLanguage } from './api';
 
-export type LanguageCode = 'en' | 'de' | 'it' | 'es';
+export type LanguageCode = 'en' | 'de';
 
 const LANGUAGE_STORAGE_KEY = 'victory-language';
 
@@ -1717,8 +1717,6 @@ const TRANSLATIONS: Record<LanguageCode, Record<string, string>> = {
     'Unable to add {deviceName}.': '{deviceName} konnte nicht hinzugefÃ¼gt werden.',
     'Unable to generate weekly plan.': 'Der Wochenplan kann gerade nicht erstellt werden.',
   },
-  it: {},
-  es: {},
 };
 
 type LanguageContextValue = {
@@ -1751,7 +1749,7 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
     const loadLanguage = async () => {
       try {
         const stored = await AsyncStorage.getItem(LANGUAGE_STORAGE_KEY);
-        if (!cancelled && (stored === 'de' || stored === 'en' || stored === 'it' || stored === 'es')) {
+        if (!cancelled && (stored === 'de' || stored === 'en')) {
           setLanguageState(stored);
           setApiLanguage(stored);
         }

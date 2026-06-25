@@ -43,7 +43,7 @@ const EQUIPMENT_OPTIONS = ['No equipment', 'Home gym', 'Full gym', 'Outdoors'];
 const STEP_TITLES = ['Language', 'Profile', 'Health', 'Recommendation'];
 
 function isSupportedAppLanguage(value: OnboardingLanguage): value is LanguageCode {
-  return value === 'en' || value === 'de' || value === 'it' || value === 'es';
+  return value === 'en' || value === 'de';
 }
 
 type Props = {
