@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
+  Modal,
   Platform,
   Pressable,
   ScrollView,
@@ -11,6 +12,7 @@ import {
   View,
 } from 'react-native';
 import { useRouter } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
 
 import { Colors } from '../../constants/Colors';
 import { AuthButton } from '../AuthButton';
@@ -82,6 +84,19 @@ function getSuggestedTier(anamnese: OnboardingAnamnese): OnboardingSuggestion {
   };
 }
 
+function convertWeightToKilograms(weight: string, unit: 'kg' | 'lb') {
+  const numericWeight = Number.parseFloat(weight);
+  if (!Number.isFinite(numericWeight)) {
+    return weight.trim();
+  }
+
+  if (unit === 'lb') {
+    return (numericWeight * 0.45359237).toFixed(1);
+  }
+
+  return numericWeight.toString();
+}
+
 export default function PostLoginOnboardingFlow({ user }: Props) {
   const router = useRouter();
   const { setLanguage } = useLanguage();
@@ -90,6 +105,7 @@ export default function PostLoginOnboardingFlow({ user }: Props) {
   const [step, setStep] = useState(0);
   const [errors, setErrors] = useState<ValidationErrors>({});
   const [data, setData] = useState<OnboardingData | null>(null);
+  const [showGenderModal, setShowGenderModal] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -101,7 +117,7 @@ export default function PostLoginOnboardingFlow({ user }: Props) {
           userId: user.id,
           currentStep: 0,
           language: '',
-          personalProfile: { age: '', gender: '', height: '', weight: '' },
+          personalProfile: { age: '', gender: '', height: '', heightUnit: 'cm', weight: '', weightUnit: 'kg' },
           anamnese: {
             primaryGoal: '',
             activityLevel: '',
@@ -213,7 +229,7 @@ export default function PostLoginOnboardingFlow({ user }: Props) {
             age: finalData.personalProfile.age,
             gender: finalData.personalProfile.gender,
             height: finalData.personalProfile.height,
-            weight: finalData.personalProfile.weight,
+            weight: convertWeightToKilograms(finalData.personalProfile.weight, finalData.personalProfile.weightUnit),
           }),
         ]);
         replaceRoute(router, '/plan');
@@ -336,30 +352,52 @@ export default function PostLoginOnboardingFlow({ user }: Props) {
                 keyboardType="number-pad"
               />
               {errors.age ? <Text style={styles.errorText}>{errors.age}</Text> : null}
-              <View style={styles.optionGrid}>
-                {GENDER_OPTIONS.map((option) => (
-                  <Pressable
-                    key={option}
-                    onPress={() => void updateData((current) => ({ ...current, personalProfile: { ...current.personalProfile, gender: option } }))}
-                    style={[styles.optionCard, data.personalProfile.gender === option && styles.optionCardActive]}
-                  >
-                    <Text style={[styles.optionLabel, data.personalProfile.gender === option && styles.optionLabelActive]}>{option}</Text>
-                  </Pressable>
-                ))}
-              </View>
+              <Text style={styles.fieldLabel}>Gender</Text>
+              <Pressable style={styles.dropdownField} onPress={() => setShowGenderModal(true)}>
+                <Text style={[styles.dropdownFieldText, !data.personalProfile.gender && styles.dropdownFieldPlaceholder]}>
+                  {data.personalProfile.gender || 'Select gender'}
+                </Text>
+                <Ionicons name="chevron-down" size={18} color={Colors.textSecondary} />
+              </Pressable>
               {errors.gender ? <Text style={styles.errorText}>{errors.gender}</Text> : null}
-              <AuthInput
-                placeholder="Height"
-                value={data.personalProfile.height}
-                onChangeText={(value) => void updateData((current) => ({ ...current, personalProfile: { ...current.personalProfile, height: value } }))}
-              />
+              <Text style={styles.fieldLabel}>Height</Text>
+              <View style={styles.measurementField}>
+                <TextInput
+                  style={styles.measurementInput}
+                  placeholder="How many cm"
+                  placeholderTextColor={Colors.placeholder}
+                  value={data.personalProfile.height}
+                  onChangeText={(value) => void updateData((current) => ({ ...current, personalProfile: { ...current.personalProfile, height: value } }))}
+                  keyboardType="decimal-pad"
+                />
+                <View style={styles.measurementUnitBadge}>
+                  <Text style={styles.measurementUnitText}>cm</Text>
+                </View>
+              </View>
               {errors.height ? <Text style={styles.errorText}>{errors.height}</Text> : null}
               <Text style={styles.helperText}>This helps us calculate your personalized nutrition and training targets - visible only to you.</Text>
-              <AuthInput
-                placeholder="Weight"
-                value={data.personalProfile.weight}
-                onChangeText={(value) => void updateData((current) => ({ ...current, personalProfile: { ...current.personalProfile, weight: value } }))}
-              />
+              <Text style={styles.fieldLabel}>Weight</Text>
+              <View style={styles.measurementField}>
+                <TextInput
+                  style={styles.measurementInput}
+                  placeholder={data.personalProfile.weightUnit === 'lb' ? 'How many lb' : 'How many kg'}
+                  placeholderTextColor={Colors.placeholder}
+                  value={data.personalProfile.weight}
+                  onChangeText={(value) => void updateData((current) => ({ ...current, personalProfile: { ...current.personalProfile, weight: value } }))}
+                  keyboardType="decimal-pad"
+                />
+                <View style={styles.unitSelectorRow}>
+                  {(['kg', 'lb'] as const).map((unit) => (
+                    <Pressable
+                      key={unit}
+                      onPress={() => void updateData((current) => ({ ...current, personalProfile: { ...current.personalProfile, weightUnit: unit } }))}
+                      style={[styles.unitSelectorPill, data.personalProfile.weightUnit === unit && styles.unitSelectorPillActive]}
+                    >
+                      <Text style={[styles.unitSelectorText, data.personalProfile.weightUnit === unit && styles.unitSelectorTextActive]}>{unit.toUpperCase()}</Text>
+                    </Pressable>
+                  ))}
+                </View>
+              </View>
               {errors.weight ? <Text style={styles.errorText}>{errors.weight}</Text> : null}
             </View>
           ) : null}
@@ -475,8 +513,8 @@ export default function PostLoginOnboardingFlow({ user }: Props) {
                 <Text style={styles.reviewLine}>Language: {LANGUAGE_OPTIONS.find((option) => option.value === data.language)?.label ?? '-'}</Text>
                 <Text style={styles.reviewLine}>Age: {data.personalProfile.age || '-'}</Text>
                 <Text style={styles.reviewLine}>Gender: {data.personalProfile.gender || '-'}</Text>
-                <Text style={styles.reviewLine}>Height: {data.personalProfile.height || '-'}</Text>
-                <Text style={styles.reviewLine}>Weight: {data.personalProfile.weight || '-'}</Text>
+                <Text style={styles.reviewLine}>Height: {data.personalProfile.height ? `${data.personalProfile.height} ${data.personalProfile.heightUnit}` : '-'}</Text>
+                <Text style={styles.reviewLine}>Weight: {data.personalProfile.weight ? `${data.personalProfile.weight} ${data.personalProfile.weightUnit}` : '-'}</Text>
                 <Text style={styles.reviewLine}>Goal: {data.anamnese.primaryGoal || '-'}</Text>
                 <Text style={styles.reviewLine}>Activity: {data.anamnese.activityLevel || '-'}</Text>
                 <Text style={styles.reviewLine}>Commitment: {data.anamnese.daysPerWeek || '-'} / {data.anamnese.timePerSession || '-'}</Text>
@@ -499,6 +537,26 @@ export default function PostLoginOnboardingFlow({ user }: Props) {
           </View>
         </View>
       </ScrollView>
+      <Modal visible={showGenderModal} transparent animationType="fade" onRequestClose={() => setShowGenderModal(false)}>
+        <Pressable style={styles.modalOverlay} onPress={() => setShowGenderModal(false)}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>Select gender</Text>
+            {GENDER_OPTIONS.map((option) => (
+              <Pressable
+                key={option}
+                style={styles.modalOption}
+                onPress={() => {
+                  setShowGenderModal(false);
+                  void updateData((current) => ({ ...current, personalProfile: { ...current.personalProfile, gender: option } }));
+                }}
+              >
+                <Text style={[styles.modalOptionText, data.personalProfile.gender === option && styles.modalOptionTextActive]}>{option}</Text>
+                {data.personalProfile.gender === option ? <Ionicons name="checkmark-circle" size={20} color={Colors.primary} /> : null}
+              </Pressable>
+            ))}
+          </View>
+        </Pressable>
+      </Modal>
     </KeyboardAvoidingView>
   );
 }
@@ -601,6 +659,12 @@ const styles = StyleSheet.create({
     lineHeight: 21,
     marginBottom: 18,
   },
+  fieldLabel: {
+    color: Colors.text,
+    fontFamily: 'Inter_700Bold',
+    fontSize: 13,
+    marginBottom: 8,
+  },
   optionGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -635,6 +699,84 @@ const styles = StyleSheet.create({
     fontSize: 12,
     lineHeight: 18,
     marginBottom: 10,
+  },
+  dropdownField: {
+    minHeight: 56,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: Colors.inputBorder,
+    backgroundColor: Colors.inputBackground,
+    paddingHorizontal: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 10,
+  },
+  dropdownFieldText: {
+    color: Colors.text,
+    fontFamily: 'Inter_400Regular',
+    fontSize: 14,
+  },
+  dropdownFieldPlaceholder: {
+    color: Colors.placeholder,
+  },
+  measurementField: {
+    minHeight: 56,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: Colors.inputBorder,
+    backgroundColor: Colors.inputBackground,
+    paddingHorizontal: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+    marginBottom: 10,
+  },
+  measurementInput: {
+    flex: 1,
+    color: Colors.text,
+    fontFamily: 'Inter_400Regular',
+    fontSize: 14,
+    paddingVertical: 14,
+    outlineStyle: 'none' as any,
+  },
+  measurementUnitBadge: {
+    borderRadius: 12,
+    backgroundColor: Colors.accentSurface,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  measurementUnitText: {
+    color: Colors.text,
+    fontFamily: 'Inter_700Bold',
+    fontSize: 12,
+    letterSpacing: 0.4,
+  },
+  unitSelectorRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  unitSelectorPill: {
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+    backgroundColor: Colors.accentSurface,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  unitSelectorPillActive: {
+    borderColor: Colors.primary,
+    backgroundColor: 'rgba(0,240,208,0.14)',
+  },
+  unitSelectorText: {
+    color: Colors.textSecondary,
+    fontFamily: 'Inter_700Bold',
+    fontSize: 12,
+    letterSpacing: 0.3,
+  },
+  unitSelectorTextActive: {
+    color: Colors.text,
   },
   errorText: {
     color: Colors.accentDanger,
@@ -719,6 +861,43 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 20,
     marginBottom: 4,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.72)',
+    justifyContent: 'center',
+    paddingHorizontal: 20,
+  },
+  modalCard: {
+    backgroundColor: Colors.surface,
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: Colors.inputBorder,
+    padding: 20,
+  },
+  modalTitle: {
+    color: Colors.text,
+    fontFamily: 'Inter_700Bold',
+    fontSize: 18,
+    marginBottom: 14,
+  },
+  modalOption: {
+    minHeight: 52,
+    borderRadius: 16,
+    paddingHorizontal: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: Colors.accentSurface,
+    marginBottom: 10,
+  },
+  modalOptionText: {
+    color: Colors.textSecondary,
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 14,
+  },
+  modalOptionTextActive: {
+    color: Colors.text,
   },
   actionsRow: {
     flexDirection: 'row',

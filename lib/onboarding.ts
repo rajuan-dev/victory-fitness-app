@@ -7,7 +7,9 @@ export type OnboardingPersonalProfile = {
   age: string;
   gender: string;
   height: string;
+  heightUnit: 'cm';
   weight: string;
+  weightUnit: 'kg' | 'lb';
 };
 
 export type OnboardingAnamnese = {
@@ -48,7 +50,9 @@ const EMPTY_PERSONAL_PROFILE: OnboardingPersonalProfile = {
   age: '',
   gender: '',
   height: '',
+  heightUnit: 'cm',
   weight: '',
+  weightUnit: 'kg',
 };
 
 const EMPTY_ANAMNESE: OnboardingAnamnese = {
@@ -79,7 +83,9 @@ function normalizeOnboardingData(raw: unknown): OnboardingData | null {
       age: String((source.personalProfile as Record<string, unknown> | undefined)?.age ?? '').trim(),
       gender: String((source.personalProfile as Record<string, unknown> | undefined)?.gender ?? '').trim(),
       height: String((source.personalProfile as Record<string, unknown> | undefined)?.height ?? '').trim(),
+      heightUnit: 'cm',
       weight: String((source.personalProfile as Record<string, unknown> | undefined)?.weight ?? '').trim(),
+      weightUnit: String((source.personalProfile as Record<string, unknown> | undefined)?.weightUnit ?? 'kg').trim() === 'lb' ? 'lb' : 'kg',
     },
     anamnese: {
       primaryGoal: String((source.anamnese as Record<string, unknown> | undefined)?.primaryGoal ?? '').trim(),
