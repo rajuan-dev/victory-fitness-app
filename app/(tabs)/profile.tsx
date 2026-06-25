@@ -21,6 +21,7 @@ import AccessRestrictionModal from '../../components/AccessRestrictionModal';
 import { BodyMetrics, fetchCurrentUser, fetchCurrentUserBodyMetrics, logout, updateCurrentUserBodyMetrics } from '../../lib/api';
 import { canAccessFeature, canAccessPlanRoute } from '../../lib/access';
 import { useLanguage } from '../../lib/i18n';
+import { syncOnboardingProfileFields } from '../../lib/onboarding';
 import { useModuleAccessGuard } from '../../lib/useModuleAccessGuard';
 import { replaceRoute } from '../../lib/navigation';
 
@@ -346,6 +347,14 @@ export default function ProfileScreen() {
         gender: metricsDraft.gender.trim(),
       });
       setBodyMetrics(updated);
+      if (me?.id) {
+        await syncOnboardingProfileFields(me.id, {
+          age: updated.age,
+          height: updated.height,
+          weight: updated.weight,
+          gender: updated.gender,
+        });
+      }
       setShowMetricsModal(false);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unable to update body metrics right now.';

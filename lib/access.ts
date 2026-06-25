@@ -1,4 +1,5 @@
 import type { AuthUser } from './api';
+import { isOnboardingCompletedSnapshot } from './onboarding';
 
 export type SubscriptionTier = 'NONE' | 'SILVER' | 'GOLD' | 'PLATINUM' | 'INNER_CIRCLE';
 export type BillingCycle = 'monthly' | 'yearly';
@@ -154,21 +155,23 @@ export function isAdminRestrictedFromApp(user?: Pick<AuthUser, 'is_admin'> | nul
   return Boolean(user?.is_admin);
 }
 
-export function getPostAuthRoute(user?: Pick<AuthUser, 'is_admin' | 'subscription_tier' | 'subscription_status' | 'onboarding_completed'> | null): string {
+export function getPostAuthRoute(user?: Pick<AuthUser, 'id' | 'is_admin' | 'subscription_tier' | 'subscription_status' | 'onboarding_completed'> | null): string {
   if (!user) {
     return '/login';
   }
   if (isAdminRestrictedFromApp(user)) {
     return '/login';
   }
-  if (!user.onboarding_completed) {
+  const onboardingCompleted = user.id ? isOnboardingCompletedSnapshot(user.id) : Boolean(user.onboarding_completed);
+  if (!onboardingCompleted) {
     return '/onboarding';
   }
   return isSubscriptionActive(user) ? '/(tabs)' : PLAN_PATH;
 }
 
-export function isRouteAllowedForPlan(pathname: string, user?: Pick<AuthUser, 'is_admin' | 'subscription_tier' | 'subscription_status' | 'onboarding_completed'> | null): boolean {
-  if (user && !user.onboarding_completed) {
+export function isRouteAllowedForPlan(pathname: string, user?: Pick<AuthUser, 'id' | 'is_admin' | 'subscription_tier' | 'subscription_status' | 'onboarding_completed'> | null): boolean {
+  const onboardingCompleted = user?.id ? isOnboardingCompletedSnapshot(user.id) : Boolean(user?.onboarding_completed);
+  if (user && !onboardingCompleted) {
     return pathname === '/onboarding' || pathname === '/login' || pathname === '/register' || pathname === '/verification';
   }
 
@@ -193,7 +196,7 @@ export function isRouteAllowedForPlan(pathname: string, user?: Pick<AuthUser, 'i
   return false;
 }
 
-export function canAccessPlanRoute(pathname: string, user?: Pick<AuthUser, 'is_admin' | 'subscription_tier' | 'subscription_status' | 'onboarding_completed'> | null): boolean {
+export function canAccessPlanRoute(pathname: string, user?: Pick<AuthUser, 'id' | 'is_admin' | 'subscription_tier' | 'subscription_status' | 'onboarding_completed'> | null): boolean {
   if (!user) {
     return false;
   }
