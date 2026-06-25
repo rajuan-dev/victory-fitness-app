@@ -30,9 +30,7 @@ import { replaceRoute } from '../../lib/navigation';
 
 const LANGUAGE_OPTIONS: Array<{ value: OnboardingLanguage; label: string }> = [
   { value: 'en', label: 'English' },
-  { value: 'it', label: 'Italian' },
   { value: 'de', label: 'German' },
-  { value: 'es', label: 'Spanish' },
 ];
 
 const GENDER_OPTIONS = ['Male', 'Female', 'Non-binary', 'Prefer not to say'];
