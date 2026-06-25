@@ -1336,6 +1336,7 @@ export type AuthResponse = {
     name: string;
     email: string;
     is_verified: boolean;
+    is_admin?: boolean;
     country?: string;
     profileImage?: string;
     points?: number;

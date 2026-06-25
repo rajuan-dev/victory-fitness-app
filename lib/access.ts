@@ -150,8 +150,15 @@ export function isPublicRoute(pathname: string): boolean {
   return ALLOWED_PUBLIC_PATHS.some((route) => pathname === route || pathname.startsWith(`${route}/`));
 }
 
+export function isAdminRestrictedFromApp(user?: Pick<AuthUser, 'is_admin'> | null): boolean {
+  return Boolean(user?.is_admin);
+}
+
 export function getPostAuthRoute(user?: Pick<AuthUser, 'is_admin' | 'subscription_tier' | 'subscription_status' | 'onboarding_completed'> | null): string {
   if (!user) {
+    return '/login';
+  }
+  if (isAdminRestrictedFromApp(user)) {
     return '/login';
   }
   if (!user.onboarding_completed) {
