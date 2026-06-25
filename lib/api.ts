@@ -725,6 +725,7 @@ export async function clearAuthTokens() {
 }
 
 export async function logout() {
+  const tokens = await getAuthTokens();
   try {
     await fetchWithTimeout(`${API_URL}/auth/logout`, {
       method: 'POST',
@@ -732,8 +733,10 @@ export async function logout() {
         Accept: 'application/json',
         'Content-Type': 'application/json',
         [APP_CLIENT_HEADER_NAME]: APP_CLIENT_HEADER_VALUE,
+        ...(tokens?.access_token ? { Authorization: `Bearer ${tokens.access_token}` } : {}),
       },
       credentials: APP_REQUEST_CREDENTIALS,
+      body: tokens?.session_token ? JSON.stringify({ session_token: tokens.session_token }) : undefined,
     });
   } catch {
     // Local logout should still succeed if the network request fails.
