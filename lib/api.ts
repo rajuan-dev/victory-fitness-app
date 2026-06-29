@@ -469,6 +469,7 @@ let authTokens: AuthTokens | null = null;
 let authTokensLoaded = false;
 let authTokensLoadPromise: Promise<void> | null = null;
 let authRefreshPromise: Promise<AuthTokens | null> | null = null;
+let browserRefreshFailedAt = 0;
 let authUser: AuthUser | null = null;
 let authUserLoaded = false;
 let authUserLoadPromise: Promise<void> | null = null;
@@ -481,6 +482,7 @@ let bodyMetricsCache: BodyMetrics | null = null;
 
 const CURRENT_USER_CACHE_TTL_MS = 30_000;
 const BODY_METRICS_CACHE_TTL_MS = 30_000;
+const BROWSER_REFRESH_RETRY_MS = 30_000;
 const BODY_METRICS_RESOURCE_KEY = 'me-body-metrics';
 
 function normalizeAuthUser(user: Partial<AuthUser> & { id?: string; name?: string; email?: string; is_verified?: boolean }): AuthUser {
@@ -689,6 +691,7 @@ async function ensureAuthUserLoaded() {
 export async function setAuthTokens(tokens: AuthTokens & { user?: AuthUser }) {
   authTokens = tokens;
   authTokensLoaded = true;
+  browserRefreshFailedAt = 0;
   await persistAuthTokens(tokens);
 
   if (tokens.user) {
@@ -701,9 +704,12 @@ export async function setAuthTokens(tokens: AuthTokens & { user?: AuthUser }) {
   }
 }
 
-export async function clearAuthTokens() {
+export async function clearAuthTokens(options?: { preserveBrowserRefreshFailure?: boolean }) {
   authTokens = null;
   authTokensLoaded = true;
+  if (!options?.preserveBrowserRefreshFailure) {
+    browserRefreshFailedAt = 0;
+  }
   await persistAuthTokens(null);
   authUser = null;
   authUserLoaded = true;
@@ -1257,7 +1263,10 @@ async function refreshAuthTokens(): Promise<AuthTokens | null> {
     authRefreshPromise = refreshWithSessionToken(authTokens?.session_token)
       .then(async (refreshed) => {
         if (!refreshed) {
-          await clearAuthTokens();
+          if (IS_BROWSER_AUTH) {
+            browserRefreshFailedAt = Date.now();
+          }
+          await clearAuthTokens({ preserveBrowserRefreshFailure: true });
           authFailureHandler?.();
           return null;
         }
@@ -1293,6 +1302,14 @@ export async function getValidAuthTokens() {
   await ensureAuthTokensLoaded();
 
   if (IS_BROWSER_AUTH) {
+    if (authTokens?.access_token && !isJwtExpired(authTokens.access_token)) {
+      return authTokens;
+    }
+
+    if (!authTokens && browserRefreshFailedAt && Date.now() - browserRefreshFailedAt < BROWSER_REFRESH_RETRY_MS) {
+      return null;
+    }
+
     return refreshAuthTokens();
   }
 
