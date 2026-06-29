@@ -46,7 +46,7 @@ export default function HomeScreen() {
           setCanAccessChallenges(canAccessFeature('challenge', user));
           setCanAccessCoachVictor(canAccessFeature('coach_victor', user));
           setCanAccessWorkoutPlans(canAccessFeature('workoutplan', user));
-          const shouldPrompt = await shouldShowWeightUpdatePrompt(user.id);
+          const shouldPrompt = Boolean(user.onboarding_completed) && await shouldShowWeightUpdatePrompt(user.id);
           if (!cancelled && shouldPrompt) {
             setWeightPromptUserId(user.id);
             setWeightDraft('');

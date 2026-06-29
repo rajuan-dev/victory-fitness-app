@@ -39,7 +39,6 @@ export type OnboardingData = {
   updatedAt: string | null;
 };
 
-const ONBOARDING_COMPLETED_KEY = 'onboardingCompleted';
 const ONBOARDING_DATA_KEY = 'onboardingData';
 const LAST_WEIGHT_PROMPT_DATE_KEY = 'lastWeightPromptDate';
 const LAST_WEIGHT_PROMPT_USER_KEY = 'lastWeightPromptUserId';
@@ -137,6 +136,14 @@ async function writeStorageValue(key: string, value: string) {
   await AsyncStorage.setItem(key, value);
 }
 
+async function removeStorageValue(key: string) {
+  if (canUseLocalStorage()) {
+    window.localStorage.removeItem(key);
+    return;
+  }
+  await AsyncStorage.removeItem(key);
+}
+
 export function getStoredOnboardingDataSnapshot() {
   if (!canUseLocalStorage()) {
     return null;
@@ -187,50 +194,14 @@ export async function saveOnboardingData(data: OnboardingData) {
   );
 }
 
-export function isOnboardingCompletedSnapshot(userId?: string) {
-  if (!canUseLocalStorage()) {
-    return false;
-  }
-
-  const completed = window.localStorage.getItem(ONBOARDING_COMPLETED_KEY) === 'true';
-  if (!completed) {
-    return false;
-  }
-
-  const snapshot = getStoredOnboardingDataSnapshot();
-  if (!snapshot) {
-    return false;
-  }
-
-  return !userId || snapshot.userId === userId;
-}
-
-export async function isOnboardingCompleted(userId?: string) {
-  const completed = (await readStorageValue(ONBOARDING_COMPLETED_KEY)) === 'true';
-  if (!completed) {
-    return false;
-  }
-
-  const data = await getOnboardingData(userId);
-  if (!data) {
-    return false;
-  }
-
-  return !userId || data.userId === userId;
-}
-
 export async function completeOnboarding(data: OnboardingData) {
   await saveOnboardingData(data);
-  await writeStorageValue(ONBOARDING_COMPLETED_KEY, 'true');
+  await removeStorageValue('onboardingCompleted');
   await writeStorageValue(LAST_WEIGHT_PROMPT_DATE_KEY, new Date().toISOString());
   await writeStorageValue(LAST_WEIGHT_PROMPT_USER_KEY, data.userId);
 }
 
 export async function shouldShowWeightUpdatePrompt(userId: string) {
-  if (!(await isOnboardingCompleted(userId))) {
-    return false;
-  }
-
   const data = await getOnboardingData(userId);
   if (!data?.personalProfile.weight) {
     return true;

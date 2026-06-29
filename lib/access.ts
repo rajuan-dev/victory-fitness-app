@@ -1,5 +1,4 @@
 import type { AuthUser } from './api';
-import { isOnboardingCompletedSnapshot } from './onboarding';
 
 export type SubscriptionTier = 'NONE' | 'SILVER' | 'GOLD' | 'PLATINUM' | 'INNER_CIRCLE';
 export type BillingCycle = 'monthly' | 'yearly';
@@ -162,7 +161,7 @@ export function getPostAuthRoute(user?: Pick<AuthUser, 'id' | 'is_admin' | 'subs
   if (isAdminRestrictedFromApp(user)) {
     return '/login';
   }
-  const onboardingCompleted = user.id ? isOnboardingCompletedSnapshot(user.id) : Boolean(user.onboarding_completed);
+  const onboardingCompleted = Boolean(user.onboarding_completed);
   if (!onboardingCompleted) {
     return '/onboarding';
   }
@@ -170,7 +169,7 @@ export function getPostAuthRoute(user?: Pick<AuthUser, 'id' | 'is_admin' | 'subs
 }
 
 export function isRouteAllowedForPlan(pathname: string, user?: Pick<AuthUser, 'id' | 'is_admin' | 'subscription_tier' | 'subscription_status' | 'onboarding_completed'> | null): boolean {
-  const onboardingCompleted = user?.id ? isOnboardingCompletedSnapshot(user.id) : Boolean(user?.onboarding_completed);
+  const onboardingCompleted = Boolean(user?.onboarding_completed);
   if (user && !onboardingCompleted) {
     return pathname === '/onboarding' || pathname === '/login' || pathname === '/register' || pathname === '/verification';
   }

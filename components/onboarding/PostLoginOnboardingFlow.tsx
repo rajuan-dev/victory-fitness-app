@@ -17,15 +17,12 @@ import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../constants/Colors';
 import { AuthButton } from '../AuthButton';
 import { AuthInput } from '../AuthInput';
-import { AuthUser, updateCurrentUserBodyMetrics, updateCurrentUserProfile } from '../../lib/api';
+import { AuthUser, fetchCurrentUserOnboarding, updateCurrentUserOnboarding, updateCurrentUserProfile } from '../../lib/api';
 import {
-  completeOnboarding,
-  getOnboardingData,
   OnboardingAnamnese,
   OnboardingData,
   OnboardingLanguage,
   OnboardingSuggestion,
-  saveOnboardingData,
 } from '../../lib/onboarding';
 import { LanguageCode, useLanguage } from '../../lib/i18n';
 import { replaceRoute } from '../../lib/navigation';
@@ -111,9 +108,17 @@ export default function PostLoginOnboardingFlow({ user }: Props) {
     let cancelled = false;
 
     const load = async () => {
-      const stored = await getOnboardingData(user.id);
+      const stored = await fetchCurrentUserOnboarding().catch(() => null);
       if (!cancelled) {
-        const nextData = stored ?? {
+        const nextData: OnboardingData = stored ? {
+          userId: stored.userId,
+          currentStep: stored.currentStep,
+          language: stored.language,
+          personalProfile: stored.personalProfile,
+          anamnese: stored.anamnese,
+          suggestion: stored.suggestion,
+          updatedAt: stored.updatedAt,
+        } : {
           userId: user.id,
           currentStep: 0,
           language: '',
@@ -146,9 +151,16 @@ export default function PostLoginOnboardingFlow({ user }: Props) {
   const suggestion = useMemo(() => (data ? getSuggestedTier(data.anamnese) : null), [data]);
 
   const persistDraft = async (nextData: OnboardingData, nextStep = step) => {
-    const draft = { ...nextData, currentStep: nextStep };
+    const draft: OnboardingData = { ...nextData, currentStep: nextStep };
     setData(draft);
-    await saveOnboardingData(draft);
+    await updateCurrentUserOnboarding({
+      currentStep: draft.currentStep,
+      language: draft.language,
+      personalProfile: draft.personalProfile,
+      anamnese: draft.anamnese,
+      suggestion: draft.suggestion,
+      completed: false,
+    });
   };
 
   const validateCurrentStep = () => {
@@ -222,16 +234,19 @@ export default function PostLoginOnboardingFlow({ user }: Props) {
           currentStep: STEP_TITLES.length - 1,
           updatedAt: new Date().toISOString(),
         };
-        await completeOnboarding(finalData);
-        await Promise.allSettled([
-          updateCurrentUserProfile({ onboarding_completed: true }),
-          updateCurrentUserBodyMetrics({
-            age: finalData.personalProfile.age,
-            gender: finalData.personalProfile.gender,
-            height: finalData.personalProfile.height,
+        await updateCurrentUserOnboarding({
+          currentStep: finalData.currentStep,
+          language: finalData.language,
+          personalProfile: {
+            ...finalData.personalProfile,
             weight: convertWeightToKilograms(finalData.personalProfile.weight, finalData.personalProfile.weightUnit),
-          }),
-        ]);
+            weightUnit: 'kg',
+          },
+          anamnese: finalData.anamnese,
+          suggestion: finalData.suggestion,
+          completed: true,
+        });
+        await updateCurrentUserProfile({ onboarding_completed: true });
         replaceRoute(router, '/plan');
       } finally {
         setSaving(false);
@@ -268,7 +283,6 @@ export default function PostLoginOnboardingFlow({ user }: Props) {
       currentStep: step,
     };
     setData(nextData);
-    await saveOnboardingData(nextData);
   };
 
   const toggleHealthConcern = (value: string) => {

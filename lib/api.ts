@@ -1,5 +1,6 @@
 import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import type { OnboardingAnamnese, OnboardingData, OnboardingPersonalProfile, OnboardingSuggestion } from './onboarding';
 import { clearAllCachedResources, fetchCachedResource, getCachedResourceSnapshot, primeCachedResource } from './resourceCache';
 import {
   getLongevityDashboardCacheKey,
@@ -44,10 +45,21 @@ function resolveApiUrl(url: string): string {
 
 const API_URL = resolveApiUrl(RAW_API_URL);
 const REQUEST_TIMEOUT_MS = 8_000;
-const APP_REQUEST_CREDENTIALS: RequestCredentials = 'omit';
+const IS_BROWSER_AUTH = Platform.OS === 'web';
+const APP_REQUEST_CREDENTIALS: RequestCredentials = IS_BROWSER_AUTH ? 'include' : 'omit';
 const APP_CLIENT_HEADER_NAME = 'X-Victory-Client';
 const APP_CLIENT_HEADER_VALUE = 'app';
 let apiLanguage: string | undefined;
+
+function getClientHeaders(): Record<string, string> {
+  if (IS_BROWSER_AUTH) {
+    return {};
+  }
+
+  return {
+    [APP_CLIENT_HEADER_NAME]: APP_CLIENT_HEADER_VALUE,
+  };
+}
 
 export function setApiLanguage(language?: string) {
   apiLanguage = language?.trim() || undefined;
@@ -138,6 +150,10 @@ export type BodyMetrics = {
   height: string;
   weight: string;
   gender: string;
+};
+
+export type OnboardingState = OnboardingData & {
+  completed: boolean;
 };
 
 export type SubscriptionPlan = {
@@ -570,16 +586,7 @@ function isJwtExpired(token: string): boolean {
 }
 
 async function persistAuthTokens(tokens: AuthTokens | null) {
-  if (Platform.OS === 'web') {
-    if (typeof window === 'undefined') {
-      return;
-    }
-
-    if (tokens) {
-      window.localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(tokens));
-    } else {
-      window.localStorage.removeItem(AUTH_STORAGE_KEY);
-    }
+  if (IS_BROWSER_AUTH) {
     return;
   }
 
@@ -591,16 +598,7 @@ async function persistAuthTokens(tokens: AuthTokens | null) {
 }
 
 async function persistAuthUser(user: AuthUser | null) {
-  if (Platform.OS === 'web') {
-    if (typeof window === 'undefined') {
-      return;
-    }
-
-    if (user) {
-      window.localStorage.setItem(AUTH_USER_STORAGE_KEY, JSON.stringify(user));
-    } else {
-      window.localStorage.removeItem(AUTH_USER_STORAGE_KEY);
-    }
+  if (IS_BROWSER_AUTH) {
     return;
   }
 
@@ -633,13 +631,8 @@ async function fetchWithTimeout(input: string, init: RequestInit = {}, timeoutMs
 }
 
 async function loadPersistedAuthTokens(): Promise<AuthTokens | null> {
-  if (Platform.OS === 'web') {
-    if (typeof window === 'undefined') {
-      return null;
-    }
-
-    const raw = window.localStorage.getItem(AUTH_STORAGE_KEY);
-    return raw ? (JSON.parse(raw) as AuthTokens) : null;
+  if (IS_BROWSER_AUTH) {
+    return null;
   }
 
   const raw = await AsyncStorage.getItem(AUTH_STORAGE_KEY);
@@ -647,13 +640,8 @@ async function loadPersistedAuthTokens(): Promise<AuthTokens | null> {
 }
 
 async function loadPersistedAuthUser(): Promise<AuthUser | null> {
-  if (Platform.OS === 'web') {
-    if (typeof window === 'undefined') {
-      return null;
-    }
-
-    const raw = window.localStorage.getItem(AUTH_USER_STORAGE_KEY);
-    return raw ? (JSON.parse(raw) as AuthUser) : null;
+  if (IS_BROWSER_AUTH) {
+    return null;
   }
 
   const raw = await AsyncStorage.getItem(AUTH_USER_STORAGE_KEY);
@@ -727,16 +715,19 @@ export async function clearAuthTokens() {
 export async function logout() {
   const tokens = await getAuthTokens();
   try {
+    const clientHeaders = getClientHeaders();
     await fetchWithTimeout(`${API_URL}/auth/logout`, {
       method: 'POST',
       headers: {
         Accept: 'application/json',
         'Content-Type': 'application/json',
-        [APP_CLIENT_HEADER_NAME]: APP_CLIENT_HEADER_VALUE,
+        ...clientHeaders,
         ...(tokens?.access_token ? { Authorization: `Bearer ${tokens.access_token}` } : {}),
       },
       credentials: APP_REQUEST_CREDENTIALS,
-      body: tokens?.session_token ? JSON.stringify({ session_token: tokens.session_token }) : undefined,
+      body: tokens?.session_token && !IS_BROWSER_AUTH
+        ? JSON.stringify({ session_token: tokens.session_token })
+        : undefined,
     });
   } catch {
     // Local logout should still succeed if the network request fails.
@@ -807,6 +798,73 @@ export async function updateCurrentUserProfile(payload: {
   currentUserFetchedAt = Date.now();
   await persistAuthUser(authUser);
   return user;
+}
+
+function normalizeOnboardingState(state: OnboardingState): OnboardingState {
+  const personalProfile = (state.personalProfile || {}) as Partial<OnboardingPersonalProfile>;
+  const anamnese = (state.anamnese || {}) as Partial<OnboardingAnamnese>;
+  const suggestion = state.suggestion as OnboardingSuggestion | null | undefined;
+
+  return {
+    userId: String(state.userId || '').trim(),
+    currentStep: Math.max(Number(state.currentStep || 0) || 0, 0),
+    language: (String(state.language || '').trim() as OnboardingData['language']) || '',
+    personalProfile: {
+      age: String(personalProfile.age || '').trim(),
+      gender: String(personalProfile.gender || '').trim(),
+      height: String(personalProfile.height || '').trim(),
+      heightUnit: 'cm',
+      weight: String(personalProfile.weight || '').trim(),
+      weightUnit: String(personalProfile.weightUnit || 'kg').trim() === 'lb' ? 'lb' : 'kg',
+    },
+    anamnese: {
+      primaryGoal: String(anamnese.primaryGoal || '').trim(),
+      activityLevel: String(anamnese.activityLevel || '').trim(),
+      healthConcerns: Array.isArray(anamnese.healthConcerns) ? anamnese.healthConcerns.map((item) => String(item).trim()).filter(Boolean) : [],
+      healthNotes: String(anamnese.healthNotes || '').trim(),
+      daysPerWeek: String(anamnese.daysPerWeek || '').trim(),
+      timePerSession: String(anamnese.timePerSession || '').trim(),
+      equipmentAccess: String(anamnese.equipmentAccess || '').trim(),
+    },
+    suggestion: suggestion ? {
+      tier: String(suggestion.tier || 'GOLD').trim().toUpperCase() as OnboardingSuggestion['tier'],
+      title: String(suggestion.title || '').trim(),
+      reason: String(suggestion.reason || '').trim(),
+      note: String(suggestion.note || '').trim() || undefined,
+    } : null,
+    updatedAt: String(state.updatedAt || '').trim() || null,
+    completed: Boolean(state.completed),
+  };
+}
+
+export async function fetchCurrentUserOnboarding() {
+  const response = await apiRequest<OnboardingState>('/me/onboarding');
+  return normalizeOnboardingState(response);
+}
+
+export async function updateCurrentUserOnboarding(payload: {
+  currentStep?: number;
+  language?: OnboardingData['language'];
+  personalProfile?: OnboardingPersonalProfile;
+  anamnese?: OnboardingAnamnese;
+  suggestion?: OnboardingSuggestion | null;
+  completed?: boolean;
+}) {
+  const response = await apiRequest<OnboardingState>('/me/onboarding', {
+    method: 'PATCH',
+    body: payload,
+  });
+
+  if (typeof payload.completed === 'boolean' && authUser) {
+    authUser = normalizeAuthUser({
+      ...authUser,
+      onboarding_completed: payload.completed,
+    });
+    authUserLoaded = true;
+    await persistAuthUser(authUser);
+  }
+
+  return normalizeOnboardingState(response);
 }
 
 export async function updateCurrentUserSubscription(payload: {
@@ -1157,18 +1215,19 @@ export async function createAdminChallenge(payload: AdminChallengePayload) {
   });
 }
 
-async function refreshWithSessionToken(sessionToken: string): Promise<AuthTokens | null> {
+async function refreshWithSessionToken(sessionToken?: string | null): Promise<AuthTokens | null> {
   let response: Response;
   try {
+    const clientHeaders = getClientHeaders();
     response = await fetchWithTimeout(`${API_URL}/auth/refresh`, {
       method: 'POST',
       headers: {
         Accept: 'application/json',
         'Content-Type': 'application/json',
-        [APP_CLIENT_HEADER_NAME]: APP_CLIENT_HEADER_VALUE,
+        ...clientHeaders,
       },
       credentials: APP_REQUEST_CREDENTIALS,
-      body: JSON.stringify({ session_token: sessionToken }),
+      body: sessionToken ? JSON.stringify({ session_token: sessionToken }) : undefined,
     });
   } catch {
     return null;
@@ -1188,14 +1247,14 @@ async function refreshWithSessionToken(sessionToken: string): Promise<AuthTokens
 async function refreshAuthTokens(): Promise<AuthTokens | null> {
   await ensureAuthTokensLoaded();
 
-  if (!authTokens?.session_token || isJwtExpired(authTokens.session_token)) {
+  if (!IS_BROWSER_AUTH && (!authTokens?.session_token || isJwtExpired(authTokens.session_token))) {
     await clearAuthTokens();
     authFailureHandler?.();
     return null;
   }
 
   if (!authRefreshPromise) {
-    authRefreshPromise = refreshWithSessionToken(authTokens.session_token)
+    authRefreshPromise = refreshWithSessionToken(authTokens?.session_token)
       .then(async (refreshed) => {
         if (!refreshed) {
           await clearAuthTokens();
@@ -1233,6 +1292,10 @@ async function handleInvalidSession() {
 export async function getValidAuthTokens() {
   await ensureAuthTokensLoaded();
 
+  if (IS_BROWSER_AUTH) {
+    return refreshAuthTokens();
+  }
+
   if (!authTokens) {
     return null;
   }
@@ -1256,7 +1319,7 @@ export async function apiRequest<T>(
   const headers: Record<string, string> = {
     Accept: 'application/json',
     'Content-Type': 'application/json',
-    [APP_CLIENT_HEADER_NAME]: APP_CLIENT_HEADER_VALUE,
+    ...getClientHeaders(),
   };
 
   if (requestTokens?.access_token) {
