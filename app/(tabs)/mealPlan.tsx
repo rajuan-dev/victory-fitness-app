@@ -314,6 +314,7 @@ function MealPlanResult({
   const [analysisHistory, setAnalysisHistory] = useState<MealImageAnalysisResponse[]>([]);
   const [selectedAnalysis, setSelectedAnalysis] = useState<MealImageAnalysisResponse | null>(null);
   const [analysisSourcePickerVisible, setAnalysisSourcePickerVisible] = useState(false);
+  const [analysisCapturePickerVisible, setAnalysisCapturePickerVisible] = useState(false);
   const [planTab, setPlanTab] = useState<PlanTabId>('my_plan');
   const [canAccessTracker, setCanAccessTracker] = useState(false);
   const [canAccessMealAnalysis, setCanAccessMealAnalysis] = useState(false);
@@ -729,7 +730,7 @@ function MealPlanResult({
   };
 
   const handleUseCamera = async () => {
-    setAnalysisSourcePickerVisible(false);
+    setAnalysisCapturePickerVisible(false);
     try {
       const permission = await ImagePicker.requestCameraPermissionsAsync();
       if (!permission.granted) {
@@ -755,7 +756,7 @@ function MealPlanResult({
   };
 
   const handlePickFromLibrary = async () => {
-    setAnalysisSourcePickerVisible(false);
+    setAnalysisCapturePickerVisible(false);
     try {
       const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (!permission.granted) {
@@ -781,6 +782,7 @@ function MealPlanResult({
 
   const handleUploadFile = async () => {
     setAnalysisSourcePickerVisible(false);
+    setAnalysisCapturePickerVisible(false);
     try {
       const result = await DocumentPicker.getDocumentAsync({
         type: '*/*',
@@ -807,6 +809,11 @@ function MealPlanResult({
 
   const handleStartAnalysis = () => {
     setAnalysisSourcePickerVisible(true);
+  };
+
+  const handleOpenCameraModule = () => {
+    setAnalysisSourcePickerVisible(false);
+    setAnalysisCapturePickerVisible(true);
   };
 
   const MealCard = ({
@@ -1365,6 +1372,48 @@ function MealPlanResult({
               {t('Use your camera or pick a meal photo from your library.')}
             </Text>
 
+            <TouchableOpacity style={styles.sourcePickerOption} activeOpacity={0.85} onPress={handleOpenCameraModule}>
+              <Ionicons name="camera-outline" size={22} color="#fff" />
+              <View style={styles.sourcePickerOptionTextWrap}>
+                <Text style={styles.sourcePickerOptionTitle}>{t('Camera / Gallery')}</Text>
+                <Text style={styles.sourcePickerOptionSub}>{t('Open camera tools and also choose from your gallery')}</Text>
+              </View>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.sourcePickerOption} activeOpacity={0.85} onPress={() => void handleUploadFile()}>
+              <Ionicons name="document-outline" size={22} color="#fff" />
+              <View style={styles.sourcePickerOptionTextWrap}>
+                <Text style={styles.sourcePickerOptionTitle}>{t('Upload File')}</Text>
+                <Text style={styles.sourcePickerOptionSub}>{t('Choose an image, txt, pdf, docx, or other meal document')}</Text>
+              </View>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.modalCancelBtn}
+              activeOpacity={0.8}
+              onPress={() => setAnalysisSourcePickerVisible(false)}
+            >
+              <Text style={styles.modalCancelBtnText}>{t('Close')}</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={analysisCapturePickerVisible}
+        animationType="fade"
+        transparent
+        onRequestClose={() => setAnalysisCapturePickerVisible(false)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={styles.sourcePickerSheet}>
+            <View style={styles.modalHandle} />
+            <Text style={styles.modalEyebrow}>{t('MEAL ANALYSIS')}</Text>
+            <Text style={styles.modalTitle}>{t('Camera / Gallery')}</Text>
+            <Text style={styles.modalSubtitle}>
+              {t('Choose between taking a new photo or selecting one from your gallery.')}
+            </Text>
+
             <TouchableOpacity style={styles.sourcePickerOption} activeOpacity={0.85} onPress={() => void handleUseCamera()}>
               <Ionicons name="camera-outline" size={22} color="#fff" />
               <View style={styles.sourcePickerOptionTextWrap}>
@@ -1381,18 +1430,10 @@ function MealPlanResult({
               </View>
             </TouchableOpacity>
 
-            <TouchableOpacity style={styles.sourcePickerOption} activeOpacity={0.85} onPress={() => void handleUploadFile()}>
-              <Ionicons name="document-outline" size={22} color="#fff" />
-              <View style={styles.sourcePickerOptionTextWrap}>
-                <Text style={styles.sourcePickerOptionTitle}>{t('Upload File')}</Text>
-                <Text style={styles.sourcePickerOptionSub}>{t('Choose an image, txt, pdf, docx, or other meal document')}</Text>
-              </View>
-            </TouchableOpacity>
-
             <TouchableOpacity
               style={styles.modalCancelBtn}
               activeOpacity={0.8}
-              onPress={() => setAnalysisSourcePickerVisible(false)}
+              onPress={() => setAnalysisCapturePickerVisible(false)}
             >
               <Text style={styles.modalCancelBtnText}>{t('Close')}</Text>
             </TouchableOpacity>

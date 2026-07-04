@@ -813,6 +813,11 @@ const TRANSLATIONS: Record<LanguageCode, Record<string, string>> = {
     'Choose Photo Source': 'Choose Photo Source',
     'Use your camera or pick a meal photo from your library.':
       'Use your camera or pick a meal photo from your library.',
+    'Camera / Gallery': 'Camera / Gallery',
+    'Open camera tools and also choose from your gallery':
+      'Open camera tools and also choose from your gallery',
+    'Choose between taking a new photo or selecting one from your gallery.':
+      'Choose between taking a new photo or selecting one from your gallery.',
     'Use Camera': 'Use Camera',
     'Take a new meal photo': 'Take a new meal photo',
     'Choose from Library': 'Choose from Library',
@@ -1695,6 +1700,11 @@ const TRANSLATIONS: Record<LanguageCode, Record<string, string>> = {
     'Choose Photo Source': 'Fotoquelle auswÃ¤hlen',
     'Use your camera or pick a meal photo from your library.':
       'Verwende deine Kamera oder wÃ¤hle ein Essensfoto aus deiner Mediathek.',
+    'Camera / Gallery': 'Kamera / Galerie',
+    'Open camera tools and also choose from your gallery':
+      'Ã–ffne Kameraoptionen und wÃ¤hle auch aus deiner Galerie',
+    'Choose between taking a new photo or selecting one from your gallery.':
+      'WÃ¤hle zwischen einem neuen Foto und einem Bild aus deiner Galerie.',
     'Use Camera': 'Kamera verwenden',
     'Take a new meal photo': 'Neues Essensfoto aufnehmen',
     'Choose from Library': 'Aus Mediathek wÃ¤hlen',
