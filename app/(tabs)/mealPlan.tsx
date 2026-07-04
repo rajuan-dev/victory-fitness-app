@@ -299,6 +299,7 @@ function MealPlanResult({
   const [analysisError, setAnalysisError] = useState('');
   const [analysisHistory, setAnalysisHistory] = useState<MealImageAnalysisResponse[]>([]);
   const [selectedAnalysis, setSelectedAnalysis] = useState<MealImageAnalysisResponse | null>(null);
+  const [analysisSourcePickerVisible, setAnalysisSourcePickerVisible] = useState(false);
   const [planTab, setPlanTab] = useState<PlanTabId>('my_plan');
   const [canAccessTracker, setCanAccessTracker] = useState(false);
   const [canAccessMealAnalysis, setCanAccessMealAnalysis] = useState(false);
@@ -622,7 +623,33 @@ function MealPlanResult({
       setLoadingAdvice(false);
     }
   };
-  const handleStartAnalysis = async () => {
+  const analyzeSelectedAsset = async (asset: ImagePicker.ImagePickerAsset) => {
+    setAnalysisImage(asset);
+    setAnalysisError('');
+    setAnalysisResult(null);
+
+    if (!asset.base64) {
+      throw new Error(t('The selected image could not be read for analysis.'));
+    }
+
+    setAnalysisLoading(true);
+    try {
+      const response = await analyzeMealImage({
+        image_base64: asset.base64,
+        mime_type: asset.mimeType ?? 'image/jpeg',
+        file_name: asset.fileName ?? null,
+      });
+      setAnalysisResult(response);
+      setAnalysisHistory((prev) => [response, ...prev.filter((item) => item.analysis_id !== response.analysis_id)]);
+    } catch (analysisErr) {
+      setAnalysisError(formatAppError(analysisErr).message);
+    } finally {
+      setAnalysisLoading(false);
+    }
+  };
+
+  const handleUseCamera = async () => {
+    setAnalysisSourcePickerVisible(false);
     try {
       const permission = await ImagePicker.requestCameraPermissionsAsync();
       if (!permission.granted) {
@@ -639,34 +666,41 @@ function MealPlanResult({
       });
 
       if (!result.canceled && result.assets.length > 0) {
-        const asset = result.assets[0];
-        setAnalysisImage(asset);
-        setAnalysisError('');
-        setAnalysisResult(null);
-
-        if (!asset.base64) {
-          throw new Error(t('The selected image could not be read for analysis.'));
-        }
-
-        setAnalysisLoading(true);
-        try {
-          const response = await analyzeMealImage({
-            image_base64: asset.base64,
-            mime_type: asset.mimeType ?? 'image/jpeg',
-            file_name: asset.fileName ?? null,
-          });
-          setAnalysisResult(response);
-          setAnalysisHistory((prev) => [response, ...prev.filter((item) => item.analysis_id !== response.analysis_id)]);
-        } catch (analysisErr) {
-          setAnalysisError(formatAppError(analysisErr).message);
-        } finally {
-          setAnalysisLoading(false);
-        }
+        await analyzeSelectedAsset(result.assets[0]);
       }
     } catch (error) {
       Alert.alert(t('Camera error'), error instanceof Error ? error.message : t('Unable to open the camera right now.'));
       setAnalysisLoading(false);
     }
+  };
+
+  const handlePickFromLibrary = async () => {
+    setAnalysisSourcePickerVisible(false);
+    try {
+      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!permission.granted) {
+        Alert.alert(t('Permission needed'), t('Please allow photo library access to choose a meal photo for analysis.'));
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        allowsEditing: false,
+        quality: 0.35,
+        base64: true,
+      });
+
+      if (!result.canceled && result.assets.length > 0) {
+        await analyzeSelectedAsset(result.assets[0]);
+      }
+    } catch (error) {
+      Alert.alert(t('Photo library error'), error instanceof Error ? error.message : t('Unable to open the photo library right now.'));
+      setAnalysisLoading(false);
+    }
+  };
+
+  const handleStartAnalysis = () => {
+    setAnalysisSourcePickerVisible(true);
   };
 
   const MealCard = ({
@@ -1198,6 +1232,48 @@ function MealPlanResult({
             )}
 
             <TouchableOpacity style={styles.modalCancelBtn} activeOpacity={0.8} onPress={closeMealModal}>
+              <Text style={styles.modalCancelBtnText}>{t('Close')}</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={analysisSourcePickerVisible}
+        animationType="fade"
+        transparent
+        onRequestClose={() => setAnalysisSourcePickerVisible(false)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={styles.sourcePickerSheet}>
+            <View style={styles.modalHandle} />
+            <Text style={styles.modalEyebrow}>{t('MEAL ANALYSIS')}</Text>
+            <Text style={styles.modalTitle}>{t('Choose Photo Source')}</Text>
+            <Text style={styles.modalSubtitle}>
+              {t('Use your camera or pick a meal photo from your library.')}
+            </Text>
+
+            <TouchableOpacity style={styles.sourcePickerOption} activeOpacity={0.85} onPress={() => void handleUseCamera()}>
+              <Ionicons name="camera-outline" size={22} color="#fff" />
+              <View style={styles.sourcePickerOptionTextWrap}>
+                <Text style={styles.sourcePickerOptionTitle}>{t('Use Camera')}</Text>
+                <Text style={styles.sourcePickerOptionSub}>{t('Take a new meal photo')}</Text>
+              </View>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.sourcePickerOption} activeOpacity={0.85} onPress={() => void handlePickFromLibrary()}>
+              <Ionicons name="images-outline" size={22} color="#fff" />
+              <View style={styles.sourcePickerOptionTextWrap}>
+                <Text style={styles.sourcePickerOptionTitle}>{t('Choose from Library')}</Text>
+                <Text style={styles.sourcePickerOptionSub}>{t('Select an existing meal photo')}</Text>
+              </View>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.modalCancelBtn}
+              activeOpacity={0.8}
+              onPress={() => setAnalysisSourcePickerVisible(false)}
+            >
               <Text style={styles.modalCancelBtnText}>{t('Close')}</Text>
             </TouchableOpacity>
           </View>
@@ -2324,6 +2400,43 @@ const styles = StyleSheet.create({
     color: Colors.textMuted,
     fontSize: 14,
     fontFamily: 'Inter_500Medium',
+  },
+  sourcePickerSheet: {
+    backgroundColor: '#13132A',
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    paddingHorizontal: 20,
+    paddingTop: 12,
+    paddingBottom: Platform.OS === 'ios' ? 34 : 20,
+    borderTopWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+  },
+  sourcePickerOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+    backgroundColor: '#0D0D1E',
+    borderRadius: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.07)',
+    marginBottom: 12,
+  },
+  sourcePickerOptionTextWrap: {
+    flex: 1,
+  },
+  sourcePickerOptionTitle: {
+    color: '#fff',
+    fontSize: 15,
+    fontFamily: 'Inter_700Bold',
+    marginBottom: 4,
+  },
+  sourcePickerOptionSub: {
+    color: Colors.textMuted,
+    fontSize: 12,
+    lineHeight: 18,
+    fontFamily: 'Inter_400Regular',
   },
 
   shoppingBtn: { marginTop: 8, marginBottom: 12 },
