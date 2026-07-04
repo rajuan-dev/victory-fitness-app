@@ -303,7 +303,20 @@ function MealPlanResult({
   const [canAccessTracker, setCanAccessTracker] = useState(false);
   const [canAccessMealAnalysis, setCanAccessMealAnalysis] = useState(false);
   const [restrictedSection, setRestrictedSection] = useState('');
+  const [copyToastMessage, setCopyToastMessage] = useState('');
+  const copyToastTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   const useNativeDriver = Platform.OS !== 'web';
+
+  const showCopyToast = (message: string) => {
+    if (copyToastTimerRef.current) {
+      clearTimeout(copyToastTimerRef.current);
+    }
+    setCopyToastMessage(message);
+    copyToastTimerRef.current = setTimeout(() => {
+      setCopyToastMessage('');
+      copyToastTimerRef.current = null;
+    }, 1800);
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -329,6 +342,12 @@ function MealPlanResult({
     return () => {
       cancelled = true;
     };
+  }, []);
+
+  useEffect(() => () => {
+    if (copyToastTimerRef.current) {
+      clearTimeout(copyToastTimerRef.current);
+    }
   }, []);
 
   useFocusEffect(
@@ -555,7 +574,7 @@ function MealPlanResult({
         await Clipboard.setStringAsync(shoppingListText);
       }
 
-      Alert.alert(t('Shopping list copied'), t('The shopping list was copied to your clipboard.'));
+      showCopyToast(t('Shopping list copied'));
     } catch (error) {
       Alert.alert(
         t('Copy failed'),
@@ -758,6 +777,14 @@ function MealPlanResult({
         </ScrollView>
 
         {/* Fixed Copy List Button */}
+        {copyToastMessage ? (
+          <View style={styles.copyToastWrap} pointerEvents="none">
+            <View style={styles.copyToast}>
+              <Ionicons name="checkmark-circle" size={16} color="#D8B4FE" />
+              <Text style={styles.copyToastText}>{copyToastMessage}</Text>
+            </View>
+          </View>
+        ) : null}
         <View style={styles.slBottomBar}>
           <TouchableOpacity
             style={styles.slCopyBtn}
@@ -2660,6 +2687,35 @@ const styles = StyleSheet.create({
   slItemNameChecked: { color: Colors.textMuted, textDecorationLine: 'line-through' },
   slItemQty: { fontSize: 13, color: Colors.textMuted, fontFamily: 'Inter_400Regular', textAlign: 'right', maxWidth: 130 },
   slItemQtyChecked: { color: 'rgba(255,255,255,0.2)' },
+  copyToastWrap: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: Platform.OS === 'ios' ? 106 : 94,
+    alignItems: 'center',
+    zIndex: 5,
+  },
+  copyToast: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: 'rgba(16,18,35,0.96)',
+    borderRadius: 999,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(168,85,247,0.28)',
+    shadowColor: '#000',
+    shadowOpacity: 0.25,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 8,
+  },
+  copyToastText: {
+    color: '#fff',
+    fontSize: 13,
+    fontFamily: 'Inter_700Bold',
+  },
 
   slBottomBar: {
     position: 'absolute',
