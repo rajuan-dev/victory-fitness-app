@@ -16,6 +16,7 @@ import {
   Easing,
 } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
+import * as DocumentPicker from 'expo-document-picker';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { setAudioModeAsync, useAudioPlayer } from 'expo-audio';
@@ -52,6 +53,12 @@ const GENDER_PLACEHOLDER = 'Please select...';
 const PLAN_DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] as const;
 type PlanTabId = 'my_plan' | 'tracker' | 'meal_analysis';
 type MealKey = 'breakfast' | 'lunch' | 'dinner';
+type AnalysisImageAsset = {
+  uri: string;
+  fileName?: string | null;
+  mimeType?: string | null;
+  base64?: string | null;
+};
 
 const PLAN_LOADING_MESSAGES = [
   'Reviewing your goal, food preferences, and activity profile.',
@@ -293,7 +300,7 @@ function MealPlanResult({
   const [selectedMeal, setSelectedMeal] = useState<{ day: string; mealLabel: string; mealKey: string; meal: MealEntry; expandKey: string } | null>(null);
   const [mealModalActionState, setMealModalActionState] = useState<'idle' | 'loading' | 'done'>('idle');
   const [mealModalActionMode, setMealModalActionMode] = useState<'complete' | 'unmark'>('complete');
-  const [analysisImage, setAnalysisImage] = useState<ImagePicker.ImagePickerAsset | null>(null);
+  const [analysisImage, setAnalysisImage] = useState<AnalysisImageAsset | null>(null);
   const [analysisLoading, setAnalysisLoading] = useState(false);
   const [analysisResult, setAnalysisResult] = useState<MealImageAnalysisResponse | null>(null);
   const [analysisError, setAnalysisError] = useState('');
@@ -623,19 +630,33 @@ function MealPlanResult({
       setLoadingAdvice(false);
     }
   };
-  const analyzeSelectedAsset = async (asset: ImagePicker.ImagePickerAsset) => {
+  const readUriAsBase64 = async (uri: string) => {
+    const response = await fetch(uri);
+    const blob = await response.blob();
+    const dataUrl = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onerror = () => reject(new Error('Failed to read file'));
+      reader.onloadend = () => resolve(typeof reader.result === 'string' ? reader.result : '');
+      reader.readAsDataURL(blob);
+    });
+    const base64 = dataUrl.split(',', 2)[1];
+    if (!base64) {
+      throw new Error(t('The selected image could not be read for analysis.'));
+    }
+    return base64;
+  };
+
+  const analyzeSelectedAsset = async (asset: AnalysisImageAsset) => {
     setAnalysisImage(asset);
     setAnalysisError('');
     setAnalysisResult(null);
 
-    if (!asset.base64) {
-      throw new Error(t('The selected image could not be read for analysis.'));
-    }
+    const imageBase64 = asset.base64 ?? await readUriAsBase64(asset.uri);
 
     setAnalysisLoading(true);
     try {
       const response = await analyzeMealImage({
-        image_base64: asset.base64,
+        image_base64: imageBase64,
         mime_type: asset.mimeType ?? 'image/jpeg',
         file_name: asset.fileName ?? null,
       });
@@ -695,6 +716,32 @@ function MealPlanResult({
       }
     } catch (error) {
       Alert.alert(t('Photo library error'), error instanceof Error ? error.message : t('Unable to open the photo library right now.'));
+      setAnalysisLoading(false);
+    }
+  };
+
+  const handleUploadFile = async () => {
+    setAnalysisSourcePickerVisible(false);
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: 'image/*',
+        copyToCacheDirectory: true,
+        multiple: false,
+      });
+
+      if (result.canceled || !result.assets || result.assets.length === 0) {
+        return;
+      }
+
+      const asset = result.assets[0];
+      await analyzeSelectedAsset({
+        uri: asset.uri,
+        fileName: asset.name ?? null,
+        mimeType: asset.mimeType ?? 'image/jpeg',
+        base64: null,
+      });
+    } catch (error) {
+      Alert.alert(t('File upload error'), error instanceof Error ? error.message : t('Unable to open the file picker right now.'));
       setAnalysisLoading(false);
     }
   };
@@ -1266,6 +1313,14 @@ function MealPlanResult({
               <View style={styles.sourcePickerOptionTextWrap}>
                 <Text style={styles.sourcePickerOptionTitle}>{t('Choose from Library')}</Text>
                 <Text style={styles.sourcePickerOptionSub}>{t('Select an existing meal photo')}</Text>
+              </View>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.sourcePickerOption} activeOpacity={0.85} onPress={() => void handleUploadFile()}>
+              <Ionicons name="document-outline" size={22} color="#fff" />
+              <View style={styles.sourcePickerOptionTextWrap}>
+                <Text style={styles.sourcePickerOptionTitle}>{t('Upload File')}</Text>
+                <Text style={styles.sourcePickerOptionSub}>{t('Choose an image file from your device')}</Text>
               </View>
             </TouchableOpacity>
 
