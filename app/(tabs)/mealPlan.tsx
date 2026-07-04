@@ -15,6 +15,7 @@ import {
   Animated,
   Easing,
 } from 'react-native';
+import * as Clipboard from 'expo-clipboard';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { setAudioModeAsync, useAudioPlayer } from 'expo-audio';
@@ -526,6 +527,42 @@ function MealPlanResult({
     .filter(Boolean);
 
   const goalLabel = generatedPlan?.goal_label ? t(generatedPlan.goal_label) : getGoalLabel(profile.goal, t);
+  const buildShoppingListCopyText = () =>
+    activeShoppingList
+      .map((section) => {
+        const sectionItems = Array.isArray(section?.items)
+          ? section.items
+              .map((item) => `- ${item.qty ? `${item.qty} ` : ''}${item.name}`.trim())
+              .join('\n')
+          : '';
+
+        return `${section.category}\n${sectionItems}`.trim();
+      })
+      .filter(Boolean)
+      .join('\n\n');
+
+  const handleCopyShoppingList = async () => {
+    const shoppingListText = buildShoppingListCopyText();
+    if (!shoppingListText) {
+      Alert.alert(t('Nothing to copy'), t('Generate a nutrition plan before copying the shopping list.'));
+      return;
+    }
+
+    try {
+      if (Platform.OS === 'web' && typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(shoppingListText);
+      } else {
+        await Clipboard.setStringAsync(shoppingListText);
+      }
+
+      Alert.alert(t('Shopping list copied'), t('The shopping list was copied to your clipboard.'));
+    } catch (error) {
+      Alert.alert(
+        t('Copy failed'),
+        error instanceof Error ? error.message : t('Unable to copy the shopping list right now.')
+      );
+    }
+  };
   const planJson = generatedPlan
     ? JSON.stringify(generatedPlan, null, 2)
     : JSON.stringify(
@@ -725,7 +762,7 @@ function MealPlanResult({
           <TouchableOpacity
             style={styles.slCopyBtn}
             activeOpacity={0.85}
-            onPress={() => { }}
+            onPress={() => void handleCopyShoppingList()}
           >
             <View style={[styles.slCopyBtnGrad, { backgroundColor: Colors.accentPurple }]}>
               <Ionicons name="copy-outline" size={18} color="#fff" />

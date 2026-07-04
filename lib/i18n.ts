@@ -774,6 +774,13 @@ const TRANSLATIONS: Record<LanguageCode, Record<string, string>> = {
     'Generate a nutrition plan to load the shopping list from the saved plan data.':
       'Generate a nutrition plan to load the shopping list from the saved plan data.',
     'Copy List': 'Copy List',
+    'Nothing to copy': 'Nothing to copy',
+    'Generate a nutrition plan before copying the shopping list.':
+      'Generate a nutrition plan before copying the shopping list.',
+    'Shopping list copied': 'Shopping list copied',
+    'The shopping list was copied to your clipboard.': 'The shopping list was copied to your clipboard.',
+    'Copy failed': 'Copy failed',
+    'Unable to copy the shopping list right now.': 'Unable to copy the shopping list right now.',
     'Building your nutrition plan...': 'Building your nutrition plan...',
     'Nutrition Tracker': 'Nutrition Tracker',
     '7-DAY TAILORED {goalLabel} PLAN': '7-DAY TAILORED {goalLabel} PLAN',
@@ -1631,6 +1638,13 @@ const TRANSLATIONS: Record<LanguageCode, Record<string, string>> = {
     'Generate a nutrition plan to load the shopping list from the saved plan data.':
       'Erstelle einen ErnÃ¤hrungsplan, um die Einkaufsliste aus den gespeicherten Plandaten zu laden.',
     'Copy List': 'Liste kopieren',
+    'Nothing to copy': 'Nichts zu kopieren',
+    'Generate a nutrition plan before copying the shopping list.':
+      'Erstelle einen ErnÃƒÂ¤hrungsplan, bevor du die Einkaufsliste kopierst.',
+    'Shopping list copied': 'Einkaufsliste kopiert',
+    'The shopping list was copied to your clipboard.': 'Die Einkaufsliste wurde in deine Zwischenablage kopiert.',
+    'Copy failed': 'Kopieren fehlgeschlagen',
+    'Unable to copy the shopping list right now.': 'Die Einkaufsliste kann gerade nicht kopiert werden.',
     'Building your nutrition plan...': 'Dein ErnÃ¤hrungsplan wird erstellt...',
     'Nutrition Tracker': 'ErnÃ¤hrungstracker',
     '7-DAY TAILORED {goalLabel} PLAN': '7-TAGE-PLAN FÃœR {goalLabel}',
