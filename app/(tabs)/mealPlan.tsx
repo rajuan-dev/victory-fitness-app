@@ -151,6 +151,16 @@ function getMealLabel(mealKey: MealKey, t: (key: string) => string) {
   return t('Dinner');
 }
 
+function normalizeAdviceItems(reply: string) {
+  return reply
+    .replace(/\r/g, '\n')
+    .replace(/(?<=\S)\s*(\d+[.)])\s+/g, '\n$1 ')
+    .split(/\n+/)
+    .map((item) => item.replace(/^\s*(?:[-*\u2022]|\d+[.)])\s*/, '').trim())
+    .filter(Boolean)
+    .slice(0, 8);
+}
+
 function getGoalLabel(goal: string | null, t: (key: string) => string) {
   if (goal === 'g1') return t('Weight Loss');
   if (goal === 'g2') return t('Muscle Building');
@@ -556,10 +566,7 @@ function MealPlanResult({
   const totalP = day.breakfast.p + day.lunch.p + day.dinner.p;
   const totalC = day.breakfast.c + day.lunch.c + day.dinner.c;
   const totalF = day.breakfast.f + day.lunch.f + day.dinner.f;
-  const adviceItems = nutritionAdvice
-    .split(/\r?\n+/)
-    .map((item) => item.replace(/^\s*(?:[-*\u2022]|\d+[.)])\s*/, '').trim())
-    .filter(Boolean);
+  const adviceItems = normalizeAdviceItems(nutritionAdvice);
 
   const goalLabel = generatedPlan?.goal_label ? t(generatedPlan.goal_label) : getGoalLabel(profile.goal, t);
   const buildShoppingListCopyText = () =>
