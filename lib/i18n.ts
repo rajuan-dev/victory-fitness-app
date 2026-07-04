@@ -819,7 +819,10 @@ const TRANSLATIONS: Record<LanguageCode, Record<string, string>> = {
     'Select an existing meal photo': 'Select an existing meal photo',
     'Upload File': 'Upload File',
     'Choose an image file from your device': 'Choose an image file from your device',
+    'Choose an image, txt, pdf, docx, or other meal document':
+      'Choose an image, txt, pdf, docx, or other meal document',
     'Selected image': 'Selected image',
+    'Selected file': 'Selected file',
     'Meal photo': 'Meal photo',
     'Analyzing your meal photo...': 'Analyzing your meal photo...',
     'Meal analysis': 'Meal analysis',
@@ -1698,7 +1701,10 @@ const TRANSLATIONS: Record<LanguageCode, Record<string, string>> = {
     'Select an existing meal photo': 'Vorhandenes Essensfoto auswÃ¤hlen',
     'Upload File': 'Datei hochladen',
     'Choose an image file from your device': 'WÃ¤hle eine Bilddatei von deinem GerÃ¤t aus',
+    'Choose an image, txt, pdf, docx, or other meal document':
+      'WÃ¤hle ein Bild, eine txt-, pdf-, docx- oder andere Mahlzeitendatei aus',
     'Selected image': 'AusgewÃ¤hltes Bild',
+    'Selected file': 'AusgewÃ¤hlte Datei',
     'Meal photo': 'Essensfoto',
     'Analyzing your meal photo...': 'Dein Essensfoto wird analysiert...',
     'Meal analysis': 'Essensanalyse',

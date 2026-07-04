@@ -59,6 +59,13 @@ type AnalysisImageAsset = {
   mimeType?: string | null;
   base64?: string | null;
 };
+type AnalysisPayload = {
+  image_base64?: string | null;
+  document_base64?: string | null;
+  text_content?: string | null;
+  mime_type: string;
+  file_name?: string | null;
+};
 
 const PLAN_LOADING_MESSAGES = [
   'Reviewing your goal, food preferences, and activity profile.',
@@ -646,20 +653,72 @@ function MealPlanResult({
     return base64;
   };
 
+  const readUriAsText = async (uri: string) => {
+    const response = await fetch(uri);
+    const blob = await response.blob();
+    return blob.text();
+  };
+
+  const getFileExtension = (fileName?: string | null) => {
+    const normalized = String(fileName || '').trim().toLowerCase();
+    const index = normalized.lastIndexOf('.');
+    return index >= 0 ? normalized.slice(index) : '';
+  };
+
+  const isImageMimeType = (mimeType?: string | null) => String(mimeType || '').toLowerCase().startsWith('image/');
+
+  const isTextBasedDocument = (mimeType?: string | null, fileName?: string | null) => {
+    const normalizedMime = String(mimeType || '').toLowerCase();
+    const extension = getFileExtension(fileName);
+    if (normalizedMime.startsWith('text/')) {
+      return true;
+    }
+    return ['.txt', '.md', '.csv', '.json', '.xml', '.yaml', '.yml', '.log', '.rtf'].includes(extension);
+  };
+
+  const buildAnalysisPayload = async (asset: AnalysisImageAsset): Promise<AnalysisPayload> => {
+    const mimeType = asset.mimeType ?? 'application/octet-stream';
+    if (asset.base64 && isImageMimeType(mimeType)) {
+      return {
+        image_base64: asset.base64,
+        mime_type: mimeType,
+        file_name: asset.fileName ?? null,
+      };
+    }
+
+    if (isTextBasedDocument(mimeType, asset.fileName)) {
+      return {
+        text_content: await readUriAsText(asset.uri),
+        mime_type: mimeType,
+        file_name: asset.fileName ?? null,
+      };
+    }
+
+    const base64 = asset.base64 ?? await readUriAsBase64(asset.uri);
+    if (isImageMimeType(mimeType)) {
+      return {
+        image_base64: base64,
+        mime_type: mimeType,
+        file_name: asset.fileName ?? null,
+      };
+    }
+
+    return {
+      document_base64: base64,
+      mime_type: mimeType,
+      file_name: asset.fileName ?? null,
+    };
+  };
+
   const analyzeSelectedAsset = async (asset: AnalysisImageAsset) => {
     setAnalysisImage(asset);
     setAnalysisError('');
     setAnalysisResult(null);
-
-    const imageBase64 = asset.base64 ?? await readUriAsBase64(asset.uri);
+    const analysisPayload = await buildAnalysisPayload(asset);
 
     setAnalysisLoading(true);
     try {
-      const response = await analyzeMealImage({
-        image_base64: imageBase64,
-        mime_type: asset.mimeType ?? 'image/jpeg',
-        file_name: asset.fileName ?? null,
-      });
+      const response = await analyzeMealImage(analysisPayload);
       setAnalysisResult(response);
       setAnalysisHistory((prev) => [response, ...prev.filter((item) => item.analysis_id !== response.analysis_id)]);
     } catch (analysisErr) {
@@ -724,7 +783,7 @@ function MealPlanResult({
     setAnalysisSourcePickerVisible(false);
     try {
       const result = await DocumentPicker.getDocumentAsync({
-        type: 'image/*',
+        type: '*/*',
         copyToCacheDirectory: true,
         multiple: false,
       });
@@ -1058,9 +1117,15 @@ function MealPlanResult({
 
             {analysisImage ? (
               <View style={styles.analysisPreviewCard}>
-                <Image source={{ uri: analysisImage.uri }} style={styles.analysisPreviewImage} />
+                {isImageMimeType(analysisImage.mimeType) ? (
+                  <Image source={{ uri: analysisImage.uri }} style={styles.analysisPreviewImage} />
+                ) : (
+                  <View style={styles.analysisPreviewFileIcon}>
+                    <Ionicons name="document-text-outline" size={28} color="#fff" />
+                  </View>
+                )}
                 <View style={styles.analysisPreviewMeta}>
-                  <Text style={styles.analysisPreviewLabel}>{t('Selected image')}</Text>
+                  <Text style={styles.analysisPreviewLabel}>{t('Selected file')}</Text>
                   <Text style={styles.analysisPreviewText} numberOfLines={1}>
                     {analysisImage.fileName ?? t('Meal photo')}
                   </Text>
@@ -1320,7 +1385,7 @@ function MealPlanResult({
               <Ionicons name="document-outline" size={22} color="#fff" />
               <View style={styles.sourcePickerOptionTextWrap}>
                 <Text style={styles.sourcePickerOptionTitle}>{t('Upload File')}</Text>
-                <Text style={styles.sourcePickerOptionSub}>{t('Choose an image file from your device')}</Text>
+                <Text style={styles.sourcePickerOptionSub}>{t('Choose an image, txt, pdf, docx, or other meal document')}</Text>
               </View>
             </TouchableOpacity>
 
@@ -2636,6 +2701,14 @@ const styles = StyleSheet.create({
     height: 72,
     borderRadius: 14,
     backgroundColor: 'rgba(255,255,255,0.06)',
+  },
+  analysisPreviewFileIcon: {
+    width: 72,
+    height: 72,
+    borderRadius: 14,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   analysisPreviewMeta: {
     flex: 1,
