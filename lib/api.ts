@@ -49,6 +49,7 @@ const IS_BROWSER_AUTH = Platform.OS === 'web';
 const APP_REQUEST_CREDENTIALS: RequestCredentials = IS_BROWSER_AUTH ? 'include' : 'omit';
 const APP_CLIENT_HEADER_NAME = 'X-Victory-Client';
 const APP_CLIENT_HEADER_VALUE = 'app';
+const AUTH_API_URL_STORAGE_KEY = 'victory_api_url';
 let apiLanguage: string | undefined;
 
 function getClientHeaders(): Record<string, string> {
@@ -594,6 +595,7 @@ async function persistAuthTokens(tokens: AuthTokens | null) {
 
   if (tokens) {
     await AsyncStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(tokens));
+    await AsyncStorage.setItem(AUTH_API_URL_STORAGE_KEY, API_URL);
   } else {
     await AsyncStorage.removeItem(AUTH_STORAGE_KEY);
   }
@@ -609,6 +611,20 @@ async function persistAuthUser(user: AuthUser | null) {
   } else {
     await AsyncStorage.removeItem(AUTH_USER_STORAGE_KEY);
   }
+}
+
+async function ensureStoredApiUrlMatches() {
+  if (IS_BROWSER_AUTH) {
+    return;
+  }
+
+  const storedApiUrl = (await AsyncStorage.getItem(AUTH_API_URL_STORAGE_KEY)) || '';
+  if (storedApiUrl === API_URL) {
+    return;
+  }
+
+  await AsyncStorage.multiRemove([AUTH_STORAGE_KEY, AUTH_USER_STORAGE_KEY]);
+  await AsyncStorage.setItem(AUTH_API_URL_STORAGE_KEY, API_URL);
 }
 
 async function fetchWithTimeout(input: string, init: RequestInit = {}, timeoutMs = REQUEST_TIMEOUT_MS) {
@@ -651,6 +667,8 @@ async function loadPersistedAuthUser(): Promise<AuthUser | null> {
 }
 
 async function ensureAuthTokensLoaded() {
+  await ensureStoredApiUrlMatches();
+
   if (authTokensLoaded) {
     return;
   }
@@ -670,6 +688,8 @@ async function ensureAuthTokensLoaded() {
 }
 
 async function ensureAuthUserLoaded() {
+  await ensureStoredApiUrlMatches();
+
   if (authUserLoaded) {
     return;
   }
