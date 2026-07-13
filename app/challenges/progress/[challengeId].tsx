@@ -1452,6 +1452,28 @@ export default function ChallengeProgressScreen() {
                             </>
                           )}
                         </TouchableOpacity>
+                        {dayProgress?.completed ? (
+                          <View style={styles.completedDayActions}>
+                            <TouchableOpacity
+                              style={[styles.cardActionButton, reportAction === 'download' && styles.cardActionButtonBusy]}
+                              onPress={() => void handleDownloadReport()}
+                              disabled={reportAction !== ''}
+                              accessibilityLabel="Download completed challenge card"
+                            >
+                              {reportAction === 'download' ? <ActivityIndicator size="small" color={Colors.primary} /> : <Ionicons name="download-outline" size={20} color={Colors.primary} />}
+                              <Text style={styles.cardActionText}>Download</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                              style={[styles.cardActionButton, reportAction === 'share' && styles.cardActionButtonBusy]}
+                              onPress={() => void handleShareCard()}
+                              disabled={reportAction !== ''}
+                              accessibilityLabel="Share completed challenge card"
+                            >
+                              {reportAction === 'share' ? <ActivityIndicator size="small" color={Colors.primary} /> : <Ionicons name="share-social-outline" size={20} color={Colors.primary} />}
+                              <Text style={styles.cardActionText}>Share</Text>
+                            </TouchableOpacity>
+                          </View>
+                        ) : null}
                       </View>
                     ) : null}
                   </View>
@@ -1859,6 +1881,7 @@ const styles = StyleSheet.create({
   },
   dayDoneButtonText: { color: Colors.primary, fontSize: 12, fontFamily: 'Inter_700Bold' },
   dayDoneButtonTextCompleted: { color: '#001311' },
+  completedDayActions: { flexDirection: 'row', gap: 10, marginTop: 10 },
   celebrationBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.82)', alignItems: 'center', justifyContent: 'center', padding: 20, overflow: 'hidden' },
   confettiPiece: { position: 'absolute', top: -20, width: 8, height: 16, borderRadius: 2 },
   celebrationCard: { width: '100%', maxWidth: 390, backgroundColor: '#101B2A', borderRadius: 24, borderWidth: 1, borderColor: 'rgba(0,240,208,0.32)', padding: 20, alignItems: 'center' },
