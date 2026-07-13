@@ -6,7 +6,7 @@ import { useFocusEffect } from '@react-navigation/native';
 
 import { Colors } from '../constants/Colors';
 import { AuthUser, fetchCurrentUser } from '../lib/api';
-import { fetchChallengeOverviewData } from '../lib/screenData';
+import { fetchChallengeOverviewData, fetchCommunityPostsData } from '../lib/screenData';
 
 type CampaignItem = {
   day: number;
@@ -25,6 +25,16 @@ type ChallengeAlert = {
   progress: number;
   points: number;
   days_left: number;
+};
+
+type ActivityNotification = {
+  id: string;
+  category: string;
+  title: string;
+  message: string;
+  icon: keyof typeof Ionicons.glyphMap;
+  accent: string;
+  route: string;
 };
 
 const CAMPAIGN: CampaignItem[] = [
@@ -102,6 +112,7 @@ export default function NotificationsScreen() {
   const router = useRouter();
   const [user, setUser] = React.useState<AuthUser | null>(null);
   const [challengeAlert, setChallengeAlert] = React.useState<ChallengeAlert | null>(null);
+  const [activityNotifications, setActivityNotifications] = React.useState<ActivityNotification[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [refreshing, setRefreshing] = React.useState(false);
   const [loadError, setLoadError] = React.useState('');
@@ -112,9 +123,10 @@ export default function NotificationsScreen() {
 
     try {
       setLoadError('');
-      const [nextUser, overview] = await Promise.all([
+      const [nextUser, overview, community] = await Promise.all([
         fetchCurrentUser(),
         fetchChallengeOverviewData().catch(() => ({ active_challenges: [] })),
+        fetchCommunityPostsData().catch(() => ({ posts: [] })),
       ]);
       const overviewData = overview as { active_challenges?: Array<Partial<ChallengeAlert> & { id?: string }> };
       const active = Array.isArray(overviewData?.active_challenges) ? overviewData.active_challenges[0] : null;
@@ -126,6 +138,38 @@ export default function NotificationsScreen() {
         points: Math.max(0, Number(active.points || 0)),
         days_left: Math.max(0, Number(active.days_left || 0)),
       } : null);
+      const fullOverview = overview as {
+        active_challenges?: Array<Record<string, unknown>>;
+        completed_challenges?: Array<Record<string, unknown>>;
+        ready_to_start?: Array<Record<string, unknown>>;
+        active_chats?: Array<Record<string, unknown>>;
+      };
+      const nextActivity: ActivityNotification[] = [];
+      const addChallengeItems = (items: Array<Record<string, unknown>> | undefined, category: string, icon: keyof typeof Ionicons.glyphMap, accent: string, message: (item: Record<string, unknown>) => string, routeFor: (item: Record<string, unknown>) => string) => {
+        (Array.isArray(items) ? items : []).forEach((item, index) => {
+          const id = String(item.challenge_id || item.id || `${category}-${index}`);
+          nextActivity.push({ id: `${category}-${id}`, category, title: String(item.title || 'Challenge'), message: message(item), icon, accent, route: routeFor(item) });
+        });
+      };
+      addChallengeItems(fullOverview.ready_to_start, 'CHALLENGE READY', 'flag-outline', '#38BDF8', (item) => `${String(item.description || 'This challenge is ready to start.')} ${Number(item.points || 0)} points available.`, (item) => `/challenges/${String(item.id || item.challenge_id || '')}`);
+      addChallengeItems(fullOverview.active_challenges, 'CHALLENGE ACTIVE', 'flame-outline', '#FBBF24', (item) => `${Math.round(Number(item.progress || 0) * 100)}% complete. Finish today to keep your progress moving.`, (item) => `/challenges/progress/${String(item.challenge_id || item.id || '')}`);
+      addChallengeItems(fullOverview.completed_challenges, 'CHALLENGE COMPLETE', 'trophy-outline', Colors.accentGold, (item) => `Completed with ${Number(item.points || 0)} points. View your progress card and share it.`, (item) => `/challenges/progress/${String(item.challenge_id || item.id || '')}`);
+      addChallengeItems(fullOverview.active_chats, 'CHALLENGE CHAT', 'chatbubbles-outline', '#A855F7', (item) => `${Number(item.unread_count || item.unreadCount || 0)} unread messages in this challenge discussion.`, (item) => `/challenges/${String(item.challenge_id || item.id || '')}`);
+      const posts = (community as { posts?: Array<Record<string, unknown>> })?.posts;
+      (Array.isArray(posts) ? posts : []).slice(0, 30).forEach((post, index) => {
+        const content = String(post.content || '').trim();
+        const author = String(post.author_name || 'Community member');
+        nextActivity.push({
+          id: `community-${String(post.id || index)}`,
+          category: 'COMMUNITY POST',
+          title: `${author} posted in Community`,
+          message: `${content.slice(0, 150)}${content.length > 150 ? '...' : ''}  ${Number(post.like_count || 0)} likes, ${Number(post.comment_count || 0)} comments.`,
+          icon: 'people-outline',
+          accent: '#22D3EE',
+          route: '/community',
+        });
+      });
+      setActivityNotifications(nextActivity);
     } catch (error) {
       setLoadError(error instanceof Error ? error.message : 'Unable to load notifications right now.');
     } finally {
@@ -189,22 +233,16 @@ export default function NotificationsScreen() {
 
         {loadError ? <View style={styles.inlineError}><Ionicons name="alert-circle-outline" size={16} color="#FCA5A5" /><Text style={styles.inlineErrorText}>{loadError}</Text></View> : null}
 
-        {challengeAlert ? (
-          <View style={styles.challengeNotice}>
-            <View style={styles.challengeNoticeIcon}><Ionicons name={challengeAlert.progress >= 1 ? 'trophy-outline' : 'flame-outline'} size={21} color={challengeAlert.progress >= 1 ? Colors.accentGold : '#FBBF24'} /></View>
-            <View style={styles.challengeNoticeBody}>
-              <Text style={styles.challengeNoticeEyebrow}>CHALLENGE NOTIFICATION</Text>
-              <Text style={styles.challengeNoticeTitle}>{challengeAlert.progress >= 1 ? 'Challenge complete' : 'Finish today\'s challenge'}</Text>
-              <Text style={styles.challengeNoticeText}>
-                {challengeAlert.progress >= 1
-                  ? `You earned ${challengeAlert.points} points. Share your progress with the community.`
-                  : `Complete ${challengeAlert.title} today or miss ${challengeAlert.points} points.`}
-              </Text>
-              <TouchableOpacity style={styles.challengeNoticeAction} onPress={() => router.push((challengeAlert.progress >= 1 ? `/challenges/progress/${challengeAlert.challenge_id}` : `/challenges/${challengeAlert.challenge_id}`) as never)}>
-                <Text style={styles.challengeNoticeActionText}>{challengeAlert.progress >= 1 ? 'View Share Card' : 'Open Challenge'}</Text>
-                <Ionicons name="arrow-forward" size={15} color={Colors.primary} />
+        {activityNotifications.length > 0 ? (
+          <View style={styles.activitySection}>
+            <Text style={styles.activitySectionTitle}>CHALLENGES & COMMUNITY</Text>
+            {activityNotifications.map((item) => (
+              <TouchableOpacity key={item.id} style={styles.activityItem} onPress={() => router.push(item.route as never)} activeOpacity={0.82}>
+                <View style={[styles.activityIcon, { backgroundColor: `${item.accent}20` }]}><Ionicons name={item.icon} size={21} color={item.accent} /></View>
+                <View style={styles.activityBody}><Text style={[styles.activityCategory, { color: item.accent }]}>{item.category}</Text><Text style={styles.activityTitle}>{item.title}</Text><Text style={styles.activityText}>{item.message}</Text></View>
+                <Ionicons name="chevron-forward" size={18} color={Colors.textMuted} />
               </TouchableOpacity>
-            </View>
+            ))}
           </View>
         ) : null}
 
@@ -280,6 +318,14 @@ const styles = StyleSheet.create({
   challengeNoticeText: { color: Colors.textSecondary, fontSize: 12, lineHeight: 17, fontFamily: 'Inter_400Regular', marginTop: 4 },
   challengeNoticeAction: { alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 10 },
   challengeNoticeActionText: { color: Colors.primary, fontSize: 12, fontFamily: 'Inter_700Bold' },
+  activitySection: { marginBottom: 16 },
+  activitySectionTitle: { color: Colors.textMuted, fontSize: 10, letterSpacing: 1.2, fontFamily: 'Inter_700Bold', marginBottom: 9 },
+  activityItem: { flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.surface, borderRadius: 14, padding: 14, marginBottom: 9, borderWidth: 1, borderColor: Colors.inputBorder },
+  activityIcon: { width: 42, height: 42, borderRadius: 12, alignItems: 'center', justifyContent: 'center', marginRight: 11 },
+  activityBody: { flex: 1, minWidth: 0 },
+  activityCategory: { fontSize: 10, letterSpacing: 1, fontFamily: 'Inter_700Bold' },
+  activityTitle: { color: Colors.text, fontSize: 15, fontFamily: 'Inter_700Bold', marginTop: 4 },
+  activityText: { color: Colors.textSecondary, fontSize: 12, lineHeight: 17, marginTop: 4, fontFamily: 'Inter_400Regular' },
   retryButton: { marginTop: 16, backgroundColor: Colors.primary, borderRadius: 10, paddingHorizontal: 18, paddingVertical: 11 },
   retryText: { color: '#06201C', fontSize: 13, fontFamily: 'Inter_700Bold' },
   inlineError: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: 'rgba(127,29,29,0.22)', borderWidth: 1, borderColor: 'rgba(248,113,113,0.35)', borderRadius: 10, padding: 10, marginBottom: 14 },
