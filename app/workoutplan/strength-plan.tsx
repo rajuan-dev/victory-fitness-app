@@ -34,6 +34,7 @@ export default function StrengthPlanDashboard() {
   const [loading, setLoading] = useState(true);
   const [deletingPlanId, setDeletingPlanId] = useState<string | null>(null);
   const [updatingProgressKey, setUpdatingProgressKey] = useState<string | null>(null);
+  const [elapsedTime, setElapsedTime] = useState('00:00:00');
 
   // Accordion and Day selection states
   const [expandedPlanId, setExpandedPlanId] = useState<string | null>(null);
@@ -90,6 +91,39 @@ export default function StrengthPlanDashboard() {
   const getDayProgress = (plan: StrengthPlanResponse, dayLabel: string): StrengthPlanDayProgress | undefined =>
     Array.isArray(plan.progress) ? plan.progress.find((entry) => entry.day === dayLabel) : undefined;
 
+  // Active session timer effect
+  useEffect(() => {
+    const currentPlan = plans.find((item) => (item.plan_id ?? item.summary) === expandedPlanId);
+    if (!currentPlan) return;
+    
+    const dayProgress = getDayProgress(currentPlan, selectedDay);
+    const workoutStarted = Boolean(dayProgress?.started);
+    const workoutCompleted = Boolean(dayProgress?.completed);
+    
+    if (!workoutStarted || workoutCompleted || !dayProgress?.started_at) {
+      setElapsedTime('00:00:00');
+      return;
+    }
+
+    const startMs = new Date(dayProgress.started_at).getTime();
+
+    const updateTimer = () => {
+      const nowMs = Date.now();
+      const diffSecs = Math.max(0, Math.floor((nowMs - startMs) / 1000));
+      
+      const hrs = Math.floor(diffSecs / 3600);
+      const mins = Math.floor((diffSecs % 3600) / 60);
+      const secs = diffSecs % 60;
+      
+      const pad = (num: number) => String(num).padStart(2, '0');
+      setElapsedTime(`${pad(hrs)}:${pad(mins)}:${pad(secs)}`);
+    };
+
+    updateTimer();
+    const interval = setInterval(updateTimer, 1000);
+    return () => clearInterval(interval);
+  }, [expandedPlanId, selectedDay, plans]);
+
   const updatePlanProgressState = (nextPlan: StrengthPlanResponse) => {
     setPlans((current) =>
       current.map((item) => ((item.plan_id ?? item.summary) === (nextPlan.plan_id ?? nextPlan.summary) ? nextPlan : item))
@@ -101,6 +135,26 @@ export default function StrengthPlanDashboard() {
       ...current,
       [sectionKey]: !current[sectionKey],
     }));
+  };
+
+  const handleCompleteWorkout = async (plan: StrengthPlanResponse, dayLabel: string) => {
+    if (!plan.plan_id) {
+      return;
+    }
+
+    const progressKey = `complete-${plan.plan_id}-${dayLabel}`;
+    try {
+      setUpdatingProgressKey(progressKey);
+      const updatedPlan = await updateStrengthWorkoutPlanProgress(plan.plan_id, {
+        day: dayLabel,
+        completed: true,
+      });
+      updatePlanProgressState(updatedPlan);
+    } catch (error) {
+      Alert.alert(t('Error'), formatAppError(error, t('Unable to complete workout right now.')).message);
+    } finally {
+      setUpdatingProgressKey(null);
+    }
   };
 
   const handleStartWorkout = async (plan: StrengthPlanResponse, dayLabel: string) => {
@@ -325,189 +379,346 @@ export default function StrengthPlanDashboard() {
                     <View style={styles.planDetails}>
                       <View style={styles.divider} />
 
-                      {/* Day Selector */}
-                      {dayLabels.length > 0 && (
-                        <View style={styles.daySelectorContainer}>
-                          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.daySelectorScroll}>
-                            <View style={styles.daySelector}>
-                              {dayLabels.map((day) => {
-                                const isActive = selectedDay === day;
+                      {workoutStarted && !workoutCompleted ? (
+                        /* Active Session Player View */
+                        <View style={styles.activeSessionContainer}>
+                          {/* Active Session Header */}
+                          <View style={styles.activeSessionHeader}>
+                            <View style={styles.activeSessionLeft}>
+                              <Text style={styles.activeSessionSubtitle}>{t('ACTIVE SESSION')}</Text>
+                              <Text style={styles.activeSessionTitle}>{selectedPlanDay ? selectedPlanDay.title.toUpperCase() : ''}</Text>
+                            </View>
+                            <View style={styles.activeSessionRight}>
+                              <Text style={styles.activeSessionElapsedLabel}>{t('ELAPSED')}</Text>
+                              <Text style={styles.activeSessionElapsedTimer}>{elapsedTime}</Text>
+                            </View>
+                          </View>
+
+                          {/* Progress Bar */}
+                          <View style={styles.activeSessionProgressBarContainer}>
+                            <View 
+                              style={[
+                                styles.activeSessionProgressBar, 
+                                { width: `${totalExercises > 0 ? (completedExercises / totalExercises) * 100 : 0}%` }
+                              ]} 
+                            />
+                          </View>
+
+                          {/* Collapsible Sections */}
+                          {selectedPlanDay && daySections.length > 0 ? (
+                            <View style={styles.exerciseList}>
+                              {daySections.map((section: StrengthPlanSection) => {
+                                const sectionCompleted = completedSectionIds.includes(section.id);
+                                const sectionProgressKey = `section-${plan.plan_id}-${selectedPlanDay.day}-${section.id}`;
+                                const sectionBusy = updatingProgressKey === sectionProgressKey;
+                                const sectionExpandKey = `${planId}-${selectedPlanDay.day}-${section.id}`;
+                                const sectionExpanded = expandedSections[sectionExpandKey] ?? true;
+                                const sectionCompletedCount = section.exercises.filter((exercise) => completedExerciseIds.includes(exercise.id)).length;
                                 return (
-                                  <TouchableOpacity
-                                    key={day}
-                                    onPress={() => setSelectedDay(day)}
-                                    style={[styles.dayBtn, isActive && styles.dayBtnActive]}
-                                  >
-                                    <Text style={[styles.dayText, isActive && styles.dayTextActive]}>{day}</Text>
-                                    {isActive && <View style={styles.activeDot} />}
-                                  </TouchableOpacity>
+                                  <View key={section.id} style={[styles.activeSectionCard, sectionCompleted && styles.activeSectionCardCompleted]}>
+                                    <TouchableOpacity
+                                      style={styles.sectionRow}
+                                      activeOpacity={0.8}
+                                      onPress={() => toggleSectionExpand(sectionExpandKey)}
+                                    >
+                                      <View style={styles.sectionTitleWrap}>
+                                        <Text style={styles.activeSectionType}>{t('SECTION')}</Text>
+                                        <Text style={styles.activeSectionName}>{section.title}</Text>
+                                        <Text style={styles.activeSectionMetaText}>
+                                          {`${sectionCompletedCount}/${section.exercises.length} ${t('exercises')} · ${section.estimated_minutes} ${t('min')}`}
+                                        </Text>
+                                      </View>
+                                      <View style={styles.sectionActions}>
+                                        <TouchableOpacity
+                                          style={[styles.activeCheckButton, sectionCompleted && styles.activeCheckButtonCompleted]}
+                                          activeOpacity={0.8}
+                                          disabled={sectionBusy}
+                                          onPress={() => handleSectionToggle(plan, selectedPlanDay.day, section.id, !sectionCompleted)}
+                                        >
+                                          {sectionBusy ? (
+                                            <ActivityIndicator size="small" color="#000" />
+                                          ) : (
+                                            <Ionicons
+                                              name={sectionCompleted ? 'checkmark' : 'checkmark-outline'}
+                                              size={18}
+                                              color={sectionCompleted ? '#000' : Colors.accentBlue}
+                                            />
+                                          )}
+                                        </TouchableOpacity>
+                                        <Ionicons
+                                          name={sectionExpanded ? 'chevron-up' : 'chevron-down'}
+                                          size={18}
+                                          color="rgba(255,255,255,0.45)"
+                                        />
+                                      </View>
+                                    </TouchableOpacity>
+
+                                    {sectionExpanded ? (
+                                      <View style={styles.sectionExercises}>
+                                        {section.exercises.map((ex) => {
+                                          const exerciseCompleted = completedExerciseIds.includes(ex.id);
+                                          const exerciseProgressKey = `exercise-${plan.plan_id}-${selectedPlanDay.day}-${ex.id}`;
+                                          const exerciseBusy = updatingProgressKey === exerciseProgressKey;
+                                          return (
+                                            <View key={ex.id} style={[styles.activeExerciseSubCard, exerciseCompleted && styles.activeExerciseSubCardCompleted]}>
+                                              <View style={styles.exerciseHeader}>
+                                                <View style={{ flex: 1, paddingRight: 8 }}>
+                                                  <Text style={styles.activeExerciseTag}>{ex.type.toUpperCase()}</Text>
+                                                  <Text style={styles.activeExerciseName}>{ex.name}</Text>
+                                                </View>
+                                                <TouchableOpacity
+                                                  style={[styles.activeCheckButton, exerciseCompleted && styles.activeCheckButtonCompleted]}
+                                                  activeOpacity={0.8}
+                                                  disabled={exerciseBusy}
+                                                  onPress={() => handleExerciseToggle(plan, selectedPlanDay.day, ex.id, !exerciseCompleted)}
+                                                >
+                                                  {exerciseBusy ? (
+                                                    <ActivityIndicator size="small" color="#000" />
+                                                  ) : (
+                                                    <Ionicons
+                                                      name={exerciseCompleted ? 'checkmark' : 'checkmark-outline'}
+                                                      size={18}
+                                                      color={exerciseCompleted ? '#000' : Colors.accentBlue}
+                                                    />
+                                                  )}
+                                                </TouchableOpacity>
+                                              </View>
+
+                                              <View style={styles.exerciseMetrics}>
+                                                <View style={styles.metricItem}>
+                                                  <Ionicons name="layers-outline" size={16} color={Colors.accentBlue} />
+                                                  <Text style={styles.metricValue}>{ex.sets} {t('Sets')}</Text>
+                                                </View>
+                                                <View style={styles.metricItem}>
+                                                  <Ionicons name="repeat-outline" size={16} color={Colors.accentBlue} />
+                                                  <Text style={styles.metricValue}>{ex.reps} {t('Reps')}</Text>
+                                                </View>
+                                                <View style={styles.metricItem}>
+                                                  <Ionicons name="fitness-outline" size={16} color={Colors.accentBlue} />
+                                                  <Text style={styles.metricValue}>{ex.weight}</Text>
+                                                </View>
+                                                <View style={styles.metricItem}>
+                                                  <Ionicons name="timer-outline" size={16} color={Colors.accentBlue} />
+                                                  <Text style={styles.metricValue}>{ex.rest} {t('Rest')}</Text>
+                                                </View>
+                                              </View>
+                                            </View>
+                                          );
+                                        })}
+                                      </View>
+                                    ) : null}
+                                  </View>
                                 );
                               })}
                             </View>
-                          </ScrollView>
+                          ) : null}
+
+                          {/* Complete Session Button */}
+                          <TouchableOpacity
+                            style={[styles.completeSessionBtn, startButtonBusy && styles.disabledBtn]}
+                            activeOpacity={0.8}
+                            disabled={startButtonBusy}
+                            onPress={() => handleCompleteWorkout(plan, selectedPlanDay.day)}
+                          >
+                            {startButtonBusy ? (
+                              <ActivityIndicator size="small" color="#000" />
+                            ) : (
+                              <>
+                               <Ionicons name="checkmark-circle" size={20} color="#000" />
+                                <Text style={styles.completeSessionBtnText}>{t('WORKOUT COMPLETED')}</Text>
+                              </>
+                            )}
+                          </TouchableOpacity>
                         </View>
-                      )}
-
-                      {/* Daily Stats */}
-                      {selectedPlanDay && (
-                        <View style={styles.statsRow}>
-                          <View style={styles.statBox}>
-                            <Text style={styles.statLabel}>{t('EST. TIME')}</Text>
-                            <Text style={styles.statValue}>{selectedPlanDay.est_time ?? '-'}</Text>
-                          </View>
-                          <View style={styles.statDivider} />
-                          <View style={styles.statBox}>
-                            <Text style={styles.statLabel}>{t('VOLUME')}</Text>
-                            <Text style={styles.statValue}>{selectedPlanDay.volume ?? '-'}</Text>
-                          </View>
-                          <View style={styles.statDivider} />
-                          <View style={styles.statBox}>
-                            <Text style={styles.statLabel}>{t('INTENSITY')}</Text>
-                            <Text style={styles.statValue}>{selectedPlanDay.intensity ?? '-'}</Text>
-                          </View>
-                        </View>
-                      )}
-
-                      {selectedPlanDay ? (
-                        <View style={styles.progressSummaryCard}>
-                          <View style={styles.progressSummaryHeader}>
-                            <Text style={styles.progressSummaryTitle}>{t('DAY PROGRESS')}</Text>
-                            <Text style={[styles.progressSummaryBadge, workoutCompleted && styles.progressSummaryBadgeCompleted]}>
-                              {workoutCompleted ? t('COMPLETED') : workoutStarted ? t('IN PROGRESS') : t('NOT STARTED')}
-                            </Text>
-                          </View>
-                          <Text style={styles.progressSummaryText}>{progressSummaryText}</Text>
-                        </View>
-                      ) : null}
-
-                      {/* Section List */}
-                      {selectedPlanDay && daySections.length > 0 ? (
-                        <View style={styles.exerciseList}>
-                          <Text style={styles.sectionHeader}>{t("TODAY'S SECTIONS")}</Text>
-                          {daySections.map((section: StrengthPlanSection) => {
-                            const sectionCompleted = completedSectionIds.includes(section.id);
-                            const sectionProgressKey = `section-${plan.plan_id}-${selectedPlanDay.day}-${section.id}`;
-                            const sectionBusy = updatingProgressKey === sectionProgressKey;
-                            const sectionExpandKey = `${planId}-${selectedPlanDay.day}-${section.id}`;
-                            const sectionExpanded = expandedSections[sectionExpandKey] ?? true;
-                            const sectionCompletedCount = section.exercises.filter((exercise) => completedExerciseIds.includes(exercise.id)).length;
-                            return (
-                            <View key={section.id} style={[styles.exerciseCard, sectionCompleted && styles.exerciseCardCompleted]}>
-                              <TouchableOpacity
-                                style={styles.sectionRow}
-                                activeOpacity={0.8}
-                                onPress={() => toggleSectionExpand(sectionExpandKey)}
-                              >
-                                <View style={styles.sectionTitleWrap}>
-                                  <Text style={styles.exerciseType}>{t('SECTION')}</Text>
-                                  <Text style={styles.exerciseName}>{section.title}</Text>
-                                  <Text style={styles.sectionMetaText}>
-                                    {`${sectionCompletedCount}/${section.exercises.length} ${t('exercises')} · ${section.estimated_minutes} ${t('min')}`}
-                                  </Text>
-                                </View>
-                                <View style={styles.sectionActions}>
-                                  <TouchableOpacity
-                                    style={[styles.exerciseCheckButton, sectionCompleted && styles.exerciseCheckButtonCompleted]}
-                                    activeOpacity={0.8}
-                                    disabled={sectionBusy}
-                                    onPress={() => handleSectionToggle(plan, selectedPlanDay.day, section.id, !sectionCompleted)}
-                                  >
-                                    {sectionBusy ? (
-                                      <ActivityIndicator size="small" color={sectionCompleted ? '#001311' : Colors.accentBlue} />
-                                    ) : (
-                                      <Ionicons
-                                        name={sectionCompleted ? 'checkmark-circle' : 'checkmark-circle-outline'}
-                                        size={22}
-                                        color={sectionCompleted ? '#001311' : Colors.accentBlue}
-                                      />
-                                    )}
-                                  </TouchableOpacity>
-                                  <Ionicons
-                                    name={sectionExpanded ? 'chevron-up' : 'chevron-down'}
-                                    size={18}
-                                    color="rgba(255,255,255,0.45)"
-                                  />
-                                </View>
-                              </TouchableOpacity>
-
-                              {sectionExpanded ? (
-                                <View style={styles.sectionExercises}>
-                                  {section.exercises.map((ex) => {
-                                    const exerciseCompleted = completedExerciseIds.includes(ex.id);
-                                    const exerciseProgressKey = `exercise-${plan.plan_id}-${selectedPlanDay.day}-${ex.id}`;
-                                    const exerciseBusy = updatingProgressKey === exerciseProgressKey;
+                      ) : (
+                        /* Preview View (Not started or already completed) */
+                        <>
+                          {/* Day Selector */}
+                          {dayLabels.length > 0 && (
+                            <View style={styles.daySelectorContainer}>
+                              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.daySelectorScroll}>
+                                <View style={styles.daySelector}>
+                                  {dayLabels.map((day) => {
+                                    const isActive = selectedDay === day;
                                     return (
-                                <View key={ex.id} style={[styles.exerciseSubCard, exerciseCompleted && styles.exerciseSubCardCompleted]}>
-                                  <View style={styles.exerciseHeader}>
-                                    <View>
-                                      <Text style={styles.exerciseType}>{ex.type.toUpperCase()}</Text>
-                                      <Text style={styles.exerciseName}>{ex.name}</Text>
-                                    </View>
-                                    <TouchableOpacity
-                                      style={[styles.exerciseCheckButton, exerciseCompleted && styles.exerciseCheckButtonCompleted]}
-                                      activeOpacity={0.8}
-                                      disabled={exerciseBusy}
-                                      onPress={() => handleExerciseToggle(plan, selectedPlanDay.day, ex.id, !exerciseCompleted)}
-                                    >
-                                      {exerciseBusy ? (
-                                        <ActivityIndicator size="small" color={exerciseCompleted ? '#001311' : Colors.accentBlue} />
-                                      ) : (
-                                        <Ionicons
-                                          name={exerciseCompleted ? 'checkmark-circle' : 'checkmark-circle-outline'}
-                                          size={22}
-                                          color={exerciseCompleted ? '#001311' : Colors.accentBlue}
-                                        />
-                                      )}
-                                    </TouchableOpacity>
-                                  </View>
-
-                                  <View style={styles.exerciseMetrics}>
-                                    <View style={styles.metricItem}>
-                                      <Ionicons name="layers-outline" size={16} color={Colors.accentBlue} />
-                                      <Text style={styles.metricValue}>{ex.sets} {t('Sets')}</Text>
-                                    </View>
-                                    <View style={styles.metricItem}>
-                                      <Ionicons name="repeat-outline" size={16} color={Colors.accentBlue} />
-                                      <Text style={styles.metricValue}>{ex.reps} {t('Reps')}</Text>
-                                    </View>
-                                    <View style={styles.metricItem}>
-                                      <Ionicons name="fitness-outline" size={16} color={Colors.accentBlue} />
-                                      <Text style={styles.metricValue}>{ex.weight}</Text>
-                                    </View>
-                                    <View style={styles.metricItem}>
-                                      <Ionicons name="timer-outline" size={16} color={Colors.accentBlue} />
-                                      <Text style={styles.metricValue}>{ex.rest} {t('Rest')}</Text>
-                                    </View>
-                                  </View>
-                                </View>
+                                      <TouchableOpacity
+                                        key={day}
+                                        onPress={() => setSelectedDay(day)}
+                                        style={[styles.dayBtn, isActive && styles.dayBtnActive]}
+                                      >
+                                        <Text style={[styles.dayText, isActive && styles.dayTextActive]}>{day}</Text>
+                                        {isActive && <View style={styles.activeDot} />}
+                                      </TouchableOpacity>
                                     );
                                   })}
                                 </View>
-                              ) : null}
+                              </ScrollView>
                             </View>
-                          )})}
-                        </View>
-                      ) : null}
+                          )}
 
-                      {/* Start Workout Button */}
-                      <TouchableOpacity
-                        style={[styles.startWorkoutBtn, workoutCompleted && styles.startWorkoutBtnCompleted]}
-                        activeOpacity={0.8}
-                        disabled={!selectedPlanDay || startButtonBusy}
-                        onPress={() => {
-                          if (!selectedPlanDay) {
-                            return;
-                          }
-                          void handleStartWorkout(plan, selectedPlanDay.day);
-                        }}
-                      >
-                        {startButtonBusy ? (
-                          <ActivityIndicator size="small" color="#000" />
-                        ) : (
-                          <Ionicons name={workoutCompleted ? 'checkmark-circle' : 'play'} size={20} color="#000" />
-                        )}
-                        <Text style={styles.startWorkoutBtnText}>{startButtonLabel}</Text>
-                      </TouchableOpacity>
+                          {/* Daily Stats */}
+                          {selectedPlanDay && (
+                            <View style={styles.statsRow}>
+                              <View style={styles.statBox}>
+                                <Text style={styles.statLabel}>{t('EST. TIME')}</Text>
+                                <Text style={styles.statValue}>{selectedPlanDay.est_time ?? '-'}</Text>
+                              </View>
+                              <View style={styles.statDivider} />
+                              <View style={styles.statBox}>
+                                <Text style={styles.statLabel}>{t('VOLUME')}</Text>
+                                <Text style={styles.statValue}>{selectedPlanDay.volume ?? '-'}</Text>
+                              </View>
+                              <View style={styles.statDivider} />
+                              <View style={styles.statBox}>
+                                <Text style={styles.statLabel}>{t('INTENSITY')}</Text>
+                                <Text style={styles.statValue}>{selectedPlanDay.intensity ?? '-'}</Text>
+                              </View>
+                            </View>
+                          )}
+
+                          {selectedPlanDay ? (
+                            <View style={styles.progressSummaryCard}>
+                              <View style={styles.progressSummaryHeader}>
+                                <Text style={styles.progressSummaryTitle}>{t('DAY PROGRESS')}</Text>
+                                <Text style={[styles.progressSummaryBadge, workoutCompleted && styles.progressSummaryBadgeCompleted]}>
+                                  {workoutCompleted ? t('COMPLETED') : workoutStarted ? t('IN PROGRESS') : t('NOT STARTED')}
+                                </Text>
+                              </View>
+                              <Text style={styles.progressSummaryText}>{progressSummaryText}</Text>
+                            </View>
+                          ) : null}
+
+                          {/* Section List */}
+                          {selectedPlanDay && daySections.length > 0 ? (
+                            <View style={styles.exerciseList}>
+                              <Text style={styles.sectionHeader}>{t("TODAY'S SECTIONS")}</Text>
+                              {daySections.map((section: StrengthPlanSection) => {
+                                const sectionCompleted = completedSectionIds.includes(section.id);
+                                const sectionProgressKey = `section-${plan.plan_id}-${selectedPlanDay.day}-${section.id}`;
+                                const sectionBusy = updatingProgressKey === sectionProgressKey;
+                                const sectionExpandKey = `${planId}-${selectedPlanDay.day}-${section.id}`;
+                                const sectionExpanded = expandedSections[sectionExpandKey] ?? true;
+                                const sectionCompletedCount = section.exercises.filter((exercise) => completedExerciseIds.includes(exercise.id)).length;
+                                return (
+                                  <View key={section.id} style={[styles.exerciseCard, sectionCompleted && styles.exerciseCardCompleted]}>
+                                    <TouchableOpacity
+                                      style={styles.sectionRow}
+                                      activeOpacity={0.8}
+                                      onPress={() => toggleSectionExpand(sectionExpandKey)}
+                                    >
+                                      <View style={styles.sectionTitleWrap}>
+                                        <Text style={styles.exerciseType}>{t('SECTION')}</Text>
+                                        <Text style={styles.exerciseName}>{section.title}</Text>
+                                        <Text style={styles.sectionMetaText}>
+                                          {`${sectionCompletedCount}/${section.exercises.length} ${t('exercises')} · ${section.estimated_minutes} ${t('min')}`}
+                                        </Text>
+                                      </View>
+                                      <View style={styles.sectionActions}>
+                                        <TouchableOpacity
+                                          style={[styles.exerciseCheckButton, sectionCompleted && styles.exerciseCheckButtonCompleted]}
+                                          activeOpacity={0.8}
+                                          disabled={sectionBusy}
+                                          onPress={() => handleSectionToggle(plan, selectedPlanDay.day, section.id, !sectionCompleted)}
+                                        >
+                                          {sectionBusy ? (
+                                            <ActivityIndicator size="small" color={sectionCompleted ? '#001311' : Colors.accentBlue} />
+                                          ) : (
+                                            <Ionicons
+                                              name={sectionCompleted ? 'checkmark-circle' : 'checkmark-circle-outline'}
+                                              size={22}
+                                              color={sectionCompleted ? '#001311' : Colors.accentBlue}
+                                            />
+                                          )}
+                                        </TouchableOpacity>
+                                        <Ionicons
+                                          name={sectionExpanded ? 'chevron-up' : 'chevron-down'}
+                                          size={18}
+                                          color="rgba(255,255,255,0.45)"
+                                        />
+                                      </View>
+                                    </TouchableOpacity>
+
+                                    {sectionExpanded ? (
+                                      <View style={styles.sectionExercises}>
+                                        {section.exercises.map((ex) => {
+                                          const exerciseCompleted = completedExerciseIds.includes(ex.id);
+                                          const exerciseProgressKey = `exercise-${plan.plan_id}-${selectedPlanDay.day}-${ex.id}`;
+                                          const exerciseBusy = updatingProgressKey === exerciseProgressKey;
+                                          return (
+                                            <View key={ex.id} style={[styles.exerciseSubCard, exerciseCompleted && styles.exerciseSubCardCompleted]}>
+                                              <View style={styles.exerciseHeader}>
+                                                <View style={{ flex: 1, paddingRight: 8 }}>
+                                                  <Text style={styles.exerciseType}>{ex.type.toUpperCase()}</Text>
+                                                  <Text style={styles.exerciseName}>{ex.name}</Text>
+                                                </View>
+                                                <TouchableOpacity
+                                                  style={[styles.exerciseCheckButton, exerciseCompleted && styles.exerciseCheckButtonCompleted]}
+                                                  activeOpacity={0.8}
+                                                  disabled={exerciseBusy}
+                                                  onPress={() => handleExerciseToggle(plan, selectedPlanDay.day, ex.id, !exerciseCompleted)}
+                                                >
+                                                  {exerciseBusy ? (
+                                                    <ActivityIndicator size="small" color={exerciseCompleted ? '#001311' : Colors.accentBlue} />
+                                                  ) : (
+                                                    <Ionicons
+                                                      name={exerciseCompleted ? 'checkmark-circle' : 'checkmark-circle-outline'}
+                                                      size={22}
+                                                      color={exerciseCompleted ? '#001311' : Colors.accentBlue}
+                                                    />
+                                                  )}
+                                                </TouchableOpacity>
+                                              </View>
+
+                                              <View style={styles.exerciseMetrics}>
+                                                <View style={styles.metricItem}>
+                                                  <Ionicons name="layers-outline" size={16} color={Colors.accentBlue} />
+                                                  <Text style={styles.metricValue}>{ex.sets} {t('Sets')}</Text>
+                                                </View>
+                                                <View style={styles.metricItem}>
+                                                  <Ionicons name="repeat-outline" size={16} color={Colors.accentBlue} />
+                                                  <Text style={styles.metricValue}>{ex.reps} {t('Reps')}</Text>
+                                                </View>
+                                                <View style={styles.metricItem}>
+                                                  <Ionicons name="fitness-outline" size={16} color={Colors.accentBlue} />
+                                                  <Text style={styles.metricValue}>{ex.weight}</Text>
+                                                </View>
+                                                <View style={styles.metricItem}>
+                                                  <Ionicons name="timer-outline" size={16} color={Colors.accentBlue} />
+                                                  <Text style={styles.metricValue}>{ex.rest} {t('Rest')}</Text>
+                                                </View>
+                                              </View>
+                                            </View>
+                                          );
+                                        })}
+                                      </View>
+                                    ) : null}
+                                  </View>
+                                );
+                              })}
+                            </View>
+                          ) : null}
+
+                          {/* Start Workout Button */}
+                          <TouchableOpacity
+                            style={[styles.startWorkoutBtn, workoutCompleted && styles.startWorkoutBtnCompleted]}
+                            activeOpacity={0.8}
+                            disabled={!selectedPlanDay || startButtonBusy}
+                            onPress={() => {
+                              if (!selectedPlanDay) {
+                                return;
+                              }
+                              void handleStartWorkout(plan, selectedPlanDay.day);
+                            }}
+                          >
+                            {startButtonBusy ? (
+                              <ActivityIndicator size="small" color="#000" />
+                            ) : (
+                              <Ionicons name={workoutCompleted ? 'checkmark-circle' : 'play'} size={20} color="#000" />
+                            )}
+                            <Text style={styles.startWorkoutBtnText}>{startButtonLabel}</Text>
+                          </TouchableOpacity>
+                        </>
+                      )}
                     </View>
                   )}
                 </View>
@@ -775,8 +986,7 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255,255,255,0.02)',
   },
   exerciseCardCompleted: {
-    borderColor: 'rgba(52,211,153,0.45)',
-    backgroundColor: 'rgba(16,185,129,0.12)',
+    borderColor: 'rgba(6,182,212,0.15)',
   },
   exerciseHeader: {
     flexDirection: 'row',
@@ -825,7 +1035,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(6,182,212,0.08)',
   },
   exerciseCheckButtonCompleted: {
-    backgroundColor: '#34D399',
+    backgroundColor: Colors.accentBlue,
   },
   sectionExercises: {
     gap: 10,
@@ -839,8 +1049,7 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255,255,255,0.05)',
   },
   exerciseSubCardCompleted: {
-    borderColor: 'rgba(52,211,153,0.42)',
-    backgroundColor: 'rgba(16,185,129,0.10)',
+    borderColor: 'rgba(6,182,212,0.15)',
   },
   exerciseMetrics: {
     flexDirection: 'row',
@@ -871,6 +1080,144 @@ const styles = StyleSheet.create({
     backgroundColor: '#34D399',
   },
   startWorkoutBtnText: {
+    color: '#000',
+    fontSize: 14,
+    fontFamily: 'Inter_800ExtraBold',
+    letterSpacing: 1,
+  },
+
+  /* Active Session Styles */
+  activeSessionContainer: {
+    paddingBottom: 16,
+  },
+  activeSessionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 16,
+  },
+  activeSessionLeft: {
+    flex: 1,
+    paddingRight: 16,
+  },
+  activeSessionSubtitle: {
+    color: Colors.accentBlue,
+    fontSize: 11,
+    fontFamily: 'Inter_700Bold',
+    letterSpacing: 1.5,
+    marginBottom: 4,
+  },
+  activeSessionTitle: {
+    color: '#fff',
+    fontSize: 22,
+    fontFamily: 'Inter_800ExtraBold',
+    fontWeight: '800',
+    lineHeight: 28,
+  },
+  activeSessionRight: {
+    alignItems: 'flex-end',
+  },
+  activeSessionElapsedLabel: {
+    color: 'rgba(255,255,255,0.4)',
+    fontSize: 9,
+    fontFamily: 'Inter_700Bold',
+    letterSpacing: 1,
+    marginBottom: 4,
+  },
+  activeSessionElapsedTimer: {
+    color: Colors.accentBlue,
+    fontSize: 18,
+    fontFamily: 'Inter_800ExtraBold',
+    fontWeight: '800',
+  },
+  activeSessionProgressBarContainer: {
+    height: 4,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    borderRadius: 2,
+    overflow: 'hidden',
+    marginBottom: 24,
+  },
+  activeSessionProgressBar: {
+    height: '100%',
+    backgroundColor: Colors.accentBlue,
+    borderRadius: 2,
+  },
+  activeSectionCard: {
+    backgroundColor: '#161618',
+    borderRadius: 18,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.06)',
+    marginBottom: 12,
+  },
+  activeSectionCardCompleted: {
+    borderColor: 'rgba(6,182,212,0.2)',
+  },
+  activeSectionType: {
+    color: Colors.accentBlue,
+    fontSize: 9,
+    fontFamily: 'Inter_700Bold',
+    letterSpacing: 1.2,
+    marginBottom: 2,
+  },
+  activeSectionName: {
+    color: '#fff',
+    fontSize: 18,
+    fontFamily: 'Inter_700Bold',
+  },
+  activeSectionMetaText: {
+    color: 'rgba(255,255,255,0.45)',
+    fontSize: 12,
+    fontFamily: 'Inter_500Medium',
+    marginTop: 4,
+  },
+  activeCheckButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(6,182,212,0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(6,182,212,0.2)',
+  },
+  activeCheckButtonCompleted: {
+    backgroundColor: Colors.accentBlue,
+    borderColor: Colors.accentBlue,
+  },
+  activeExerciseSubCard: {
+    backgroundColor: '#1E1E22',
+    borderRadius: 14,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.05)',
+  },
+  activeExerciseSubCardCompleted: {
+    borderColor: 'rgba(6,182,212,0.15)',
+  },
+  activeExerciseTag: {
+    color: Colors.accentBlue,
+    fontSize: 8,
+    fontFamily: 'Inter_700Bold',
+    letterSpacing: 1,
+    marginBottom: 2,
+  },
+  activeExerciseName: {
+    color: '#fff',
+    fontSize: 15,
+    fontFamily: 'Inter_700Bold',
+  },
+  completeSessionBtn: {
+    backgroundColor: Colors.accentBlue,
+    borderRadius: 14,
+    height: 52,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 16,
+  },
+  completeSessionBtnText: {
     color: '#000',
     fontSize: 14,
     fontFamily: 'Inter_800ExtraBold',
