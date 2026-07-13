@@ -338,234 +338,108 @@ function buildChallengeProgressShareMessage(thread: ChallengeProgressThread, ent
   ].join('\n').slice(0, 5000);
 }
 
-function buildChallengeProgressSvg(thread: ChallengeProgressThread, entries: CompletedReportEntry[]) {
-  const width = 1080;
-  const headerHeight = 290;
-  const rowHeight = 88;
-  const footerHeight = 210;
-  const rows = Math.max(entries.length, 1);
-  const height = headerHeight + rows * rowHeight + footerHeight;
-  const generatedAt = new Date().toLocaleDateString();
-  const content = (entries.length > 0 ? entries : [{ title: 'No completed items yet', detail: 'Finish exercises to build your share card.' }])
-    .map((entry, index) => {
-      const y = headerHeight + index * rowHeight;
-      return `
-        <g transform="translate(72 ${y})">
-          <circle cx="16" cy="24" r="16" fill="#00F0D0" fill-opacity="0.18" />
-          <text x="16" y="30" text-anchor="middle" font-size="18" font-family="Arial, sans-serif" fill="#00F0D0">✓</text>
-          <text x="48" y="18" font-size="28" font-family="Arial, sans-serif" font-weight="700" fill="#FFFFFF">${xmlEscape(entry.title)}</text>
-          <text x="48" y="50" font-size="22" font-family="Arial, sans-serif" fill="#9FB3C8">${xmlEscape(entry.detail)}</text>
-        </g>
-      `;
-    })
-    .join('');
-
-  return `<?xml version="1.0" encoding="UTF-8"?>
-  <svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
-    <defs>
-      <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-        <stop offset="0%" stop-color="#07101F"/>
-        <stop offset="100%" stop-color="#0B1D34"/>
-      </linearGradient>
-    </defs>
-    <rect width="${width}" height="${height}" rx="0" fill="url(#bg)" />
-    <rect x="48" y="48" width="${width - 96}" height="${height - 96}" rx="36" fill="#081423" stroke="rgba(255,255,255,0.08)" />
-    <text x="72" y="108" font-size="28" font-family="Arial, sans-serif" font-weight="700" fill="#00F0D0">VICTORY FITNESS</text>
-    <text x="72" y="156" font-size="54" font-family="Arial, sans-serif" font-weight="700" fill="#FFFFFF">${xmlEscape(thread.title)}</text>
-    <text x="72" y="198" font-size="24" font-family="Arial, sans-serif" fill="#9FB3C8">Completed progress only · ${xmlEscape(generatedAt)}</text>
-    <rect x="72" y="224" width="222" height="42" rx="21" fill="#00F0D0" fill-opacity="0.14" />
-    <text x="92" y="252" font-size="22" font-family="Arial, sans-serif" font-weight="700" fill="#00F0D0">${thread.viewer_progress_days_completed}/${thread.duration_days} DAYS</text>
-    <rect x="316" y="224" width="220" height="42" rx="21" fill="#F59E0B" fill-opacity="0.14" />
-    <text x="336" y="252" font-size="22" font-family="Arial, sans-serif" font-weight="700" fill="#F59E0B">${thread.viewer_points_earned}/${thread.points} PTS</text>
-    ${content}
-    <text x="72" y="${height - 154}" font-size="24" font-family="Arial, sans-serif" font-weight="700" fill="#FFFFFF">Download the app</text>
-    <rect x="72" y="${height - 128}" width="270" height="74" rx="20" fill="#111827" stroke="#2A3548" />
-    <text x="102" y="${height - 84}" font-size="22" font-family="Arial, sans-serif" font-weight="700" fill="#FFFFFF">▶ Google Play</text>
-    <rect x="362" y="${height - 128}" width="270" height="74" rx="20" fill="#111827" stroke="#2A3548" />
-    <text x="392" y="${height - 84}" font-size="22" font-family="Arial, sans-serif" font-weight="700" fill="#FFFFFF"> App Store</text>
-    <text x="72" y="${height - 20}" font-size="20" font-family="Arial, sans-serif" fill="#6F8298">Get Victory Fitness on Google Play and the App Store</text>
-  </svg>`;
-}
-
-function buildProfessionalReportEntries(thread: ChallengeProgressThread, dayProgressMap: Map<number, ChallengePlanDayProgress>) {
-  const entries: CompletedReportEntry[] = [];
-
-  for (const day of thread.plan_days) {
-    const dayProgress = dayProgressMap.get(day.day_number);
-    const completedExerciseIds = new Set(Array.isArray(dayProgress?.completed_exercise_ids) ? dayProgress.completed_exercise_ids : []);
-    const completedSectionIds = new Set(Array.isArray(dayProgress?.completed_section_ids) ? dayProgress.completed_section_ids : []);
-
-    for (const section of day.sections) {
-      if (completedSectionIds.has(section.id)) {
-        if (section.exercises.length > 0) {
-          for (const exercise of section.exercises) {
-            entries.push({
-              title: exercise.name,
-              detail: `Day ${day.day_number} | ${section.title}`,
-            });
-          }
-        } else {
-          entries.push({
-            title: `${section.title} completed`,
-            detail: `Day ${day.day_number} | ${day.title}`,
-          });
-        }
-        continue;
-      }
-
-      for (const exercise of section.exercises) {
-        if (completedExerciseIds.has(exercise.id)) {
-          entries.push({
-            title: exercise.name,
-            detail: `Day ${day.day_number} | ${section.title}`,
-          });
-        }
-      }
+function buildChallengePostcardSvg(
+  thread: ChallengeProgressThread,
+  exercises: string[],
+  streakCount: number,
+  intensityLabel: string,
+  userName: string
+) {
+  const width = 900;
+  const height = 1500;
+  
+  const challengeName = thread.title || 'Challenge Progress';
+  const words = challengeName.toUpperCase().split(' ');
+  let line1 = '';
+  let line2 = '';
+  for (const word of words) {
+    if ((line1 + ' ' + word).length < 22) {
+      line1 = (line1 + ' ' + word).trim();
+    } else {
+      line2 = (line2 + ' ' + word).trim();
     }
   }
 
-  return entries.slice(0, 10);
-}
-
-function buildProfessionalChallengeProgressShareMessage(
-  thread: ChallengeProgressThread,
-  entries: CompletedReportEntry[],
-  viewerName: string,
-) {
-  const totalExerciseCount = thread.plan_days.reduce(
-    (total, day) => total + day.sections.reduce((sectionTotal, section) => sectionTotal + section.exercises.length, 0),
-    0,
-  );
-  const completionPercent = totalExerciseCount > 0
-    ? Math.round((entries.length / totalExerciseCount) * 100)
-    : Math.round((thread.viewer_progress_days_completed / Math.max(thread.duration_days, 1)) * 100);
-  const completedLines = entries.length > 0
-    ? entries.map((entry) => `- ${entry.title} | ${entry.detail}`).join('\n')
-    : '- No completed items yet';
-
-  return [
-    'Victory Fitness',
-    `Member: ${viewerName}`,
-    `${thread.title} progress report`,
-    `Completed ${completionPercent}% | ${thread.viewer_progress_days_completed}/${thread.duration_days} days | ${thread.viewer_points_earned}/${thread.points} pts`,
-    '',
-    completedLines,
-    '',
-    `Get the app on Google Play: ${GOOGLE_PLAY_URL}`,
-    `Get the app on the App Store: ${APP_STORE_URL}`,
-  ].join('\n').slice(0, 5000);
-}
-
-function buildProfessionalChallengeProgressSvg(
-  thread: ChallengeProgressThread,
-  entries: CompletedReportEntry[],
-  viewerName: string,
-) {
-  const width = 1080;
-  const headerHeight = 430;
-  const rowHeight = 72;
-  const footerHeight = 290;
-  const rows = Math.max(entries.length, 1);
-  const height = headerHeight + rows * rowHeight + footerHeight;
-  const generatedAt = new Date().toLocaleDateString();
-  const totalExerciseCount = thread.plan_days.reduce(
-    (total, day) => total + day.sections.reduce((sectionTotal, section) => sectionTotal + section.exercises.length, 0),
-    0,
-  );
-  const completedCount = entries.length;
-  const completionPercent = totalExerciseCount > 0
-    ? Math.round((completedCount / totalExerciseCount) * 100)
-    : Math.round((thread.viewer_progress_days_completed / Math.max(thread.duration_days, 1)) * 100);
-  const progressWidth = Math.max(Math.min(completionPercent, 100), 0) * 8.56;
-  const safeViewerName = xmlEscape(viewerName || 'Victory Member');
-  const safeChallengeName = xmlEscape(thread.title || 'Challenge Progress');
-  const completedContent = (entries.length > 0 ? entries : [{ title: 'No completed items yet', detail: 'Finish exercises to build your share card.' }])
-    .map((entry, index) => {
-      const y = headerHeight + index * rowHeight;
-      return `
-        <g transform="translate(84 ${y})">
-          <circle cx="18" cy="22" r="18" fill="#00F0D0" fill-opacity="0.16" />
-          <path d="M9 22 L16 29 L29 15" stroke="#00F0D0" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" fill="none" />
-          <text x="52" y="18" font-size="26" font-family="Arial, sans-serif" font-weight="700" fill="#FFFFFF">${xmlEscape(entry.title)}</text>
-          <text x="52" y="46" font-size="20" font-family="Arial, sans-serif" fill="#8FA7C1">${xmlEscape(entry.detail)}</text>
-        </g>
-      `;
-    })
-    .join('');
+  const exerciseRows = exercises.slice(0, 5).map((ex, idx) => {
+    const rowY = 630 + idx * 54;
+    return `
+      <circle cx="150" cy="${rowY}" r="6" fill="#00B7F0" />
+      <text x="180" y="${rowY + 7}" font-size="22" font-family="Arial, sans-serif" font-weight="700" fill="#cbd5e1">${xmlEscape(ex.toUpperCase())}</text>
+    `;
+  }).join('');
 
   return `<?xml version="1.0" encoding="UTF-8"?>
   <svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
     <defs>
-      <linearGradient id="report-bg" x1="0" y1="0" x2="1" y2="1">
-        <stop offset="0%" stop-color="#05101C"/>
-        <stop offset="45%" stop-color="#0B1F35"/>
-        <stop offset="100%" stop-color="#11304E"/>
-      </linearGradient>
-      <linearGradient id="report-accent" x1="0" y1="0" x2="1" y2="1">
-        <stop offset="0%" stop-color="#00F0D0"/>
-        <stop offset="100%" stop-color="#1DD1A1"/>
-      </linearGradient>
-      <linearGradient id="report-gold" x1="0" y1="0" x2="1" y2="1">
-        <stop offset="0%" stop-color="#FBBF24"/>
-        <stop offset="100%" stop-color="#F59E0B"/>
-      </linearGradient>
+      <pattern id="dot-grid" width="48" height="48" patternUnits="userSpaceOnUse">
+        <circle cx="2" cy="2" r="1.5" fill="#00B7F0" fill-opacity="0.12" />
+      </pattern>
     </defs>
-    <rect width="${width}" height="${height}" fill="url(#report-bg)" />
-    <circle cx="930" cy="130" r="180" fill="rgba(0,240,208,0.08)" />
-    <circle cx="840" cy="20" r="110" fill="rgba(255,255,255,0.04)" />
-    <rect x="40" y="40" width="${width - 80}" height="${height - 80}" rx="42" fill="#081423" stroke="rgba(255,255,255,0.08)" />
-    <circle cx="132" cy="128" r="46" fill="url(#report-accent)" />
-    <text x="132" y="142" text-anchor="middle" font-size="30" font-family="Arial, sans-serif" font-weight="700" fill="#03131F">VF</text>
-    <text x="198" y="100" font-size="24" font-family="Arial, sans-serif" font-weight="700" fill="#00F0D0">VICTORY FITNESS</text>
-    <text x="198" y="136" font-size="38" font-family="Arial, sans-serif" font-weight="700" fill="#FFFFFF">${safeViewerName}</text>
-    <text x="198" y="168" font-size="20" font-family="Arial, sans-serif" fill="#9FB3C8">Challenge progress report · ${xmlEscape(generatedAt)}</text>
-    <text x="84" y="248" font-size="54" font-family="Arial, sans-serif" font-weight="700" fill="#FFFFFF">${safeChallengeName}</text>
-    <text x="84" y="286" font-size="24" font-family="Arial, sans-serif" fill="#9FB3C8">${completionPercent}% complete | ${completedCount}/${Math.max(totalExerciseCount, completedCount || 1)} exercises done</text>
-    <rect x="84" y="320" width="856" height="18" rx="9" fill="rgba(255,255,255,0.08)" />
-    <rect x="84" y="320" width="${progressWidth}" height="18" rx="9" fill="url(#report-accent)" />
-    <rect x="84" y="364" width="252" height="74" rx="24" fill="rgba(0,240,208,0.10)" stroke="rgba(0,240,208,0.16)" />
-    <text x="110" y="395" font-size="18" font-family="Arial, sans-serif" fill="#7EEAD9">DAYS COMPLETED</text>
-    <text x="110" y="424" font-size="29" font-family="Arial, sans-serif" font-weight="700" fill="#FFFFFF">${thread.viewer_progress_days_completed}/${thread.duration_days}</text>
-    <rect x="356" y="364" width="252" height="74" rx="24" fill="rgba(245,158,11,0.10)" stroke="rgba(245,158,11,0.16)" />
-    <text x="382" y="395" font-size="18" font-family="Arial, sans-serif" fill="#FCD34D">POINTS EARNED</text>
-    <text x="382" y="424" font-size="29" font-family="Arial, sans-serif" font-weight="700" fill="#FFFFFF">${thread.viewer_points_earned}/${thread.points}</text>
-    <rect x="628" y="364" width="312" height="74" rx="24" fill="rgba(255,255,255,0.05)" stroke="rgba(255,255,255,0.08)" />
-    <text x="654" y="395" font-size="18" font-family="Arial, sans-serif" fill="#C7D2FE">EXERCISES DONE</text>
-    <text x="654" y="424" font-size="29" font-family="Arial, sans-serif" font-weight="700" fill="#FFFFFF">${completedCount}</text>
-    <text x="84" y="484" font-size="22" font-family="Arial, sans-serif" font-weight="700" fill="#FFFFFF">Completed Exercises</text>
-    ${completedContent}
-    <text x="84" y="${height - 206}" font-size="28" font-family="Arial, sans-serif" font-weight="700" fill="#FFFFFF">Download Victory Fitness</text>
-    <text x="84" y="${height - 172}" font-size="20" font-family="Arial, sans-serif" fill="#9FB3C8">Train with the full app on Google Play and the App Store</text>
-    <rect x="84" y="${height - 142}" width="396" height="94" rx="28" fill="#0E1826" stroke="#243244" />
-    <polygon points="122,${height - 114} 122,${height - 76} 154,${height - 95}" fill="#34D399" />
-    <polygon points="154,${height - 95} 166,${height - 106} 166,${height - 84}" fill="#60A5FA" />
-    <polygon points="122,${height - 114} 145,${height - 99} 122,${height - 76}" fill="#F59E0B" />
-    <text x="186" y="${height - 102}" font-size="16" font-family="Arial, sans-serif" fill="#9FB3C8">Download on</text>
-    <text x="186" y="${height - 70}" font-size="28" font-family="Arial, sans-serif" font-weight="700" fill="#FFFFFF">Google Play</text>
-    <rect x="514" y="${height - 142}" width="396" height="94" rx="28" fill="#0E1826" stroke="#243244" />
-    <circle cx="556" cy="${height - 95}" r="24" fill="rgba(255,255,255,0.10)" />
-    <path d="M548 ${height - 82} L564 ${height - 108} M553 ${height - 80} L569 ${height - 106} M545 ${height - 95} H567" stroke="#FFFFFF" stroke-width="4" stroke-linecap="round" />
-    <text x="594" y="${height - 102}" font-size="16" font-family="Arial, sans-serif" fill="#9FB3C8">Download on the</text>
-    <text x="594" y="${height - 70}" font-size="28" font-family="Arial, sans-serif" font-weight="700" fill="#FFFFFF">App Store</text>
+    <rect width="${width}" height="${height}" fill="#050B14" />
+    <rect width="${width}" height="${height}" fill="url(#dot-grid)" />
+    
+    <!-- Logo Section -->
+    <rect x="410" y="140" width="80" height="80" fill="none" stroke="rgba(255, 255, 255, 0.15)" stroke-width="2" />
+    <rect x="424" y="154" width="52" height="52" fill="#00B7F0" />
+    <text x="450" y="193" text-anchor="middle" font-size="34" font-family="Arial, sans-serif" font-weight="900" fill="#ffffff">?</text>
+    <text x="450" y="295" text-anchor="middle" font-size="52" font-family="Arial, sans-serif" font-weight="900" fill="#ffffff" letter-spacing="-1">DEINE VICTORY</text>
+
+    <!-- Main Card Container -->
+    <rect x="84" y="350" width="732" height="610" rx="36" fill="#111113" stroke="rgba(255, 255, 255, 0.06)" stroke-width="2" />
+    <text x="450" y="405" text-anchor="middle" font-size="20" font-family="Arial, sans-serif" font-weight="700" fill="#00B7F0" letter-spacing="1.5">WORKOUT ABGESCHLOSSEN</text>
+    
+    <!-- Workout Title -->
+    <text x="450" y="475" text-anchor="middle" font-size="38" font-family="Arial, sans-serif" font-weight="900" fill="#ffffff">${xmlEscape(line1)}</text>
+    ${line2 ? `<text x="450" y="525" text-anchor="middle" font-size="38" font-family="Arial, sans-serif" font-weight="900" fill="#ffffff">${xmlEscape(line2)}</text>` : ''}
+
+    <!-- Divider Line -->
+    <line x1="132" y1="${line2 ? 580 : 540}" x2="768" y2="${line2 ? 580 : 540}" stroke="rgba(255, 255, 255, 0.08)" stroke-width="2" />
+
+    <!-- Exercises List -->
+    <g transform="translate(0 ${line2 ? 0 : -40})">
+      ${exerciseRows}
+    </g>
+
+    <!-- Metrics Row -->
+    <!-- Left Tile (STREAK) -->
+    <rect x="84" y="1000" width="342" height="150" rx="24" fill="#111113" stroke="rgba(255, 255, 255, 0.06)" stroke-width="2" />
+    <text x="255" y="1040" text-anchor="middle" font-size="18" font-family="Arial, sans-serif" font-weight="700" fill="rgba(255, 255, 255, 0.4)" letter-spacing="1.5">STREAK</text>
+    <text x="255" y="1105" text-anchor="middle" font-size="34" font-family="Arial, sans-serif" font-weight="900" fill="#ffffff">
+      <tspan fill="#00F0D0">${streakCount}</tspan> 🔥
+    </text>
+
+    <!-- Right Tile (INTENSITÄT) -->
+    <rect x="474" y="1000" width="342" height="150" rx="24" fill="#111113" stroke="rgba(255, 255, 255, 0.06)" stroke-width="2" />
+    <text x="645" y="1040" text-anchor="middle" font-size="18" font-family="Arial, sans-serif" font-weight="700" fill="rgba(255, 255, 255, 0.4)" letter-spacing="1.5">INTENSITÄT</text>
+    <text x="645" y="1105" text-anchor="middle" font-size="34" font-family="Arial, sans-serif" font-weight="900" fill="#FF4B72">${xmlEscape(intensityLabel.toUpperCase())}</text>
+
+    <!-- User Pill Badge -->
+    <rect x="250" y="1195" width="400" height="90" rx="45" fill="#00B7F0" />
+    <text x="450" y="1250" text-anchor="middle" font-size="22" font-family="Arial, sans-serif" font-weight="900" fill="#000000" letter-spacing="1.5">${xmlEscape(userName.toUpperCase())}</text>
+
+    <!-- Footer URL -->
+    <text x="450" y="1370" text-anchor="middle" font-size="20" font-family="Arial, sans-serif" font-weight="700" fill="rgba(255, 255, 255, 0.3)" letter-spacing="3">VICTORY-FITNESS.APP</text>
   </svg>`;
 }
 
-async function buildChallengeProgressReportAsset(challengeId: string) {
-  const response = await apiRequest<{
-    file_name: string;
-    mime_type: string;
-    image_base64: string;
-    share_message: string;
-  }>(`/challenges/${encodeURIComponent(challengeId)}/progress/report`);
+async function buildChallengeProgressReportAsset(
+  thread: ChallengeProgressThread,
+  exercises: string[],
+  streakCount: number,
+  intensityLabel: string,
+  userName: string
+) {
+  const fileName = 'victory-fitness-progress-card.svg';
+  const mimeType = 'image/svg+xml';
+  const svgString = buildChallengePostcardSvg(thread, exercises, streakCount, intensityLabel, userName);
 
-  const fileName = response.file_name || 'victory-fitness-progress-report.png';
-  const mimeType = response.mime_type || 'image/png';
-  // Web/PWA must keep the image in memory. expo-file-system has no write API on web.
   if (Platform.OS === 'web' || typeof FileSystem.writeAsStringAsync !== 'function') {
+    const base64Data = typeof btoa !== 'undefined' ? btoa(unescape(encodeURIComponent(svgString))) : '';
     return {
-      fileUri: `data:${mimeType};base64,${response.image_base64}`,
-      imageBase64: response.image_base64,
-      shareMessage: response.share_message,
+      fileUri: `data:${mimeType};base64,${base64Data}`,
+      imageBase64: base64Data,
+      svgString,
+      shareMessage: `Victory Fitness - Challenge completed by ${userName}`,
       mimeType,
       fileName,
     };
@@ -573,11 +447,12 @@ async function buildChallengeProgressReportAsset(challengeId: string) {
 
   const directory = FileSystem.cacheDirectory || FileSystem.documentDirectory || '';
   const fileUri = `${directory}${fileName}`;
-  await FileSystem.writeAsStringAsync(fileUri, response.image_base64, { encoding: FileSystem.EncodingType.Base64 });
+  await FileSystem.writeAsStringAsync(fileUri, svgString, { encoding: FileSystem.EncodingType.UTF8 });
   return {
     fileUri,
-    imageBase64: response.image_base64,
-    shareMessage: response.share_message,
+    imageBase64: '',
+    svgString,
+    shareMessage: `Victory Fitness - Challenge completed by ${userName}`,
     mimeType,
     fileName,
   };
@@ -933,22 +808,28 @@ export default function ChallengeProgressScreen() {
       return;
     }
     setReportAction('download');
-  try {
-    const asset = await buildChallengeProgressReportAsset(thread.challenge_id);
-    if (Platform.OS === 'web' && typeof document !== 'undefined') {
-      const blob = await getWebReportBlob(asset.fileUri);
-      const objectUrl = URL.createObjectURL(blob);
-      const anchor = document.createElement('a');
-      anchor.href = objectUrl;
-      anchor.download = asset.fileName;
-      anchor.rel = 'noopener';
-      document.body.appendChild(anchor);
-      anchor.click();
-      anchor.remove();
-      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
-      return;
-    }
-    const shareUrl = Platform.OS === 'android'
+    try {
+      const asset = await buildChallengeProgressReportAsset(
+        thread,
+        exercisesToDisplay,
+        currentUser?.streak_days ?? 3,
+        thread?.difficulty ? t(thread.difficulty) : t('WORKOUT_CARD_GOOD'),
+        currentUser?.name || 'ADMIN TESTER'
+      );
+      if (Platform.OS === 'web' && typeof document !== 'undefined') {
+        const blob = await getWebReportBlob(asset.fileUri);
+        const objectUrl = URL.createObjectURL(blob);
+        const anchor = document.createElement('a');
+        anchor.href = objectUrl;
+        anchor.download = asset.fileName;
+        anchor.rel = 'noopener';
+        document.body.appendChild(anchor);
+        anchor.click();
+        anchor.remove();
+        window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+        return;
+      }
+      const shareUrl = Platform.OS === 'android'
         ? await FileSystem.getContentUriAsync(asset.fileUri)
         : asset.fileUri;
       await Share.share({
@@ -961,7 +842,7 @@ export default function ChallengeProgressScreen() {
     } finally {
       setReportAction('');
     }
-  }, [thread]);
+  }, [thread, exercisesToDisplay, currentUser, t]);
 
   const handleShareCard = useCallback(async () => {
     if (!thread) {
@@ -969,25 +850,31 @@ export default function ChallengeProgressScreen() {
     }
 
     setReportAction('share');
-  try {
-    const asset = await buildChallengeProgressReportAsset(thread.challenge_id);
-    const webNavigator = Platform.OS === 'web' && typeof navigator !== 'undefined'
-      ? navigator as Navigator & {
-          share?: (data: { title?: string; text?: string; url?: string; files?: File[] }) => Promise<void>;
-          canShare?: (data?: { files?: File[] }) => boolean;
+    try {
+      const asset = await buildChallengeProgressReportAsset(
+        thread,
+        exercisesToDisplay,
+        currentUser?.streak_days ?? 3,
+        thread?.difficulty ? t(thread.difficulty) : t('WORKOUT_CARD_GOOD'),
+        currentUser?.name || 'ADMIN TESTER'
+      );
+      const webNavigator = Platform.OS === 'web' && typeof navigator !== 'undefined'
+        ? navigator as Navigator & {
+            share?: (data: { title?: string; text?: string; url?: string; files?: File[] }) => Promise<void>;
+            canShare?: (data?: { files?: File[] }) => boolean;
+          }
+        : null;
+      if (webNavigator?.share) {
+        const blob = await getWebReportBlob(asset.fileUri);
+        const file = new File([blob], asset.fileName, { type: asset.mimeType });
+        if (webNavigator.canShare?.({ files: [file] })) {
+          await webNavigator.share({ title: `${thread.title || 'Challenge'} Progress Card`, text: asset.shareMessage, files: [file] });
+        } else {
+          await webNavigator.share({ title: `${thread.title || 'Challenge'} Progress Card`, text: asset.shareMessage });
         }
-      : null;
-    if (webNavigator?.share) {
-      const blob = await getWebReportBlob(asset.fileUri);
-      const file = new File([blob], asset.fileName, { type: asset.mimeType });
-      if (webNavigator.canShare?.({ files: [file] })) {
-        await webNavigator.share({ title: `${thread.title || 'Challenge'} Progress Card`, text: asset.shareMessage, files: [file] });
-      } else {
-        await webNavigator.share({ title: `${thread.title || 'Challenge'} Progress Card`, text: asset.shareMessage });
+        return;
       }
-      return;
-    }
-    const shareUrl = Platform.OS === 'android'
+      const shareUrl = Platform.OS === 'android'
         ? await FileSystem.getContentUriAsync(asset.fileUri)
         : asset.fileUri;
       await Share.share({
@@ -1000,7 +887,7 @@ export default function ChallengeProgressScreen() {
     } finally {
       setReportAction('');
     }
-  }, [thread]);
+  }, [thread, exercisesToDisplay, currentUser, t]);
 
   const handleShareReportToCommunity = useCallback(async () => {
     if (!thread) {
@@ -1009,7 +896,13 @@ export default function ChallengeProgressScreen() {
 
     setReportAction('community');
     try {
-      const asset = await buildChallengeProgressReportAsset(thread.challenge_id);
+      const asset = await buildChallengeProgressReportAsset(
+        thread,
+        exercisesToDisplay,
+        currentUser?.streak_days ?? 3,
+        thread?.difficulty ? t(thread.difficulty) : t('WORKOUT_CARD_GOOD'),
+        currentUser?.name || 'ADMIN TESTER'
+      );
       router.push({
         pathname: '/challenge',
         params: {
@@ -1026,7 +919,7 @@ export default function ChallengeProgressScreen() {
     } finally {
       setReportAction('');
     }
-  }, [router, thread]);
+  }, [router, thread, exercisesToDisplay, currentUser, t]);
 
   if (loading && !thread) {
     return (
