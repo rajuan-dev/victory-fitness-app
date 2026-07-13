@@ -428,7 +428,29 @@ export default function ChallengesSection({ refreshToken = 0 }: { refreshToken?:
           <Text style={styles.emptyText}>{t('Active or ready challenges will appear here based on your current plan.')}</Text>
         </View>
       ) : (
-        <ScrollView
+        <>
+          {cards.some((card) => card.state === 'ACTIVE') ? (
+            <TouchableOpacity
+              style={styles.urgencyBanner}
+              activeOpacity={0.86}
+              onPress={() => {
+                const activeCard = cards.find((card) => card.state === 'ACTIVE');
+                if (activeCard) {
+                  activeCard.onPrimaryPress();
+                }
+              }}
+            >
+              <View style={styles.urgencyIconWrap}>
+                <Ionicons name="flame" size={20} color="#FBBF24" />
+              </View>
+              <View style={styles.urgencyCopy}>
+                <Text style={styles.urgencyTitle}>Finish today&apos;s challenge</Text>
+                <Text style={styles.urgencyText}>Complete it today or miss today&apos;s points.</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color="#FBBF24" />
+            </TouchableOpacity>
+          ) : null}
+          <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.challengesScroll}
@@ -437,13 +459,14 @@ export default function ChallengesSection({ refreshToken = 0 }: { refreshToken?:
           snapToInterval={cardWidth + 12}
           decelerationRate="fast"
           snapToAlignment="start"
-        >
-          {cards.map((card) => (
-            <View key={card.id} style={[styles.cardWrap, { width: cardWidth }]}>
-              <ChallengeCard {...card} />
-            </View>
-          ))}
-        </ScrollView>
+          >
+            {cards.map((card) => (
+              <View key={card.id} style={[styles.cardWrap, { width: cardWidth }]}>
+                <ChallengeCard {...card} />
+              </View>
+            ))}
+          </ScrollView>
+        </>
       )}
     </View>
   );
@@ -508,6 +531,28 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     marginBottom: 8,
   },
+  urgencyBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(245,158,11,0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(245,158,11,0.38)',
+    borderRadius: 14,
+    padding: 12,
+    marginBottom: 4,
+  },
+  urgencyIconWrap: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(245,158,11,0.16)',
+    marginRight: 10,
+  },
+  urgencyCopy: { flex: 1 },
+  urgencyTitle: { color: '#FDE68A', fontSize: 13, fontFamily: 'Inter_700Bold' },
+  urgencyText: { color: '#FCD34D', fontSize: 11, marginTop: 3, fontFamily: 'Inter_400Regular' },
   cardWrap: {
     paddingRight: 12,
     paddingVertical: 8,
