@@ -8,6 +8,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   TouchableOpacity,
+  Pressable,
   Dimensions,
   ActivityIndicator,
 } from 'react-native';
@@ -28,6 +29,7 @@ export default function RegisterScreen() {
   const [email, setEmail] = useState('');
   const [mobile, setMobile] = useState('');
   const [password, setPassword] = useState('');
+  const [marketingConsent, setMarketingConsent] = useState(false);
   const [loading, setLoading] = useState(false);
   const [errorDialog, setErrorDialog] = useState<{ title: string; message: string } | null>(null);
 
@@ -51,6 +53,7 @@ export default function RegisterScreen() {
           email: normalizedEmail,
           mobile: mobile.trim(),
           password,
+          marketing_consent: marketingConsent,
         },
       });
       router.push({
@@ -131,6 +134,15 @@ export default function RegisterScreen() {
                 secureTextEntry
                 autoComplete="password-new"
               />
+
+              <Pressable style={styles.consentRow} onPress={() => setMarketingConsent((value) => !value)}>
+                <View style={[styles.checkbox, marketingConsent && styles.checkboxChecked]}>
+                  {marketingConsent ? <Text style={styles.checkmark}>✓</Text> : null}
+                </View>
+                <Text style={styles.consentText}>
+                  I agree to receive occasional email or SMS messages about my trial, useful tips, and future offers. I can opt out anytime.
+                </Text>
+              </Pressable>
 
               <AuthButton title="Register" onPress={handleRegister} disabled={loading} />
             </View>
@@ -225,6 +237,39 @@ const styles = StyleSheet.create({
   formContainer: {
     width: '100%',
     alignItems: 'center',
+  },
+  consentRow: {
+    width: '100%',
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginTop: 4,
+    marginBottom: 18,
+  },
+  checkbox: {
+    width: 22,
+    height: 22,
+    borderRadius: 5,
+    borderWidth: 1,
+    borderColor: Colors.inputBorder,
+    marginRight: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  checkboxChecked: {
+    backgroundColor: Colors.primary,
+    borderColor: Colors.primary,
+  },
+  checkmark: {
+    color: '#071313',
+    fontSize: 15,
+    fontFamily: 'Inter_700Bold',
+  },
+  consentText: {
+    flex: 1,
+    color: Colors.textSecondary,
+    fontSize: 12,
+    lineHeight: 17,
+    fontFamily: 'Inter_400Regular',
   },
   linkContainer: {
     flexDirection: 'row',

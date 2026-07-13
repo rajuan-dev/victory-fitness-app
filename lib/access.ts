@@ -37,6 +37,7 @@ const SILVER_ROUTE_ACCESS = [
 const GOLD_ROUTE_ACCESS = [...SILVER_ROUTE_ACCESS, '/mealPlan'] as const;
 const PLATINUM_ROUTE_ACCESS = [...GOLD_ROUTE_ACCESS, '/workoutplan', '/profile/longevity-os'] as const;
 const INNER_CIRCLE_ROUTE_ACCESS = [...PLATINUM_ROUTE_ACCESS, '/profile/application', '/community', '/chat'] as const;
+const NOTIFICATION_ROUTE = '/notifications';
 
 export const PLAN_CARDS: AppPlanCard[] = [
   {
@@ -176,6 +177,10 @@ export function isRouteAllowedForPlan(pathname: string, user?: Pick<AuthUser, 'i
 
   if (isPublicRoute(pathname) || isPlanSelectionRoute(pathname)) {
     return true;
+  }
+
+  if (pathname === NOTIFICATION_ROUTE || pathname.startsWith(`${NOTIFICATION_ROUTE}/`)) {
+    return Boolean(user);
   }
 
   if (user && ALLOWED_AUTHENTICATED_PATHS.some((route) => pathname === route || pathname.startsWith(`${route}/`))) {
