@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { Colors } from '../../constants/Colors';
-import { fetchCurrentUser, getAuthUser } from '../../lib/api';
+import { fetchCurrentUser, fetchHomepageQuote, getAuthUser } from '../../lib/api';
 import { useLanguage } from '../../lib/i18n';
 
 const QUOTES = [
@@ -14,6 +14,7 @@ const QUOTES = [
 export default function GreetingCard() {
   const [quoteIndex, setQuoteIndex] = useState(0);
   const [userName, setUserName] = useState('User');
+  const [remoteQuote, setRemoteQuote] = useState<{ text: string; author: string } | null>(null);
   const { t } = useLanguage();
 
   useEffect(() => {
@@ -21,6 +22,16 @@ export default function GreetingCard() {
       setQuoteIndex((prev) => (prev + 1) % QUOTES.length);
     }, 2000);
     return () => clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    let isMounted = true;
+    void fetchHomepageQuote().then((quote) => {
+      if (isMounted && quote?.text && quote.author) {
+        setRemoteQuote({ text: quote.text, author: quote.author });
+      }
+    }).catch(() => undefined);
+    return () => { isMounted = false; };
   }, []);
 
   useEffect(() => {
@@ -71,9 +82,9 @@ export default function GreetingCard() {
       </View>
       <View style={styles.quoteBox}>
         <Text style={styles.quoteText}>
-          {t(QUOTES[quoteIndex].textKey)}
+          {remoteQuote?.text || t(QUOTES[quoteIndex].textKey)}
         </Text>
-        <Text style={styles.quoteAuthor}>- {t(QUOTES[quoteIndex].authorKey)}</Text>
+        <Text style={styles.quoteAuthor}>- {remoteQuote?.author || t(QUOTES[quoteIndex].authorKey)}</Text>
       </View>
     </View>
   );

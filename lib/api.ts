@@ -793,6 +793,12 @@ export async function getAuthUser() {
   return authUser;
 }
 
+export type HomepageQuote = { id: string; text: string; author: string; active: boolean };
+
+export async function fetchHomepageQuote() {
+  return apiRequest<HomepageQuote | null>('/content/homepage/quote');
+}
+
 export async function fetchCurrentUser() {
   const now = Date.now();
   if (authUser && currentUserFetchedAt && now - currentUserFetchedAt < CURRENT_USER_CACHE_TTL_MS) {
