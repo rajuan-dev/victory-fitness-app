@@ -1208,6 +1208,32 @@ export default function ChallengeProgressScreen() {
               </TouchableOpacity>
             </View>
 
+            {thread.viewer_progress_days_completed > 0 ? (
+              <View style={styles.pageCardActionsWrap}>
+                <Text style={styles.pageCardActionsTitle}>Share your progress</Text>
+                <View style={styles.cardActions}>
+                  <TouchableOpacity
+                    style={[styles.cardActionButton, reportAction === 'download' && styles.cardActionButtonBusy]}
+                    onPress={() => void handleDownloadReport()}
+                    disabled={reportAction !== ''}
+                    accessibilityLabel="Download progress card"
+                  >
+                    {reportAction === 'download' ? <ActivityIndicator size="small" color={Colors.primary} /> : <Ionicons name="download-outline" size={21} color={Colors.primary} />}
+                    <Text style={styles.cardActionText}>Download</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.cardActionButton, reportAction === 'share' && styles.cardActionButtonBusy]}
+                    onPress={() => void handleShareCard()}
+                    disabled={reportAction !== ''}
+                    accessibilityLabel="Share progress card"
+                  >
+                    {reportAction === 'share' ? <ActivityIndicator size="small" color={Colors.primary} /> : <Ionicons name="share-social-outline" size={21} color={Colors.primary} />}
+                    <Text style={styles.cardActionText}>Share</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            ) : null}
+
             {!canUpdateProgress ? (
               <View style={styles.statusNotice}>
                 <Text style={styles.statusNoticeText}>
@@ -1606,6 +1632,14 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
   },
   chatShortcutText: { color: '#001311', fontSize: 12, fontFamily: 'Inter_700Bold' },
+  pageCardActionsWrap: {
+    borderRadius: 16,
+    backgroundColor: '#0D1526',
+    borderWidth: 1,
+    borderColor: 'rgba(0,240,208,0.16)',
+    padding: 14,
+  },
+  pageCardActionsTitle: { color: '#E5E7EB', fontSize: 12, fontFamily: 'Inter_700Bold' },
   statusNotice: {
     borderRadius: 12,
     backgroundColor: 'rgba(245,158,11,0.08)',
