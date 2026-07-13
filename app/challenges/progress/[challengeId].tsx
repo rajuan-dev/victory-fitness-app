@@ -11,6 +11,7 @@ import {
   Text,
   TouchableOpacity,
   View,
+  Image,
 } from 'react-native';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -18,7 +19,8 @@ import { Ionicons } from '@expo/vector-icons';
 import * as FileSystem from 'expo-file-system/legacy';
 import CrossPlatformWebView from '../../../components/CrossPlatformWebView.native';
 import { Colors } from '../../../constants/Colors';
-import { apiRequest } from '../../../lib/api';
+import { apiRequest, fetchCurrentUser } from '../../../lib/api';
+import { useLanguage } from '../../../lib/i18n';
 import { ErrorPopupModal } from '../../../components/ErrorPopupModal';
 import { formatAppError } from '../../../lib/error';
 import { getCachedResourceSnapshot } from '../../../lib/resourceCache';
@@ -591,6 +593,7 @@ async function getWebReportBlob(fileUri: string) {
 
 export default function ChallengeProgressScreen() {
   const router = useRouter();
+  const { t } = useLanguage();
   const params = useLocalSearchParams<{ challengeId?: string; day?: string }>();
   const challengeId = Array.isArray(params.challengeId) ? params.challengeId[0] : params.challengeId;
   const requestedDayParam = Array.isArray(params.day) ? params.day[0] : params.day;
@@ -612,6 +615,7 @@ export default function ChallengeProgressScreen() {
   const [celebration, setCelebration] = useState<CelebrationState | null>(null);
   const celebrationAnimation = React.useRef(new Animated.Value(0)).current;
   const [errorDialog, setErrorDialog] = useState<{ title: string; message: string } | null>(null);
+  const [currentUser, setCurrentUser] = useState<{ name: string; streak_days?: number; profileImage?: string } | null>(null);
 
   const blurFocusedElement = useCallback(() => {
     if (Platform.OS !== 'web') {
@@ -737,6 +741,24 @@ export default function ChallengeProgressScreen() {
   useEffect(() => {
     void loadThread(true);
   }, [loadThread]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const loadUser = async () => {
+      try {
+        const user = await fetchCurrentUser();
+        if (!cancelled) {
+          setCurrentUser(user);
+        }
+      } catch {
+        // Fallback silently if it fails
+      }
+    };
+    void loadUser();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const applyPlanProgress = useCallback((response: ChallengePlanProgressResponse) => {
     const completedDay = response.viewer_plan_progress?.find((next) => next.completed && !thread?.viewer_plan_progress?.find((previous) => previous.day_number === next.day_number)?.completed);
@@ -1035,22 +1057,63 @@ export default function ChallengeProgressScreen() {
                   <View style={styles.postcardDots} pointerEvents="none">
                     {Array.from({ length: 48 }).map((_, index) => <View key={`postcard-dot-${index}`} style={styles.postcardDot} />)}
                   </View>
-                  <Text style={styles.postcardBrand}>V I C T O R Y</Text>
-                  <Text style={styles.postcardSubtitle}>F I T N E S S</Text>
-                  <Text style={styles.postcardLabel}>WORKOUT COMPLETED</Text>
-                  <Text style={styles.postcardTitle} numberOfLines={3}>{celebrationDay?.title || thread?.title || 'Challenge'}</Text>
-                  <View style={styles.postcardDivider} />
-                  <View style={styles.postcardExercises}>
-                    {(celebrationExercises.length > 0 ? celebrationExercises : ['Challenge day completed']).map((exercise) => (
-                      <View key={exercise} style={styles.postcardExerciseRow}><View style={styles.postcardBullet} /><Text style={styles.postcardExerciseText} numberOfLines={1}>{exercise}</Text></View>
-                    ))}
+
+                  {/* Header Logo */}
+                  <View style={styles.newPostcardLogoContainer}>
+                    <View style={styles.newPostcardAvatarBox}>
+                      {currentUser?.profileImage ? (
+                        <Image source={{ uri: currentUser.profileImage }} style={styles.newPostcardAvatarImage} />
+                      ) : (
+                        <Text style={styles.newPostcardAvatarFallbackText}>?</Text>
+                      )}
+                    </View>
+                    <Text style={styles.newPostcardBrandText}>{t('WORKOUT_CARD_YOUR_VICTORY').toUpperCase()}</Text>
                   </View>
-                  <View style={styles.postcardStatsGrid}>
-                    <View style={styles.postcardStatTile}><Text style={styles.postcardStatLabel}>DAY</Text><Text style={styles.postcardStatValue}>{celebration?.dayNumber}</Text></View>
-                    <View style={styles.postcardStatTile}><Text style={styles.postcardStatLabel}>POINTS</Text><Text style={styles.postcardStatValue}>+{celebration?.points || thread?.points || 0}</Text></View>
+
+                  {/* Card Section */}
+                  <View style={styles.newPostcardCard}>
+                    <Text style={styles.newPostcardLabel}>{t('WORKOUT_CARD_COMPLETED').toUpperCase()}</Text>
+                    <Text style={styles.newPostcardTitle} numberOfLines={3}>
+                      {(celebrationDay?.title || thread?.title || 'Challenge').toUpperCase()}
+                    </Text>
+                    <View style={styles.newPostcardDivider} />
+                    <View style={styles.newPostcardExercises}>
+                      {(celebrationExercises.length > 0 ? celebrationExercises : ['Challenge day completed']).map((exercise) => (
+                        <View key={exercise} style={styles.newPostcardExerciseRow}>
+                          <View style={styles.newPostcardBullet} />
+                          <Text style={styles.newPostcardExerciseText} numberOfLines={1}>
+                            {exercise.toUpperCase()}
+                          </Text>
+                        </View>
+                      ))}
+                    </View>
                   </View>
-                  <View style={styles.postcardCta}><Text style={styles.postcardCtaText}>KEEP GOING</Text></View>
-                  <Text style={styles.postcardUrl}>VICTORY-FITNESS.APP</Text>
+
+                  {/* Metrics Row */}
+                  <View style={styles.newPostcardMetricsRow}>
+                    <View style={styles.newPostcardMetricTile}>
+                      <Text style={styles.newPostcardMetricLabel}>{t('WORKOUT_CARD_STREAK').toUpperCase()}</Text>
+                      <Text style={styles.newPostcardMetricValue}>
+                        <Text style={{ color: Colors.primary }}>{currentUser?.streak_days ?? 3}</Text> 🔥
+                      </Text>
+                    </View>
+                    <View style={styles.newPostcardMetricTile}>
+                      <Text style={styles.newPostcardMetricLabel}>{t('WORKOUT_CARD_INTENSITY').toUpperCase()}</Text>
+                      <Text style={styles.newPostcardMetricValueGut}>
+                        {thread?.difficulty ? t(thread.difficulty) : t('WORKOUT_CARD_GOOD')}
+                      </Text>
+                    </View>
+                  </View>
+
+                  {/* User Badge Button */}
+                  <View style={styles.newPostcardUserPill}>
+                    <Text style={styles.newPostcardUserPillText}>
+                      {(currentUser?.name || 'ADMIN TESTER').toUpperCase()}
+                    </Text>
+                  </View>
+
+                  {/* Bottom URL */}
+                  <Text style={styles.newPostcardUrl}>VICTORY-FITNESS.APP</Text>
                 </View>
               </View>
               <Text style={styles.postcardShareLabel}>SHARE YOUR VICTORY</Text>
@@ -1889,27 +1952,160 @@ const styles = StyleSheet.create({
   celebrationEyebrow: { color: Colors.primary, fontSize: 11, letterSpacing: 1.3, fontFamily: 'Inter_700Bold' },
   celebrationTitle: { color: '#fff', fontSize: 24, textAlign: 'center', fontFamily: 'Inter_700Bold', marginTop: 6 },
   celebrationText: { color: Colors.textSecondary, fontSize: 13, lineHeight: 19, textAlign: 'center', fontFamily: 'Inter_400Regular', marginTop: 8 },
-  celebrationPostcard: { width: '100%', backgroundColor: '#1B3047', borderRadius: 14, padding: 9, marginTop: 16, alignItems: 'center' },
-  postcardGlowFrame: { width: '100%', borderRadius: 13, borderWidth: 3, borderColor: '#00D8F5', backgroundColor: '#041624', padding: 7, shadowColor: '#00D8F5', shadowOpacity: 0.65, shadowRadius: 12, elevation: 7 },
-  postcardDotGrid: { borderRadius: 7, paddingHorizontal: 12, paddingVertical: 13, backgroundColor: '#061D2D', overflow: 'hidden' },
-  postcardDots: { position: 'absolute', top: 7, left: 7, right: 7, bottom: 7, flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', alignContent: 'space-between', opacity: 0.35 },
-  postcardDot: { width: 2, height: 2, borderRadius: 1, backgroundColor: '#21B7E7' },
-  postcardBrand: { color: '#F7FAFC', textAlign: 'center', fontSize: 21, letterSpacing: 2, fontFamily: 'Inter_700Bold' },
-  postcardSubtitle: { color: Colors.primary, textAlign: 'center', fontSize: 8, letterSpacing: 3.5, marginTop: 1, fontFamily: 'Inter_700Bold' },
-  postcardLabel: { color: '#00B7F0', textAlign: 'center', fontSize: 9, letterSpacing: 1.1, fontFamily: 'Inter_700Bold', marginTop: 14 },
-  postcardTitle: { color: '#F8FAFC', textAlign: 'center', fontSize: 20, lineHeight: 23, fontFamily: 'Inter_700Bold', marginTop: 4 },
-  postcardDivider: { height: 1, backgroundColor: 'rgba(255,255,255,0.18)', marginVertical: 10 },
-  postcardExercises: { gap: 5 },
-  postcardExerciseRow: { flexDirection: 'row', alignItems: 'center', gap: 7 },
-  postcardBullet: { width: 5, height: 5, borderRadius: 3, backgroundColor: Colors.primary },
-  postcardExerciseText: { flex: 1, color: '#E5E7EB', fontSize: 10, fontFamily: 'Inter_400Regular' },
-  postcardStatsGrid: { flexDirection: 'row', gap: 7, marginTop: 12 },
-  postcardStatTile: { flex: 1, alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.32)', borderWidth: 1, borderColor: 'rgba(0,240,208,0.18)', borderRadius: 8, paddingVertical: 7 },
-  postcardStatLabel: { color: '#CBD5E1', fontSize: 8, letterSpacing: 0.7, fontFamily: 'Inter_700Bold' },
-  postcardStatValue: { color: Colors.primary, fontSize: 16, fontFamily: 'Inter_700Bold', marginTop: 2 },
-  postcardCta: { alignSelf: 'center', backgroundColor: '#00C9EF', borderRadius: 999, paddingHorizontal: 22, paddingVertical: 7, marginTop: 10 },
-  postcardCtaText: { color: '#03212A', fontSize: 10, fontFamily: 'Inter_700Bold' },
-  postcardUrl: { color: '#A8B4C5', textAlign: 'center', fontSize: 8, letterSpacing: 1.5, marginTop: 9, fontFamily: 'Inter_700Bold' },
+  celebrationPostcard: { width: '100%', backgroundColor: '#050B14', borderRadius: 20, padding: 4, marginTop: 16, alignItems: 'center' },
+  postcardGlowFrame: { width: '100%', borderRadius: 18, backgroundColor: '#081220', padding: 14, borderWidth: 1, borderColor: 'rgba(255,255,255,0.06)' },
+  postcardDotGrid: { borderRadius: 12, paddingHorizontal: 4, paddingVertical: 4, overflow: 'hidden', width: '100%' },
+  postcardDots: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', alignContent: 'space-between', opacity: 0.15 },
+  postcardDot: { width: 3, height: 3, borderRadius: 1.5, backgroundColor: Colors.primary },
+  
+  /* New Postcard Redesign Styles */
+  newPostcardLogoContainer: {
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  newPostcardAvatarBox: {
+    width: 44,
+    height: 44,
+    borderRadius: 8,
+    borderWidth: 1.5,
+    borderColor: Colors.primary,
+    backgroundColor: '#0F172A',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 10,
+  },
+  newPostcardAvatarImage: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 6,
+  },
+  newPostcardAvatarFallbackText: {
+    color: '#fff',
+    fontSize: 22,
+    fontWeight: '800',
+    fontFamily: 'Inter_700Bold',
+  },
+  newPostcardBrandText: {
+    color: '#F8FAFC',
+    fontSize: 32,
+    fontFamily: 'Inter_900Black',
+    fontWeight: '900',
+    letterSpacing: 2,
+    textAlign: 'center',
+  },
+  newPostcardCard: {
+    backgroundColor: '#121214',
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+    padding: 24,
+    marginBottom: 16,
+    width: '100%',
+  },
+  newPostcardLabel: {
+    color: Colors.primary,
+    fontSize: 10,
+    letterSpacing: 1.5,
+    fontFamily: 'Inter_700Bold',
+    marginBottom: 12,
+    textAlign: 'center',
+  },
+  newPostcardTitle: {
+    color: '#fff',
+    fontSize: 22,
+    lineHeight: 28,
+    fontFamily: 'Inter_900Black',
+    fontWeight: '900',
+    textAlign: 'center',
+    marginBottom: 16,
+  },
+  newPostcardDivider: {
+    height: 1,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    marginBottom: 16,
+    width: '100%',
+  },
+  newPostcardExercises: {
+    gap: 12,
+  },
+  newPostcardExerciseRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  newPostcardBullet: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: Colors.primary,
+  },
+  newPostcardExerciseText: {
+    flex: 1,
+    color: '#E2E8F0',
+    fontSize: 11,
+    fontFamily: 'Inter_700Bold',
+    fontWeight: '700',
+    letterSpacing: 0.5,
+  },
+  newPostcardMetricsRow: {
+    flexDirection: 'row',
+    gap: 12,
+    marginBottom: 16,
+    width: '100%',
+  },
+  newPostcardMetricTile: {
+    flex: 1,
+    backgroundColor: '#121214',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+    borderRadius: 14,
+    paddingVertical: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  newPostcardMetricLabel: {
+    color: 'rgba(255,255,255,0.4)',
+    fontSize: 10,
+    letterSpacing: 1,
+    fontFamily: 'Inter_700Bold',
+    marginBottom: 6,
+  },
+  newPostcardMetricValue: {
+    color: '#fff',
+    fontSize: 18,
+    fontFamily: 'Inter_800ExtraBold',
+    fontWeight: '800',
+  },
+  newPostcardMetricValueGut: {
+    color: '#F43F5E',
+    fontSize: 18,
+    fontFamily: 'Inter_800ExtraBold',
+    fontWeight: '800',
+  },
+  newPostcardUserPill: {
+    backgroundColor: Colors.primary,
+    borderRadius: 999,
+    paddingVertical: 10,
+    paddingHorizontal: 28,
+    alignSelf: 'center',
+    marginBottom: 16,
+  },
+  newPostcardUserPillText: {
+    color: '#000',
+    fontSize: 12,
+    fontFamily: 'Inter_900Black',
+    fontWeight: '900',
+    letterSpacing: 1,
+  },
+  newPostcardUrl: {
+    color: 'rgba(255,255,255,0.3)',
+    textAlign: 'center',
+    fontSize: 10,
+    letterSpacing: 3,
+    fontFamily: 'Inter_700Bold',
+    marginTop: 8,
+  },
+
   postcardShareLabel: { color: '#E5E7EB', fontSize: 10, letterSpacing: 1.2, fontFamily: 'Inter_700Bold', marginTop: 12 },
   postcardSocialRow: { flexDirection: 'row', justifyContent: 'space-around', alignItems: 'center', width: '100%', marginTop: 8, paddingHorizontal: 4 },
   celebrationPrimary: { width: '100%', flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 8, backgroundColor: Colors.primary, borderRadius: 12, paddingVertical: 13, marginTop: 16 },
