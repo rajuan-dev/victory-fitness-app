@@ -558,7 +558,8 @@ async function buildChallengeProgressReportAsset(challengeId: string) {
 
   const fileName = response.file_name || 'victory-fitness-progress-report.png';
   const mimeType = response.mime_type || 'image/png';
-  if (Platform.OS === 'web') {
+  // Web/PWA must keep the image in memory. expo-file-system has no write API on web.
+  if (Platform.OS === 'web' || typeof FileSystem.writeAsStringAsync !== 'function') {
     return {
       fileUri: `data:${mimeType};base64,${response.image_base64}`,
       imageBase64: response.image_base64,
@@ -1207,6 +1208,32 @@ export default function ChallengeProgressScreen() {
               </TouchableOpacity>
             </View>
 
+            {thread.viewer_progress_days_completed > 0 ? (
+              <View style={styles.pageCardActionsWrap}>
+                <Text style={styles.pageCardActionsTitle}>Share your progress</Text>
+                <View style={styles.cardActions}>
+                  <TouchableOpacity
+                    style={[styles.cardActionButton, reportAction === 'download' && styles.cardActionButtonBusy]}
+                    onPress={() => void handleDownloadReport()}
+                    disabled={reportAction !== ''}
+                    accessibilityLabel="Download progress card"
+                  >
+                    {reportAction === 'download' ? <ActivityIndicator size="small" color={Colors.primary} /> : <Ionicons name="download-outline" size={21} color={Colors.primary} />}
+                    <Text style={styles.cardActionText}>Download</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.cardActionButton, reportAction === 'share' && styles.cardActionButtonBusy]}
+                    onPress={() => void handleShareCard()}
+                    disabled={reportAction !== ''}
+                    accessibilityLabel="Share progress card"
+                  >
+                    {reportAction === 'share' ? <ActivityIndicator size="small" color={Colors.primary} /> : <Ionicons name="share-social-outline" size={21} color={Colors.primary} />}
+                    <Text style={styles.cardActionText}>Share</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            ) : null}
+
             {!canUpdateProgress ? (
               <View style={styles.statusNotice}>
                 <Text style={styles.statusNoticeText}>
@@ -1425,6 +1452,28 @@ export default function ChallengeProgressScreen() {
                             </>
                           )}
                         </TouchableOpacity>
+                        {dayProgress?.completed ? (
+                          <View style={styles.completedDayActions}>
+                            <TouchableOpacity
+                              style={[styles.cardActionButton, reportAction === 'download' && styles.cardActionButtonBusy]}
+                              onPress={() => void handleDownloadReport()}
+                              disabled={reportAction !== ''}
+                              accessibilityLabel="Download completed challenge card"
+                            >
+                              {reportAction === 'download' ? <ActivityIndicator size="small" color={Colors.primary} /> : <Ionicons name="download-outline" size={20} color={Colors.primary} />}
+                              <Text style={styles.cardActionText}>Download</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                              style={[styles.cardActionButton, reportAction === 'share' && styles.cardActionButtonBusy]}
+                              onPress={() => void handleShareCard()}
+                              disabled={reportAction !== ''}
+                              accessibilityLabel="Share completed challenge card"
+                            >
+                              {reportAction === 'share' ? <ActivityIndicator size="small" color={Colors.primary} /> : <Ionicons name="share-social-outline" size={20} color={Colors.primary} />}
+                              <Text style={styles.cardActionText}>Share</Text>
+                            </TouchableOpacity>
+                          </View>
+                        ) : null}
                       </View>
                     ) : null}
                   </View>
@@ -1605,6 +1654,14 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
   },
   chatShortcutText: { color: '#001311', fontSize: 12, fontFamily: 'Inter_700Bold' },
+  pageCardActionsWrap: {
+    borderRadius: 16,
+    backgroundColor: '#0D1526',
+    borderWidth: 1,
+    borderColor: 'rgba(0,240,208,0.16)',
+    padding: 14,
+  },
+  pageCardActionsTitle: { color: '#E5E7EB', fontSize: 12, fontFamily: 'Inter_700Bold' },
   statusNotice: {
     borderRadius: 12,
     backgroundColor: 'rgba(245,158,11,0.08)',
@@ -1824,6 +1881,7 @@ const styles = StyleSheet.create({
   },
   dayDoneButtonText: { color: Colors.primary, fontSize: 12, fontFamily: 'Inter_700Bold' },
   dayDoneButtonTextCompleted: { color: '#001311' },
+  completedDayActions: { flexDirection: 'row', gap: 10, marginTop: 10 },
   celebrationBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.82)', alignItems: 'center', justifyContent: 'center', padding: 20, overflow: 'hidden' },
   confettiPiece: { position: 'absolute', top: -20, width: 8, height: 16, borderRadius: 2 },
   celebrationCard: { width: '100%', maxWidth: 390, backgroundColor: '#101B2A', borderRadius: 24, borderWidth: 1, borderColor: 'rgba(0,240,208,0.32)', padding: 20, alignItems: 'center' },

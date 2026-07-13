@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, Animated, Platform } from 'react-native';
 import { useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { clearAuthTokens, fetchCurrentUser, getValidAuthTokens } from '../lib/api';
-import { getPostAuthRoute } from '../lib/access';
+import { getPostAuthRoute, isAdminRestrictedFromApp } from '../lib/access';
 import { replaceRoute } from '../lib/navigation';
 
 export default function SplashScreen() {
@@ -39,6 +39,11 @@ export default function SplashScreen() {
       if (tokens) {
         try {
           const user = await fetchCurrentUser();
+          if (isAdminRestrictedFromApp(user)) {
+            await clearAuthTokens();
+            replaceRoute(router, '/login');
+            return;
+          }
           replaceRoute(router, getPostAuthRoute(user));
         } catch {
           replaceRoute(router, '/login');

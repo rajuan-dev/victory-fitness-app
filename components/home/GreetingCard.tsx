@@ -1,26 +1,22 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { Colors } from '../../constants/Colors';
-import { fetchCurrentUser, getAuthUser } from '../../lib/api';
+import { fetchCurrentUser, fetchHomepageQuote, getAuthUser } from '../../lib/api';
 import { useLanguage } from '../../lib/i18n';
 
-const QUOTES = [
-  { textKey: 'WISDOM LISTENS BEFORE IT LEADS.', authorKey: 'Victor Akko' },
-  { textKey: 'YOUR ONLY LIMIT IS YOUR MIND.', authorKey: 'Focus' },
-  { textKey: 'VICTORY BELONGS TO THE MOST PERSEVERING.', authorKey: 'Napoleon' },
-  { textKey: 'STRENGTH DOES NOT COME FROM WINNING.', authorKey: 'Arnold' },
-];
-
 export default function GreetingCard() {
-  const [quoteIndex, setQuoteIndex] = useState(0);
   const [userName, setUserName] = useState('User');
+  const [remoteQuote, setRemoteQuote] = useState<{ text: string; author: string } | null>(null);
   const { t } = useLanguage();
 
   useEffect(() => {
-    const timer = setInterval(() => {
-      setQuoteIndex((prev) => (prev + 1) % QUOTES.length);
-    }, 2000);
-    return () => clearInterval(timer);
+    let isMounted = true;
+    void fetchHomepageQuote().then((quote) => {
+      if (isMounted && quote?.text && quote.author) {
+        setRemoteQuote({ text: quote.text, author: quote.author });
+      }
+    }).catch(() => undefined);
+    return () => { isMounted = false; };
   }, []);
 
   useEffect(() => {
@@ -71,9 +67,9 @@ export default function GreetingCard() {
       </View>
       <View style={styles.quoteBox}>
         <Text style={styles.quoteText}>
-          {t(QUOTES[quoteIndex].textKey)}
+          {remoteQuote?.text || ''}
         </Text>
-        <Text style={styles.quoteAuthor}>- {t(QUOTES[quoteIndex].authorKey)}</Text>
+        {remoteQuote?.author ? <Text style={styles.quoteAuthor}>- {remoteQuote.author}</Text> : null}
       </View>
     </View>
   );

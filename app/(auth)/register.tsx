@@ -25,7 +25,9 @@ const { height } = Dimensions.get('window');
 export default function RegisterScreen() {
   const router = useRouter();
   const [name, setName] = useState('');
+  const [surname, setSurname] = useState('');
   const [email, setEmail] = useState('');
+  const [mobile, setMobile] = useState('');
   const [password, setPassword] = useState('');
   const [marketingConsent, setMarketingConsent] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -33,10 +35,10 @@ export default function RegisterScreen() {
 
   const handleRegister = async () => {
     const normalizedEmail = email.trim().toLowerCase();
-    if (!name.trim() || !normalizedEmail || !password) {
+    if (!name.trim() || !surname.trim() || !normalizedEmail || !mobile.trim() || !password) {
       setErrorDialog({
         title: 'Missing Information',
-        message: 'Please enter your name, email, and password.',
+        message: 'Please enter your name, surname, email, mobile, and password.',
       });
       return;
     }
@@ -45,7 +47,14 @@ export default function RegisterScreen() {
     try {
       await apiRequest('/auth/register', {
         method: 'POST',
-        body: { name: name.trim(), email: normalizedEmail, password, marketing_consent: marketingConsent },
+        body: {
+          name: name.trim(),
+          surname: surname.trim(),
+          email: normalizedEmail,
+          mobile: mobile.trim(),
+          password,
+          marketing_consent: marketingConsent,
+        },
       });
       router.push({
         pathname: '/verification',
@@ -93,10 +102,16 @@ export default function RegisterScreen() {
             {/* Form */}
             <View style={styles.formContainer}>
               <AuthInput
-                placeholder="Your Name"
+                placeholder="Name"
                 value={name}
                 onChangeText={setName}
                 autoComplete="name"
+              />
+              <AuthInput
+                placeholder="Surname"
+                value={surname}
+                onChangeText={setSurname}
+                autoComplete="name-family"
               />
               <AuthInput
                 placeholder="Email"
@@ -104,6 +119,13 @@ export default function RegisterScreen() {
                 onChangeText={setEmail}
                 keyboardType="email-address"
                 autoComplete="email"
+              />
+              <AuthInput
+                placeholder="Mobile"
+                value={mobile}
+                onChangeText={setMobile}
+                keyboardType="phone-pad"
+                autoComplete="tel"
               />
               <AuthInput
                 placeholder="Password"

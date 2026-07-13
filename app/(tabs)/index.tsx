@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, StyleSheet, ScrollView, RefreshControl, Text, TouchableOpacity } from 'react-native';
+import { View, StyleSheet, ScrollView, RefreshControl, Text, TouchableOpacity, Modal, TextInput } from 'react-native';
 import { Colors } from '../../constants/Colors';
 import VictoryHeader from '../../components/VictoryHeader';
 import GreetingCard from '../../components/home/GreetingCard';
@@ -10,12 +10,13 @@ import ChallengesSection from '../../components/home/ChallengesSection';
 import AccountabilitySection from '../../components/home/AccountabilitySection';
 import InviteFriendsCard from '../../components/home/InviteFriendsCard';
 import AccessRestrictionModal from '../../components/AccessRestrictionModal';
-import { fetchCurrentUser } from '../../lib/api';
+import { fetchCurrentUser, updateCurrentUserBodyMetrics } from '../../lib/api';
 import { canAccessFeature, canAccessPlanRoute } from '../../lib/access';
 import { useRouter } from 'expo-router';
 import { useModuleAccessGuard } from '../../lib/useModuleAccessGuard';
 import { useLanguage } from '../../lib/i18n';
 import { replaceRoute } from '../../lib/navigation';
+import { markWeightPromptHandled, shouldShowWeightUpdatePrompt, updateUserWeight } from '../../lib/onboarding';
 
 export default function HomeScreen() {
   const checkingAccess = useModuleAccessGuard('/');
@@ -28,6 +29,11 @@ export default function HomeScreen() {
   const [canAccessCoachVictor, setCanAccessCoachVictor] = React.useState(true);
   const [canAccessWorkoutPlans, setCanAccessWorkoutPlans] = React.useState(true);
   const [restrictedSection, setRestrictedSection] = React.useState('');
+  const [weightPromptVisible, setWeightPromptVisible] = React.useState(false);
+  const [weightPromptEditing, setWeightPromptEditing] = React.useState(false);
+  const [weightPromptSaving, setWeightPromptSaving] = React.useState(false);
+  const [weightDraft, setWeightDraft] = React.useState('');
+  const [weightPromptUserId, setWeightPromptUserId] = React.useState('');
 
   React.useEffect(() => {
     let cancelled = false;
@@ -40,6 +46,13 @@ export default function HomeScreen() {
           setCanAccessChallenges(canAccessFeature('challenge', user));
           setCanAccessCoachVictor(canAccessFeature('coach_victor', user));
           setCanAccessWorkoutPlans(canAccessFeature('workoutplan', user));
+          const shouldPrompt = Boolean(user.onboarding_completed) && await shouldShowWeightUpdatePrompt(user.id);
+          if (!cancelled && shouldPrompt) {
+            setWeightPromptUserId(user.id);
+            setWeightDraft('');
+            setWeightPromptEditing(false);
+            setWeightPromptVisible(true);
+          }
         }
       } catch {
         if (!cancelled) {
@@ -67,8 +80,39 @@ export default function HomeScreen() {
   }, []);
 
   const openRestrictedSection = React.useCallback((sectionName: string) => {
-          setRestrictedSection(sectionName);
+    setRestrictedSection(sectionName);
   }, []);
+
+  const handleDismissWeightPrompt = React.useCallback(async () => {
+    if (!weightPromptUserId) {
+      setWeightPromptVisible(false);
+      return;
+    }
+
+    await markWeightPromptHandled(weightPromptUserId);
+    setWeightPromptVisible(false);
+    setWeightPromptEditing(false);
+    setWeightDraft('');
+  }, [weightPromptUserId]);
+
+  const handleSaveWeightPrompt = React.useCallback(async () => {
+    if (!weightPromptUserId || !weightDraft.trim() || weightPromptSaving) {
+      return;
+    }
+
+    setWeightPromptSaving(true);
+    try {
+      await Promise.allSettled([
+        updateUserWeight(weightPromptUserId, weightDraft),
+        updateCurrentUserBodyMetrics({ weight: weightDraft.trim() }),
+      ]);
+      setWeightPromptVisible(false);
+      setWeightPromptEditing(false);
+      setWeightDraft('');
+    } finally {
+      setWeightPromptSaving(false);
+    }
+  }, [weightDraft, weightPromptSaving, weightPromptUserId]);
 
   if (checkingAccess) {
     return null;
@@ -128,6 +172,36 @@ export default function HomeScreen() {
           replaceRoute(router, '/(tabs)');
         }}
       />
+      <Modal visible={weightPromptVisible} transparent animationType="fade" onRequestClose={() => void handleDismissWeightPrompt()}>
+        <View style={styles.promptOverlay}>
+          <View style={styles.promptCard}>
+            <Text style={styles.promptTitle}>Update your current weight?</Text>
+            <Text style={styles.promptText}>
+              Would you like to update your current weight? This helps us keep your nutrition and training plans accurate.
+            </Text>
+
+            {weightPromptEditing ? (
+              <TextInput
+                value={weightDraft}
+                onChangeText={setWeightDraft}
+                placeholder="Enter your current weight"
+                placeholderTextColor={Colors.placeholder}
+                style={styles.promptInput}
+              />
+            ) : null}
+
+            <TouchableOpacity style={styles.promptPrimaryButton} onPress={() => (weightPromptEditing ? void handleSaveWeightPrompt() : setWeightPromptEditing(true))} disabled={weightPromptSaving}>
+              <Text style={styles.promptPrimaryButtonText}>{weightPromptEditing ? 'Save Weight' : 'Update Now'}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.promptSecondaryButton} onPress={() => void handleDismissWeightPrompt()}>
+              <Text style={styles.promptSecondaryButtonText}>Remind Me Later</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.promptGhostButton} onPress={() => void handleDismissWeightPrompt()}>
+              <Text style={styles.promptGhostButtonText}>No Change</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -182,5 +256,77 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontFamily: 'Inter_700Bold',
     letterSpacing: 0.5,
+  },
+  promptOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    justifyContent: 'center',
+    paddingHorizontal: 20,
+  },
+  promptCard: {
+    backgroundColor: Colors.surface,
+    borderRadius: 24,
+    padding: 20,
+    borderWidth: 1,
+    borderColor: Colors.inputBorder,
+  },
+  promptTitle: {
+    color: Colors.text,
+    fontSize: 22,
+    fontFamily: 'Inter_700Bold',
+    marginBottom: 10,
+  },
+  promptText: {
+    color: Colors.textSecondary,
+    fontSize: 14,
+    lineHeight: 21,
+    fontFamily: 'Inter_400Regular',
+    marginBottom: 18,
+  },
+  promptInput: {
+    height: 54,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: Colors.inputBorder,
+    backgroundColor: Colors.inputBackground,
+    color: Colors.text,
+    paddingHorizontal: 16,
+    fontFamily: 'Inter_400Regular',
+    fontSize: 14,
+    marginBottom: 14,
+    outlineStyle: 'none' as any,
+  },
+  promptPrimaryButton: {
+    backgroundColor: Colors.primary,
+    borderRadius: 16,
+    paddingVertical: 14,
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  promptPrimaryButtonText: {
+    color: '#062724',
+    fontSize: 14,
+    fontFamily: 'Inter_700Bold',
+  },
+  promptSecondaryButton: {
+    backgroundColor: Colors.accentSurface,
+    borderRadius: 16,
+    paddingVertical: 14,
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  promptSecondaryButtonText: {
+    color: Colors.text,
+    fontSize: 14,
+    fontFamily: 'Inter_700Bold',
+  },
+  promptGhostButton: {
+    alignItems: 'center',
+    paddingVertical: 6,
+  },
+  promptGhostButtonText: {
+    color: Colors.textMuted,
+    fontSize: 13,
+    fontFamily: 'Inter_600SemiBold',
   },
 });

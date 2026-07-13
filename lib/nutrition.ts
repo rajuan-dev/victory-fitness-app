@@ -124,7 +124,9 @@ export async function updateProgressiveNutritionMealCompletion(payload: {
 }
 
 export async function analyzeMealImage(payload: {
-  image_base64: string;
+  image_base64?: string | null;
+  document_base64?: string | null;
+  text_content?: string | null;
   mime_type: string;
   file_name?: string | null;
 }) {

@@ -37,6 +37,7 @@ type AppPlanViewModel = AppPlanCard & {
   isApplicationOnly: boolean;
   isMostPopular: boolean;
   iconType: string;
+  isDashboardConfigured: boolean;
 };
 
 function formatPrice(value: number | null, cycle: BillingCycle) {
@@ -46,12 +47,21 @@ function formatPrice(value: number | null, cycle: BillingCycle) {
   return `EUR ${value} / ${cycle === 'monthly' ? 'month' : 'year'}`;
 }
 
+function formatEuroAmount(value: number | null) {
+  if (value == null) {
+    return 'Application Only';
+  }
+  return `EUR ${value}`;
+}
+
 function getPlanPricing(plan: AppPlanViewModel, cycle: BillingCycle) {
   if (plan.isApplicationOnly) {
     return {
       originalPrice: null,
       finalPrice: null,
       hasActiveDiscount: false,
+      savings: null,
+      cycleLabel: cycle === 'monthly' ? 'month' : 'year',
     };
   }
 
@@ -68,6 +78,8 @@ function getPlanPricing(plan: AppPlanViewModel, cycle: BillingCycle) {
     originalPrice,
     finalPrice,
     hasActiveDiscount,
+    savings: hasActiveDiscount && originalPrice != null && finalPrice != null ? originalPrice - finalPrice : null,
+    cycleLabel: cycle === 'monthly' ? 'month' : 'year',
   };
 }
 
@@ -155,11 +167,13 @@ export default function PlanSelectionScreen() {
         isApplicationOnly: Boolean(apiPlan?.isApplicationOnly ?? card.tier === 'INNER_CIRCLE'),
         isMostPopular: Boolean(apiPlan?.isMostPopular ?? card.badge),
         iconType: apiPlan?.iconType ?? '',
+        isDashboardConfigured: Boolean(apiPlan),
       };
     });
   }, [planItems]);
-  const selectedPlan = useMemo(() => plans.find((plan) => plan.tier === selectedTier) ?? plans[0] ?? { ...getSubscriptionCard('SILVER'), planId: 'SILVER', priceMonthly: null, priceYearly: null, discountedPriceMonthly: null, discountedPriceYearly: null, discountPercentage: null, discountStartDate: null, discountEndDate: null, isDiscountActive: false, isApplicationOnly: false, isMostPopular: false, iconType: '' }, [plans, selectedTier]);
+  const selectedPlan = useMemo(() => plans.find((plan) => plan.tier === selectedTier) ?? plans[0] ?? { ...getSubscriptionCard('SILVER'), planId: 'SILVER', priceMonthly: null, priceYearly: null, discountedPriceMonthly: null, discountedPriceYearly: null, discountPercentage: null, discountStartDate: null, discountEndDate: null, isDiscountActive: false, isApplicationOnly: false, isMostPopular: false, iconType: '', isDashboardConfigured: false }, [plans, selectedTier]);
   const selectedPlanAccentStyle = useMemo(() => getPlanTierAccentStyle(selectedTier), [selectedTier]);
+  const selectedPlanPricing = useMemo(() => getPlanPricing(selectedPlan, billingCycle), [selectedPlan, billingCycle]);
 
   const handleConfirm = async () => {
     if (saving) {
@@ -294,13 +308,16 @@ export default function PlanSelectionScreen() {
                     return (
                       <View style={styles.priceBlock}>
                         {pricing.hasActiveDiscount ? (
-                          <View style={styles.discountRow}>
-                            <Text style={styles.discountPill}>{`-${card.discountPercentage}%`}</Text>
-                            <Text style={styles.originalPrice}>EUR {pricing.originalPrice}</Text>
-                          </View>
+                          <>
+                            <View style={styles.discountRow}>
+                              <Text style={styles.discountPill}>{`Offer -${card.discountPercentage}%`}</Text>
+                              <Text style={styles.originalPrice}>{formatEuroAmount(pricing.originalPrice)}</Text>
+                            </View>
+                            <Text style={styles.savingsText}>{`Save ${formatEuroAmount(pricing.savings)}`}</Text>
+                          </>
                         ) : null}
                         <View style={styles.priceRow}>
-                          <Text style={styles.price}>EUR {pricing.finalPrice}</Text>
+                          <Text style={styles.price}>{formatEuroAmount(pricing.finalPrice)}</Text>
                           <Text style={styles.priceSuffix}>{billingCycle === 'monthly' ? t('per month') : t('per year')}</Text>
                         </View>
                       </View>
@@ -308,6 +325,9 @@ export default function PlanSelectionScreen() {
                   })()}
                   {card.tier !== 'INNER_CIRCLE' && billingCycle === 'yearly' ? (
                     <Text style={styles.valueText}>BEST VALUE</Text>
+                  ) : null}
+                  {card.isDashboardConfigured ? (
+                    <Text style={styles.dashboardSyncText}>{t('Updated from dashboard pricing')}</Text>
                   ) : null}
 
                   <View style={styles.featureList}>
@@ -334,9 +354,20 @@ export default function PlanSelectionScreen() {
           <View style={[styles.summaryCard, selectedPlanAccentStyle]}>
             <Text style={styles.summaryLabel}>{t('Selected plan')}</Text>
             <Text style={styles.summaryTitle}>{selectedPlan.title}</Text>
+            {selectedPlanPricing.hasActiveDiscount ? (
+              <View style={styles.summaryOfferRow}>
+                <Text style={styles.summaryOfferPill}>{`Offer -${selectedPlan.discountPercentage}%`}</Text>
+                <Text style={styles.summaryOriginalPrice}>{formatEuroAmount(selectedPlanPricing.originalPrice)}</Text>
+              </View>
+            ) : null}
             <Text style={styles.summaryText}>
-              {t(formatPrice(getPlanPricing(selectedPlan, billingCycle).finalPrice, billingCycle))}. {t('Access:')} {selectedPlan.tabAccess.join(', ')}.
+              {t(formatPrice(selectedPlanPricing.finalPrice, billingCycle))}. {t('Access:')} {selectedPlan.tabAccess.join(', ')}.
             </Text>
+            {selectedPlanPricing.hasActiveDiscount ? (
+              <Text style={styles.summarySavingsText}>
+                {`Dashboard offer live: save ${formatEuroAmount(selectedPlanPricing.savings)} per ${selectedPlanPricing.cycleLabel}.`}
+              </Text>
+            ) : null}
           </View>
 
           <TouchableOpacity style={styles.confirmButton} onPress={() => setConfirmVisible(true)} activeOpacity={0.9}>
@@ -357,7 +388,9 @@ export default function PlanSelectionScreen() {
             <View style={[styles.modalCard, selectedPlanAccentStyle]}>
               <Text style={styles.modalTitle}>{t('Confirm payment')}</Text>
               <Text style={styles.modalText}>
-                {`Activate ${selectedPlan.title} now at ${formatPrice(getPlanPricing(selectedPlan, billingCycle).finalPrice, billingCycle)}. This will update the user profile subscription immediately and unlock the allowed sections.`}
+                {selectedPlanPricing.hasActiveDiscount
+                  ? `Activate ${selectedPlan.title} now at ${formatPrice(selectedPlanPricing.finalPrice, billingCycle)} instead of ${formatPrice(selectedPlanPricing.originalPrice, billingCycle)}. This dashboard offer is applied immediately after confirmation and unlocks the allowed sections.`
+                  : `Activate ${selectedPlan.title} now at ${formatPrice(selectedPlanPricing.finalPrice, billingCycle)}. This will update the user profile subscription immediately and unlock the allowed sections.`}
               </Text>
 
               <View style={styles.modalActions}>
@@ -519,12 +552,19 @@ const styles = StyleSheet.create({
     color: '#7BF1A8',
     fontSize: 11,
     fontFamily: 'Inter_700Bold',
+    textTransform: 'uppercase',
   },
   originalPrice: {
     color: '#94A3B8',
     fontSize: 12,
     fontFamily: 'Inter_400Regular',
     textDecorationLine: 'line-through',
+  },
+  savingsText: {
+    color: '#A7F3D0',
+    fontSize: 11,
+    fontFamily: 'Inter_600SemiBold',
+    marginBottom: 6,
   },
   priceRow: {
     flexDirection: 'row',
@@ -534,6 +574,7 @@ const styles = StyleSheet.create({
   price: { color: '#FFFFFF', fontSize: 22, fontFamily: 'Inter_700Bold' },
   priceSuffix: { color: '#A3B1C7', fontSize: 13, fontFamily: 'Inter_400Regular', marginBottom: 2 },
   valueText: { color: '#16D7F3', fontSize: 11, fontFamily: 'Inter_700Bold', marginTop: 8, letterSpacing: 0.7 },
+  dashboardSyncText: { color: '#94A3B8', fontSize: 10, fontFamily: 'Inter_600SemiBold', marginTop: 8, letterSpacing: 0.5 },
   featureList: { gap: 10, marginTop: 14 },
   featureRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   featureText: { color: '#F8FAFC', fontSize: 13, fontFamily: 'Inter_600SemiBold', flex: 1, lineHeight: 20 },
@@ -573,6 +614,24 @@ const styles = StyleSheet.create({
   summaryLabel: { color: '#64748B', fontSize: 12, fontFamily: 'Inter_600SemiBold', textTransform: 'uppercase', letterSpacing: 1.2 },
   summaryTitle: { color: '#0F172A', fontSize: 18, fontFamily: 'Inter_700Bold', marginTop: 6 },
   summaryText: { color: '#475569', fontSize: 13, lineHeight: 20, fontFamily: 'Inter_400Regular', marginTop: 6 },
+  summaryOfferRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 10, flexWrap: 'wrap' },
+  summaryOfferPill: {
+    color: '#047857',
+    backgroundColor: '#D1FAE5',
+    fontSize: 11,
+    fontFamily: 'Inter_700Bold',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 999,
+    overflow: 'hidden',
+  },
+  summaryOriginalPrice: {
+    color: '#64748B',
+    fontSize: 12,
+    fontFamily: 'Inter_500Medium',
+    textDecorationLine: 'line-through',
+  },
+  summarySavingsText: { color: '#047857', fontSize: 12, lineHeight: 18, fontFamily: 'Inter_600SemiBold', marginTop: 6 },
   confirmButton: {
     marginTop: 18,
     marginHorizontal: 22,

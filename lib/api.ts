@@ -1,5 +1,6 @@
 import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import type { OnboardingAnamnese, OnboardingData, OnboardingPersonalProfile, OnboardingSuggestion } from './onboarding';
 import { clearAllCachedResources, fetchCachedResource, getCachedResourceSnapshot, primeCachedResource } from './resourceCache';
 import {
   getLongevityDashboardCacheKey,
@@ -12,7 +13,7 @@ declare const process: {
   env?: Record<string, string | undefined>;
 };
 
-const PRODUCTION_WEB_API_URL = 'https://victory-fitness-backend-six.vercel.app';
+const PRODUCTION_WEB_API_URL = 'https://victory-fitness-backend.vercel.app';
 
 function getDefaultApiUrl(): string {
   if (Platform.OS === 'android') {
@@ -44,7 +45,22 @@ function resolveApiUrl(url: string): string {
 
 const API_URL = resolveApiUrl(RAW_API_URL);
 const REQUEST_TIMEOUT_MS = 8_000;
+const IS_BROWSER_AUTH = Platform.OS === 'web';
+const APP_REQUEST_CREDENTIALS: RequestCredentials = IS_BROWSER_AUTH ? 'include' : 'omit';
+const APP_CLIENT_HEADER_NAME = 'X-Victory-Client';
+const APP_CLIENT_HEADER_VALUE = 'app';
+const AUTH_API_URL_STORAGE_KEY = 'victory_api_url';
 let apiLanguage: string | undefined;
+
+function getClientHeaders(): Record<string, string> {
+  if (IS_BROWSER_AUTH) {
+    return {};
+  }
+
+  return {
+    [APP_CLIENT_HEADER_NAME]: APP_CLIENT_HEADER_VALUE,
+  };
+}
 
 export function setApiLanguage(language?: string) {
   apiLanguage = language?.trim() || undefined;
@@ -136,6 +152,10 @@ export type BodyMetrics = {
   height: string;
   weight: string;
   gender: string;
+};
+
+export type OnboardingState = OnboardingData & {
+  completed: boolean;
 };
 
 export type SubscriptionPlan = {
@@ -451,6 +471,7 @@ let authTokens: AuthTokens | null = null;
 let authTokensLoaded = false;
 let authTokensLoadPromise: Promise<void> | null = null;
 let authRefreshPromise: Promise<AuthTokens | null> | null = null;
+let browserRefreshFailedAt = 0;
 let authUser: AuthUser | null = null;
 let authUserLoaded = false;
 let authUserLoadPromise: Promise<void> | null = null;
@@ -463,7 +484,23 @@ let bodyMetricsCache: BodyMetrics | null = null;
 
 const CURRENT_USER_CACHE_TTL_MS = 30_000;
 const BODY_METRICS_CACHE_TTL_MS = 30_000;
+const BROWSER_REFRESH_RETRY_MS = 30_000;
 const BODY_METRICS_RESOURCE_KEY = 'me-body-metrics';
+
+function normalizeBoolean(value: unknown, fallback = false) {
+  if (typeof value === 'boolean') {
+    return value;
+  }
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+    if (normalized === 'true' || normalized === '1' || normalized === 'yes') return true;
+    if (normalized === 'false' || normalized === '0' || normalized === 'no' || normalized === '') return false;
+  }
+  if (typeof value === 'number') {
+    return value !== 0;
+  }
+  return fallback;
+}
 
 function normalizeAuthUser(user: Partial<AuthUser> & { id?: string; name?: string; email?: string; is_verified?: boolean }): AuthUser {
   const normalizedSubscription = user.subscription && typeof user.subscription === 'object' ? user.subscription : undefined;
@@ -475,7 +512,7 @@ function normalizeAuthUser(user: Partial<AuthUser> & { id?: string; name?: strin
     is_admin: Boolean(user.is_admin),
     country: String(user.country ?? ''),
     profileImage: String(user.profileImage ?? ''),
-    onboarding_completed: Boolean(user.onboarding_completed),
+    onboarding_completed: normalizeBoolean(user.onboarding_completed),
     points: Math.max(Number(user.points ?? 0) || 0, 0),
     workouts_completed: Math.max(Number(user.workouts_completed ?? 0) || 0, 0),
     workouts_total: Math.max(Number(user.workouts_total ?? 0) || 0, 0),
@@ -498,7 +535,7 @@ function normalizeAuthUser(user: Partial<AuthUser> & { id?: string; name?: strin
         ? String(normalizedSubscription.confirmed_at)
         : null,
     subscription_billing_cycle: String(user.subscription_billing_cycle ?? normalizedSubscription?.billing_cycle ?? 'yearly'),
-    subscription_is_purchased: Boolean(user.subscription_is_purchased ?? normalizedSubscription?.is_purchased),
+    subscription_is_purchased: normalizeBoolean(user.subscription_is_purchased ?? normalizedSubscription?.is_purchased),
     subscription_purchase_source: String(user.subscription_purchase_source ?? normalizedSubscription?.purchase_source ?? ''),
     marketing_consent: Boolean(user.marketing_consent),
     subscription_access: Array.isArray(user.subscription_access)
@@ -514,7 +551,7 @@ function normalizeAuthUser(user: Partial<AuthUser> & { id?: string; name?: strin
           started_at: normalizedSubscription.started_at ? String(normalizedSubscription.started_at) : null,
           confirmed_at: normalizedSubscription.confirmed_at ? String(normalizedSubscription.confirmed_at) : null,
           billing_cycle: String(normalizedSubscription.billing_cycle ?? 'yearly'),
-          is_purchased: Boolean(normalizedSubscription.is_purchased),
+          is_purchased: normalizeBoolean(normalizedSubscription.is_purchased),
           purchase_source: String(normalizedSubscription.purchase_source ?? ''),
           access: Array.isArray(normalizedSubscription.access) ? normalizedSubscription.access.map((item) => String(item)) : [],
         }
@@ -569,37 +606,20 @@ function isJwtExpired(token: string): boolean {
 }
 
 async function persistAuthTokens(tokens: AuthTokens | null) {
-  if (Platform.OS === 'web') {
-    if (typeof window === 'undefined') {
-      return;
-    }
-
-    if (tokens) {
-      window.localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(tokens));
-    } else {
-      window.localStorage.removeItem(AUTH_STORAGE_KEY);
-    }
+  if (IS_BROWSER_AUTH) {
     return;
   }
 
   if (tokens) {
     await AsyncStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(tokens));
+    await AsyncStorage.setItem(AUTH_API_URL_STORAGE_KEY, API_URL);
   } else {
     await AsyncStorage.removeItem(AUTH_STORAGE_KEY);
   }
 }
 
 async function persistAuthUser(user: AuthUser | null) {
-  if (Platform.OS === 'web') {
-    if (typeof window === 'undefined') {
-      return;
-    }
-
-    if (user) {
-      window.localStorage.setItem(AUTH_USER_STORAGE_KEY, JSON.stringify(user));
-    } else {
-      window.localStorage.removeItem(AUTH_USER_STORAGE_KEY);
-    }
+  if (IS_BROWSER_AUTH) {
     return;
   }
 
@@ -608,6 +628,20 @@ async function persistAuthUser(user: AuthUser | null) {
   } else {
     await AsyncStorage.removeItem(AUTH_USER_STORAGE_KEY);
   }
+}
+
+async function ensureStoredApiUrlMatches() {
+  if (IS_BROWSER_AUTH) {
+    return;
+  }
+
+  const storedApiUrl = (await AsyncStorage.getItem(AUTH_API_URL_STORAGE_KEY)) || '';
+  if (storedApiUrl === API_URL) {
+    return;
+  }
+
+  await AsyncStorage.multiRemove([AUTH_STORAGE_KEY, AUTH_USER_STORAGE_KEY]);
+  await AsyncStorage.setItem(AUTH_API_URL_STORAGE_KEY, API_URL);
 }
 
 async function fetchWithTimeout(input: string, init: RequestInit = {}, timeoutMs = REQUEST_TIMEOUT_MS) {
@@ -632,13 +666,8 @@ async function fetchWithTimeout(input: string, init: RequestInit = {}, timeoutMs
 }
 
 async function loadPersistedAuthTokens(): Promise<AuthTokens | null> {
-  if (Platform.OS === 'web') {
-    if (typeof window === 'undefined') {
-      return null;
-    }
-
-    const raw = window.localStorage.getItem(AUTH_STORAGE_KEY);
-    return raw ? (JSON.parse(raw) as AuthTokens) : null;
+  if (IS_BROWSER_AUTH) {
+    return null;
   }
 
   const raw = await AsyncStorage.getItem(AUTH_STORAGE_KEY);
@@ -646,13 +675,8 @@ async function loadPersistedAuthTokens(): Promise<AuthTokens | null> {
 }
 
 async function loadPersistedAuthUser(): Promise<AuthUser | null> {
-  if (Platform.OS === 'web') {
-    if (typeof window === 'undefined') {
-      return null;
-    }
-
-    const raw = window.localStorage.getItem(AUTH_USER_STORAGE_KEY);
-    return raw ? (JSON.parse(raw) as AuthUser) : null;
+  if (IS_BROWSER_AUTH) {
+    return null;
   }
 
   const raw = await AsyncStorage.getItem(AUTH_USER_STORAGE_KEY);
@@ -660,6 +684,8 @@ async function loadPersistedAuthUser(): Promise<AuthUser | null> {
 }
 
 async function ensureAuthTokensLoaded() {
+  await ensureStoredApiUrlMatches();
+
   if (authTokensLoaded) {
     return;
   }
@@ -679,6 +705,8 @@ async function ensureAuthTokensLoaded() {
 }
 
 async function ensureAuthUserLoaded() {
+  await ensureStoredApiUrlMatches();
+
   if (authUserLoaded) {
     return;
   }
@@ -700,6 +728,7 @@ async function ensureAuthUserLoaded() {
 export async function setAuthTokens(tokens: AuthTokens & { user?: AuthUser }) {
   authTokens = tokens;
   authTokensLoaded = true;
+  browserRefreshFailedAt = 0;
   await persistAuthTokens(tokens);
 
   if (tokens.user) {
@@ -712,9 +741,12 @@ export async function setAuthTokens(tokens: AuthTokens & { user?: AuthUser }) {
   }
 }
 
-export async function clearAuthTokens() {
+export async function clearAuthTokens(options?: { preserveBrowserRefreshFailure?: boolean }) {
   authTokens = null;
   authTokensLoaded = true;
+  if (!options?.preserveBrowserRefreshFailure) {
+    browserRefreshFailedAt = 0;
+  }
   await persistAuthTokens(null);
   authUser = null;
   authUserLoaded = true;
@@ -724,14 +756,21 @@ export async function clearAuthTokens() {
 }
 
 export async function logout() {
+  const tokens = await getAuthTokens();
   try {
+    const clientHeaders = getClientHeaders();
     await fetchWithTimeout(`${API_URL}/auth/logout`, {
       method: 'POST',
       headers: {
         Accept: 'application/json',
         'Content-Type': 'application/json',
+        ...clientHeaders,
+        ...(tokens?.access_token ? { Authorization: `Bearer ${tokens.access_token}` } : {}),
       },
-      credentials: 'include',
+      credentials: APP_REQUEST_CREDENTIALS,
+      body: tokens?.session_token && !IS_BROWSER_AUTH
+        ? JSON.stringify({ session_token: tokens.session_token })
+        : undefined,
     });
   } catch {
     // Local logout should still succeed if the network request fails.
@@ -752,6 +791,12 @@ export async function getAuthTokens() {
 export async function getAuthUser() {
   await ensureAuthUserLoaded();
   return authUser;
+}
+
+export type HomepageQuote = { id: string; text: string; author: string; active: boolean };
+
+export async function fetchHomepageQuote() {
+  return apiRequest<HomepageQuote | null>('/content/homepage/quote');
 }
 
 export async function fetchCurrentUser() {
@@ -802,6 +847,73 @@ export async function updateCurrentUserProfile(payload: {
   currentUserFetchedAt = Date.now();
   await persistAuthUser(authUser);
   return user;
+}
+
+function normalizeOnboardingState(state: OnboardingState): OnboardingState {
+  const personalProfile = (state.personalProfile || {}) as Partial<OnboardingPersonalProfile>;
+  const anamnese = (state.anamnese || {}) as Partial<OnboardingAnamnese>;
+  const suggestion = state.suggestion as OnboardingSuggestion | null | undefined;
+
+  return {
+    userId: String(state.userId || '').trim(),
+    currentStep: Math.max(Number(state.currentStep || 0) || 0, 0),
+    language: (String(state.language || '').trim() as OnboardingData['language']) || '',
+    personalProfile: {
+      age: String(personalProfile.age || '').trim(),
+      gender: String(personalProfile.gender || '').trim(),
+      height: String(personalProfile.height || '').trim(),
+      heightUnit: 'cm',
+      weight: String(personalProfile.weight || '').trim(),
+      weightUnit: String(personalProfile.weightUnit || 'kg').trim() === 'lb' ? 'lb' : 'kg',
+    },
+    anamnese: {
+      primaryGoal: String(anamnese.primaryGoal || '').trim(),
+      activityLevel: String(anamnese.activityLevel || '').trim(),
+      healthConcerns: Array.isArray(anamnese.healthConcerns) ? anamnese.healthConcerns.map((item) => String(item).trim()).filter(Boolean) : [],
+      healthNotes: String(anamnese.healthNotes || '').trim(),
+      daysPerWeek: String(anamnese.daysPerWeek || '').trim(),
+      timePerSession: String(anamnese.timePerSession || '').trim(),
+      equipmentAccess: String(anamnese.equipmentAccess || '').trim(),
+    },
+    suggestion: suggestion ? {
+      tier: String(suggestion.tier || 'GOLD').trim().toUpperCase() as OnboardingSuggestion['tier'],
+      title: String(suggestion.title || '').trim(),
+      reason: String(suggestion.reason || '').trim(),
+      note: String(suggestion.note || '').trim() || undefined,
+    } : null,
+    updatedAt: String(state.updatedAt || '').trim() || null,
+    completed: Boolean(state.completed),
+  };
+}
+
+export async function fetchCurrentUserOnboarding() {
+  const response = await apiRequest<OnboardingState>('/me/onboarding');
+  return normalizeOnboardingState(response);
+}
+
+export async function updateCurrentUserOnboarding(payload: {
+  currentStep?: number;
+  language?: OnboardingData['language'];
+  personalProfile?: OnboardingPersonalProfile;
+  anamnese?: OnboardingAnamnese;
+  suggestion?: OnboardingSuggestion | null;
+  completed?: boolean;
+}) {
+  const response = await apiRequest<OnboardingState>('/me/onboarding', {
+    method: 'PATCH',
+    body: payload,
+  });
+
+  if (typeof payload.completed === 'boolean' && authUser) {
+    authUser = normalizeAuthUser({
+      ...authUser,
+      onboarding_completed: payload.completed,
+    });
+    authUserLoaded = true;
+    await persistAuthUser(authUser);
+  }
+
+  return normalizeOnboardingState(response);
 }
 
 export async function updateCurrentUserSubscription(payload: {
@@ -1152,17 +1264,19 @@ export async function createAdminChallenge(payload: AdminChallengePayload) {
   });
 }
 
-async function refreshWithSessionToken(sessionToken: string): Promise<AuthTokens | null> {
+async function refreshWithSessionToken(sessionToken?: string | null): Promise<AuthTokens | null> {
   let response: Response;
   try {
+    const clientHeaders = getClientHeaders();
     response = await fetchWithTimeout(`${API_URL}/auth/refresh`, {
       method: 'POST',
       headers: {
         Accept: 'application/json',
         'Content-Type': 'application/json',
+        ...clientHeaders,
       },
-      credentials: 'include',
-      body: JSON.stringify({ session_token: sessionToken }),
+      credentials: APP_REQUEST_CREDENTIALS,
+      body: sessionToken ? JSON.stringify({ session_token: sessionToken }) : undefined,
     });
   } catch {
     return null;
@@ -1182,17 +1296,20 @@ async function refreshWithSessionToken(sessionToken: string): Promise<AuthTokens
 async function refreshAuthTokens(): Promise<AuthTokens | null> {
   await ensureAuthTokensLoaded();
 
-  if (!authTokens?.session_token || isJwtExpired(authTokens.session_token)) {
+  if (!IS_BROWSER_AUTH && (!authTokens?.session_token || isJwtExpired(authTokens.session_token))) {
     await clearAuthTokens();
     authFailureHandler?.();
     return null;
   }
 
   if (!authRefreshPromise) {
-    authRefreshPromise = refreshWithSessionToken(authTokens.session_token)
+    authRefreshPromise = refreshWithSessionToken(authTokens?.session_token)
       .then(async (refreshed) => {
         if (!refreshed) {
-          await clearAuthTokens();
+          if (IS_BROWSER_AUTH) {
+            browserRefreshFailedAt = Date.now();
+          }
+          await clearAuthTokens({ preserveBrowserRefreshFailure: true });
           authFailureHandler?.();
           return null;
         }
@@ -1227,6 +1344,18 @@ async function handleInvalidSession() {
 export async function getValidAuthTokens() {
   await ensureAuthTokensLoaded();
 
+  if (IS_BROWSER_AUTH) {
+    if (authTokens?.access_token && !isJwtExpired(authTokens.access_token)) {
+      return authTokens;
+    }
+
+    if (!authTokens && browserRefreshFailedAt && Date.now() - browserRefreshFailedAt < BROWSER_REFRESH_RETRY_MS) {
+      return null;
+    }
+
+    return refreshAuthTokens();
+  }
+
   if (!authTokens) {
     return null;
   }
@@ -1250,6 +1379,7 @@ export async function apiRequest<T>(
   const headers: Record<string, string> = {
     Accept: 'application/json',
     'Content-Type': 'application/json',
+    ...getClientHeaders(),
   };
 
   if (requestTokens?.access_token) {
@@ -1269,7 +1399,7 @@ export async function apiRequest<T>(
   const response = await fetchWithTimeout(`${API_URL}${path}`, {
     method: options.method ?? 'GET',
     headers,
-    credentials: 'include',
+    credentials: APP_REQUEST_CREDENTIALS,
     body: isFormDataBody
       ? options.body as BodyInit
       : options.body
@@ -1333,11 +1463,19 @@ export type AuthResponse = {
   session_token: string;
   token_type: string;
   expires_in: number;
+  returning_user?: {
+    title: string;
+    message: string;
+    action_label: string;
+    action_route: string;
+    trial_started_at?: string;
+  } | null;
   user: {
     id: string;
     name: string;
     email: string;
     is_verified: boolean;
+    is_admin?: boolean;
     country?: string;
     profileImage?: string;
     points?: number;

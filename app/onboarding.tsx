@@ -20,6 +20,7 @@ import { StatusBar } from 'expo-status-bar';
 import { useRouter } from 'expo-router';
 
 import {
+  AuthUser,
   clearAuthTokens,
   fetchCurrentUser,
   fetchOnboardingContent,
@@ -28,6 +29,7 @@ import {
 } from '../lib/api';
 import { getPostAuthRoute } from '../lib/access';
 import { replaceRoute } from '../lib/navigation';
+import PostLoginOnboardingFlow from '../components/onboarding/PostLoginOnboardingFlow';
 
 const TEAL = '#00F5D4';
 const BG = '#070909';
@@ -109,6 +111,7 @@ export default function OnboardingScreen() {
   const [slides, setSlides] = useState<SlideConfig[]>(FALLBACK_SLIDES);
   const [checkingAuth, setCheckingAuth] = useState(true);
   const [completing, setCompleting] = useState(false);
+  const [authenticatedUser, setAuthenticatedUser] = useState<AuthUser | null>(null);
   const fadeAnim = useRef(new Animated.Value(1)).current;
   const useNativeDriver = Platform.OS !== 'web';
 
@@ -129,6 +132,7 @@ export default function OnboardingScreen() {
             replaceRoute(router, target);
             return;
           }
+          setAuthenticatedUser(user);
           setCheckingAuth(false);
           return;
         } catch {
@@ -269,7 +273,7 @@ export default function OnboardingScreen() {
   return (
     <SafeAreaView style={styles.safe}>
       <StatusBar style="light" />
-      {content}
+      {authenticatedUser ? <PostLoginOnboardingFlow user={authenticatedUser} /> : content}
     </SafeAreaView>
   );
 }

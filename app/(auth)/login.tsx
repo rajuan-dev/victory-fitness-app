@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import {
+  Alert,
   View,
   Text,
   StyleSheet,
@@ -16,8 +17,8 @@ import { Colors } from '../../constants/Colors';
 import { AuthInput } from '../../components/AuthInput';
 import { AuthButton } from '../../components/AuthButton';
 import { ErrorPopupModal } from '../../components/ErrorPopupModal';
-import { apiRequest, AuthResponse, fetchCurrentUser, getValidAuthTokens, setAuthTokens } from '../../lib/api';
-import { getPostAuthRoute } from '../../lib/access';
+import { apiRequest, AuthResponse, clearAuthTokens, fetchCurrentUser, getValidAuthTokens, setAuthTokens } from '../../lib/api';
+import { getPostAuthRoute, isAdminRestrictedFromApp } from '../../lib/access';
 import { formatAppError } from '../../lib/error';
 import { useLanguage } from '../../lib/i18n';
 import { replaceRoute } from '../../lib/navigation';
@@ -45,6 +46,17 @@ export default function LoginScreen() {
       if (tokens) {
         try {
           const user = await fetchCurrentUser();
+          if (isAdminRestrictedFromApp(user)) {
+            await clearAuthTokens();
+            if (!cancelled) {
+              setErrorDialog({
+                title: t('App access restricted'),
+                message: t('Admin accounts can only sign in to the Victory Fitness dashboard.'),
+              });
+              setCheckingAuth(false);
+            }
+            return;
+          }
           replaceRoute(router, getPostAuthRoute(user));
         } catch {
           setCheckingAuth(false);
@@ -78,7 +90,23 @@ export default function LoginScreen() {
         method: 'POST',
         body: { email: normalizedEmail, password },
       });
+      if (isAdminRestrictedFromApp(auth.user)) {
+        await clearAuthTokens();
+        setErrorDialog({
+          title: t('App access restricted'),
+          message: t('Admin accounts can only sign in to the Victory Fitness dashboard.'),
+        });
+        return;
+      }
       await setAuthTokens(auth);
+      if (auth.returning_user) {
+        Alert.alert(
+          auth.returning_user.title,
+          auth.returning_user.message,
+          [{ text: 'Choose your subscription', onPress: () => replaceRoute(router, '/plan') }, { text: 'Continue', style: 'cancel', onPress: () => replaceRoute(router, getPostAuthRoute(auth.user)) }],
+        );
+        return;
+      }
       replaceRoute(router, getPostAuthRoute(auth.user));
     } catch (error) {
       setErrorDialog(formatAppError(error));

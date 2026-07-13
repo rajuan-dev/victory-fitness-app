@@ -15,6 +15,8 @@ import {
   Animated,
   Easing,
 } from 'react-native';
+import * as Clipboard from 'expo-clipboard';
+import * as DocumentPicker from 'expo-document-picker';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { setAudioModeAsync, useAudioPlayer } from 'expo-audio';
@@ -52,6 +54,19 @@ const PLAN_DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] as const;
 const MEAL_KEYS = ['breakfast', 'lunch', 'dinner'] as const;
 type PlanTabId = 'my_plan' | 'tracker' | 'meal_analysis';
 type MealKey = 'breakfast' | 'lunch' | 'dinner';
+type AnalysisImageAsset = {
+  uri: string;
+  fileName?: string | null;
+  mimeType?: string | null;
+  base64?: string | null;
+};
+type AnalysisPayload = {
+  image_base64?: string | null;
+  document_base64?: string | null;
+  text_content?: string | null;
+  mime_type: string;
+  file_name?: string | null;
+};
 
 const PLAN_LOADING_MESSAGES = [
   'Reviewing your goal, food preferences, and activity profile.',
@@ -135,6 +150,16 @@ function getMealLabel(mealKey: MealKey, t: (key: string) => string) {
     return t('Lunch');
   }
   return t('Dinner');
+}
+
+function normalizeAdviceItems(reply: string) {
+  return reply
+    .replace(/\r/g, '\n')
+    .replace(/(?<=\S)\s*(\d+[.)])\s+/g, '\n$1 ')
+    .split(/\n+/)
+    .map((item) => item.replace(/^\s*(?:[-*\u2022]|\d+[.)])\s*/, '').trim())
+    .filter(Boolean)
+    .slice(0, 8);
 }
 
 function getGoalLabel(goal: string | null, t: (key: string) => string) {
@@ -308,17 +333,32 @@ function MealPlanResult({
   const [selectedMeal, setSelectedMeal] = useState<{ day: string; mealLabel: string; mealKey: string; meal: MealEntry; expandKey: string } | null>(null);
   const [mealModalActionState, setMealModalActionState] = useState<'idle' | 'loading' | 'done'>('idle');
   const [mealModalActionMode, setMealModalActionMode] = useState<'complete' | 'unmark'>('complete');
-  const [analysisImage, setAnalysisImage] = useState<ImagePicker.ImagePickerAsset | null>(null);
+  const [analysisImage, setAnalysisImage] = useState<AnalysisImageAsset | null>(null);
   const [analysisLoading, setAnalysisLoading] = useState(false);
   const [analysisResult, setAnalysisResult] = useState<MealImageAnalysisResponse | null>(null);
   const [analysisError, setAnalysisError] = useState('');
   const [analysisHistory, setAnalysisHistory] = useState<MealImageAnalysisResponse[]>([]);
   const [selectedAnalysis, setSelectedAnalysis] = useState<MealImageAnalysisResponse | null>(null);
+  const [analysisSourcePickerVisible, setAnalysisSourcePickerVisible] = useState(false);
+  const [analysisCapturePickerVisible, setAnalysisCapturePickerVisible] = useState(false);
   const [planTab, setPlanTab] = useState<PlanTabId>('my_plan');
   const [canAccessTracker, setCanAccessTracker] = useState(false);
   const [canAccessMealAnalysis, setCanAccessMealAnalysis] = useState(false);
   const [restrictedSection, setRestrictedSection] = useState('');
+  const [copyToastMessage, setCopyToastMessage] = useState('');
+  const copyToastTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   const useNativeDriver = Platform.OS !== 'web';
+
+  const showCopyToast = (message: string) => {
+    if (copyToastTimerRef.current) {
+      clearTimeout(copyToastTimerRef.current);
+    }
+    setCopyToastMessage(message);
+    copyToastTimerRef.current = setTimeout(() => {
+      setCopyToastMessage('');
+      copyToastTimerRef.current = null;
+    }, 1800);
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -344,6 +384,12 @@ function MealPlanResult({
     return () => {
       cancelled = true;
     };
+  }, []);
+
+  useEffect(() => () => {
+    if (copyToastTimerRef.current) {
+      clearTimeout(copyToastTimerRef.current);
+    }
   }, []);
 
   useFocusEffect(
@@ -557,12 +603,45 @@ function MealPlanResult({
   const totalP = day.breakfast.p + day.lunch.p + day.dinner.p;
   const totalC = day.breakfast.c + day.lunch.c + day.dinner.c;
   const totalF = day.breakfast.f + day.lunch.f + day.dinner.f;
-  const adviceItems = nutritionAdvice
-    .split(/\r?\n+/)
-    .map((item) => item.replace(/^\s*(?:[-*\u2022]|\d+[.)])\s*/, '').trim())
-    .filter(Boolean);
+  const adviceItems = normalizeAdviceItems(nutritionAdvice);
 
   const goalLabel = generatedPlan?.goal_label ? t(generatedPlan.goal_label) : getGoalLabel(profile.goal, t);
+  const buildShoppingListCopyText = () =>
+    activeShoppingList
+      .map((section) => {
+        const sectionItems = Array.isArray(section?.items)
+          ? section.items
+              .map((item) => `- ${item.qty ? `${item.qty} ` : ''}${item.name}`.trim())
+              .join('\n')
+          : '';
+
+        return `${section.category}\n${sectionItems}`.trim();
+      })
+      .filter(Boolean)
+      .join('\n\n');
+
+  const handleCopyShoppingList = async () => {
+    const shoppingListText = buildShoppingListCopyText();
+    if (!shoppingListText) {
+      Alert.alert(t('Nothing to copy'), t('Generate a nutrition plan before copying the shopping list.'));
+      return;
+    }
+
+    try {
+      if (Platform.OS === 'web' && typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(shoppingListText);
+      } else {
+        await Clipboard.setStringAsync(shoppingListText);
+      }
+
+      showCopyToast(t('Shopping list copied'));
+    } catch (error) {
+      Alert.alert(
+        t('Copy failed'),
+        error instanceof Error ? error.message : t('Unable to copy the shopping list right now.')
+      );
+    }
+  };
   const planJson = generatedPlan
     ? JSON.stringify(generatedPlan, null, 2)
     : JSON.stringify(
@@ -603,7 +682,99 @@ function MealPlanResult({
       setLoadingAdvice(false);
     }
   };
-  const handleStartAnalysis = async () => {
+  const readUriAsBase64 = async (uri: string) => {
+    const response = await fetch(uri);
+    const blob = await response.blob();
+    const dataUrl = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onerror = () => reject(new Error('Failed to read file'));
+      reader.onloadend = () => resolve(typeof reader.result === 'string' ? reader.result : '');
+      reader.readAsDataURL(blob);
+    });
+    const base64 = dataUrl.split(',', 2)[1];
+    if (!base64) {
+      throw new Error(t('The selected image could not be read for analysis.'));
+    }
+    return base64;
+  };
+
+  const readUriAsText = async (uri: string) => {
+    const response = await fetch(uri);
+    const blob = await response.blob();
+    return blob.text();
+  };
+
+  const getFileExtension = (fileName?: string | null) => {
+    const normalized = String(fileName || '').trim().toLowerCase();
+    const index = normalized.lastIndexOf('.');
+    return index >= 0 ? normalized.slice(index) : '';
+  };
+
+  const isImageMimeType = (mimeType?: string | null) => String(mimeType || '').toLowerCase().startsWith('image/');
+
+  const isTextBasedDocument = (mimeType?: string | null, fileName?: string | null) => {
+    const normalizedMime = String(mimeType || '').toLowerCase();
+    const extension = getFileExtension(fileName);
+    if (normalizedMime.startsWith('text/')) {
+      return true;
+    }
+    return ['.txt', '.md', '.csv', '.json', '.xml', '.yaml', '.yml', '.log', '.rtf'].includes(extension);
+  };
+
+  const buildAnalysisPayload = async (asset: AnalysisImageAsset): Promise<AnalysisPayload> => {
+    const mimeType = asset.mimeType ?? 'application/octet-stream';
+    if (asset.base64 && isImageMimeType(mimeType)) {
+      return {
+        image_base64: asset.base64,
+        mime_type: mimeType,
+        file_name: asset.fileName ?? null,
+      };
+    }
+
+    if (isTextBasedDocument(mimeType, asset.fileName)) {
+      return {
+        text_content: await readUriAsText(asset.uri),
+        mime_type: mimeType,
+        file_name: asset.fileName ?? null,
+      };
+    }
+
+    const base64 = asset.base64 ?? await readUriAsBase64(asset.uri);
+    if (isImageMimeType(mimeType)) {
+      return {
+        image_base64: base64,
+        mime_type: mimeType,
+        file_name: asset.fileName ?? null,
+      };
+    }
+
+    return {
+      document_base64: base64,
+      mime_type: mimeType,
+      file_name: asset.fileName ?? null,
+    };
+  };
+
+  const analyzeSelectedAsset = async (asset: AnalysisImageAsset) => {
+    setAnalysisImage(asset);
+    setAnalysisError('');
+    setAnalysisResult(null);
+    const analysisPayload = await buildAnalysisPayload(asset);
+
+    setAnalysisLoading(true);
+    try {
+      const response = await analyzeMealImage(analysisPayload);
+      setAnalysisResult(response);
+      setAnalysisHistory((prev) => [response, ...prev.filter((item) => item.analysis_id !== response.analysis_id)]);
+    } catch (analysisErr) {
+      setAnalysisError(formatAppError(analysisErr).message);
+    } finally {
+      setAnalysisLoading(false);
+    }
+  };
+
+  const handleUseCamera = async () => {
+    setAnalysisCapturePickerVisible(false);
     try {
       const permission = await ImagePicker.requestCameraPermissionsAsync();
       if (!permission.granted) {
@@ -620,34 +791,73 @@ function MealPlanResult({
       });
 
       if (!result.canceled && result.assets.length > 0) {
-        const asset = result.assets[0];
-        setAnalysisImage(asset);
-        setAnalysisError('');
-        setAnalysisResult(null);
-
-        if (!asset.base64) {
-          throw new Error(t('The selected image could not be read for analysis.'));
-        }
-
-        setAnalysisLoading(true);
-        try {
-          const response = await analyzeMealImage({
-            image_base64: asset.base64,
-            mime_type: asset.mimeType ?? 'image/jpeg',
-            file_name: asset.fileName ?? null,
-          });
-          setAnalysisResult(response);
-          setAnalysisHistory((prev) => [response, ...prev.filter((item) => item.analysis_id !== response.analysis_id)]);
-        } catch (analysisErr) {
-          setAnalysisError(formatAppError(analysisErr).message);
-        } finally {
-          setAnalysisLoading(false);
-        }
+        await analyzeSelectedAsset(result.assets[0]);
       }
     } catch (error) {
       Alert.alert(t('Camera error'), error instanceof Error ? error.message : t('Unable to open the camera right now.'));
       setAnalysisLoading(false);
     }
+  };
+
+  const handlePickFromLibrary = async () => {
+    setAnalysisCapturePickerVisible(false);
+    try {
+      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!permission.granted) {
+        Alert.alert(t('Permission needed'), t('Please allow photo library access to choose a meal photo for analysis.'));
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        allowsEditing: false,
+        quality: 0.35,
+        base64: true,
+      });
+
+      if (!result.canceled && result.assets.length > 0) {
+        await analyzeSelectedAsset(result.assets[0]);
+      }
+    } catch (error) {
+      Alert.alert(t('Photo library error'), error instanceof Error ? error.message : t('Unable to open the photo library right now.'));
+      setAnalysisLoading(false);
+    }
+  };
+
+  const handleUploadFile = async () => {
+    setAnalysisSourcePickerVisible(false);
+    setAnalysisCapturePickerVisible(false);
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: '*/*',
+        copyToCacheDirectory: true,
+        multiple: false,
+      });
+
+      if (result.canceled || !result.assets || result.assets.length === 0) {
+        return;
+      }
+
+      const asset = result.assets[0];
+      await analyzeSelectedAsset({
+        uri: asset.uri,
+        fileName: asset.name ?? null,
+        mimeType: asset.mimeType ?? 'image/jpeg',
+        base64: null,
+      });
+    } catch (error) {
+      Alert.alert(t('File upload error'), error instanceof Error ? error.message : t('Unable to open the file picker right now.'));
+      setAnalysisLoading(false);
+    }
+  };
+
+  const handleStartAnalysis = () => {
+    setAnalysisSourcePickerVisible(true);
+  };
+
+  const handleOpenCameraModule = () => {
+    setAnalysisSourcePickerVisible(false);
+    setAnalysisCapturePickerVisible(true);
   };
 
   const MealCard = ({
@@ -758,11 +968,19 @@ function MealPlanResult({
         </ScrollView>
 
         {/* Fixed Copy List Button */}
+        {copyToastMessage ? (
+          <View style={styles.copyToastWrap} pointerEvents="none">
+            <View style={styles.copyToast}>
+              <Ionicons name="checkmark-circle" size={16} color="#D8B4FE" />
+              <Text style={styles.copyToastText}>{copyToastMessage}</Text>
+            </View>
+          </View>
+        ) : null}
         <View style={styles.slBottomBar}>
           <TouchableOpacity
             style={styles.slCopyBtn}
             activeOpacity={0.85}
-            onPress={() => { }}
+            onPress={() => void handleCopyShoppingList()}
           >
             <View style={[styles.slCopyBtnGrad, { backgroundColor: Colors.accentPurple }]}>
               <Ionicons name="copy-outline" size={18} color="#fff" />
@@ -957,9 +1175,15 @@ function MealPlanResult({
 
             {analysisImage ? (
               <View style={styles.analysisPreviewCard}>
-                <Image source={{ uri: analysisImage.uri }} style={styles.analysisPreviewImage} />
+                {isImageMimeType(analysisImage.mimeType) ? (
+                  <Image source={{ uri: analysisImage.uri }} style={styles.analysisPreviewImage} />
+                ) : (
+                  <View style={styles.analysisPreviewFileIcon}>
+                    <Ionicons name="document-text-outline" size={28} color="#fff" />
+                  </View>
+                )}
                 <View style={styles.analysisPreviewMeta}>
-                  <Text style={styles.analysisPreviewLabel}>{t('Selected image')}</Text>
+                  <Text style={styles.analysisPreviewLabel}>{t('Selected file')}</Text>
                   <Text style={styles.analysisPreviewText} numberOfLines={1}>
                     {analysisImage.fileName ?? t('Meal photo')}
                   </Text>
@@ -1178,6 +1402,90 @@ function MealPlanResult({
             )}
 
             <TouchableOpacity style={styles.modalCancelBtn} activeOpacity={0.8} onPress={closeMealModal}>
+              <Text style={styles.modalCancelBtnText}>{t('Close')}</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={analysisSourcePickerVisible}
+        animationType="fade"
+        transparent
+        onRequestClose={() => setAnalysisSourcePickerVisible(false)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={styles.sourcePickerSheet}>
+            <View style={styles.modalHandle} />
+            <Text style={styles.modalEyebrow}>{t('MEAL ANALYSIS')}</Text>
+            <Text style={styles.modalTitle}>{t('Choose Photo Source')}</Text>
+            <Text style={styles.modalSubtitle}>
+              {t('Use your camera or pick a meal photo from your library.')}
+            </Text>
+
+            <TouchableOpacity style={styles.sourcePickerOption} activeOpacity={0.85} onPress={handleOpenCameraModule}>
+              <Ionicons name="camera-outline" size={22} color="#fff" />
+              <View style={styles.sourcePickerOptionTextWrap}>
+                <Text style={styles.sourcePickerOptionTitle}>{t('Camera / Gallery')}</Text>
+                <Text style={styles.sourcePickerOptionSub}>{t('Open camera tools and also choose from your gallery')}</Text>
+              </View>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.sourcePickerOption} activeOpacity={0.85} onPress={() => void handleUploadFile()}>
+              <Ionicons name="document-outline" size={22} color="#fff" />
+              <View style={styles.sourcePickerOptionTextWrap}>
+                <Text style={styles.sourcePickerOptionTitle}>{t('Upload File')}</Text>
+                <Text style={styles.sourcePickerOptionSub}>{t('Choose an image, txt, pdf, docx, or other meal document')}</Text>
+              </View>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.modalCancelBtn}
+              activeOpacity={0.8}
+              onPress={() => setAnalysisSourcePickerVisible(false)}
+            >
+              <Text style={styles.modalCancelBtnText}>{t('Close')}</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={analysisCapturePickerVisible}
+        animationType="fade"
+        transparent
+        onRequestClose={() => setAnalysisCapturePickerVisible(false)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={styles.sourcePickerSheet}>
+            <View style={styles.modalHandle} />
+            <Text style={styles.modalEyebrow}>{t('MEAL ANALYSIS')}</Text>
+            <Text style={styles.modalTitle}>{t('Camera / Gallery')}</Text>
+            <Text style={styles.modalSubtitle}>
+              {t('Choose between taking a new photo or selecting one from your gallery.')}
+            </Text>
+
+            <TouchableOpacity style={styles.sourcePickerOption} activeOpacity={0.85} onPress={() => void handleUseCamera()}>
+              <Ionicons name="camera-outline" size={22} color="#fff" />
+              <View style={styles.sourcePickerOptionTextWrap}>
+                <Text style={styles.sourcePickerOptionTitle}>{t('Use Camera')}</Text>
+                <Text style={styles.sourcePickerOptionSub}>{t('Take a new meal photo')}</Text>
+              </View>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.sourcePickerOption} activeOpacity={0.85} onPress={() => void handlePickFromLibrary()}>
+              <Ionicons name="images-outline" size={22} color="#fff" />
+              <View style={styles.sourcePickerOptionTextWrap}>
+                <Text style={styles.sourcePickerOptionTitle}>{t('Choose from Library')}</Text>
+                <Text style={styles.sourcePickerOptionSub}>{t('Select an existing meal photo')}</Text>
+              </View>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.modalCancelBtn}
+              activeOpacity={0.8}
+              onPress={() => setAnalysisCapturePickerVisible(false)}
+            >
               <Text style={styles.modalCancelBtnText}>{t('Close')}</Text>
             </TouchableOpacity>
           </View>
@@ -2305,6 +2613,43 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontFamily: 'Inter_500Medium',
   },
+  sourcePickerSheet: {
+    backgroundColor: '#13132A',
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    paddingHorizontal: 20,
+    paddingTop: 12,
+    paddingBottom: Platform.OS === 'ios' ? 34 : 20,
+    borderTopWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+  },
+  sourcePickerOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+    backgroundColor: '#0D0D1E',
+    borderRadius: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.07)',
+    marginBottom: 12,
+  },
+  sourcePickerOptionTextWrap: {
+    flex: 1,
+  },
+  sourcePickerOptionTitle: {
+    color: '#fff',
+    fontSize: 15,
+    fontFamily: 'Inter_700Bold',
+    marginBottom: 4,
+  },
+  sourcePickerOptionSub: {
+    color: Colors.textMuted,
+    fontSize: 12,
+    lineHeight: 18,
+    fontFamily: 'Inter_400Regular',
+  },
 
   shoppingBtn: { marginTop: 8, marginBottom: 12 },
   shoppingBtnGrad: { borderRadius: 14, paddingVertical: 16, alignItems: 'center' },
@@ -2327,44 +2672,44 @@ const styles = StyleSheet.create({
   getSuggestionsBtnText: { color: '#fff', fontSize: 13, fontWeight: '700', fontFamily: 'Inter_700Bold', letterSpacing: 1 },
   advicePanel: {
     marginTop: 12,
-    backgroundColor: '#0B0B18',
-    borderRadius: 14,
-    padding: 14,
+    backgroundColor: '#101426',
+    borderRadius: 18,
+    padding: 16,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
+    borderColor: 'rgba(168,85,247,0.18)',
   },
   advicePanelHeader: {
     flexDirection: 'row',
     alignItems: 'flex-start',
     justifyContent: 'space-between',
     gap: 12,
-    marginBottom: 12,
+    marginBottom: 14,
   },
   advicePanelEyebrow: {
-    fontSize: 10,
-    color: Colors.textMuted,
-    letterSpacing: 1.1,
+    fontSize: 11,
+    color: '#C4B5FD',
+    letterSpacing: 1.3,
     textTransform: 'uppercase',
-    fontFamily: 'Inter_400Regular',
-    marginBottom: 4,
+    fontFamily: 'Inter_700Bold',
+    marginBottom: 6,
   },
   advicePanelTitle: {
     color: '#fff',
-    fontSize: 16,
+    fontSize: 18,
     fontFamily: 'Inter_700Bold',
-    lineHeight: 22,
+    lineHeight: 24,
   },
   advicePanelPill: {
     alignSelf: 'flex-start',
-    backgroundColor: 'rgba(168,85,247,0.14)',
-    borderColor: 'rgba(168,85,247,0.25)',
+    backgroundColor: 'rgba(168,85,247,0.18)',
+    borderColor: 'rgba(216,180,254,0.3)',
     borderWidth: 1,
     borderRadius: 999,
-    paddingHorizontal: 10,
+    paddingHorizontal: 12,
     paddingVertical: 6,
   },
   advicePanelPillText: {
-    color: '#C084FC',
+    color: '#F5F3FF',
     fontSize: 11,
     fontFamily: 'Inter_700Bold',
     textTransform: 'uppercase',
@@ -2376,33 +2721,40 @@ const styles = StyleSheet.create({
   adviceItem: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    gap: 10,
-    backgroundColor: 'rgba(255,255,255,0.03)',
-    borderRadius: 12,
-    padding: 12,
+    gap: 12,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 13,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.06)',
   },
   adviceBullet: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    backgroundColor: Colors.primary,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#FDE68A',
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 1,
+    marginTop: 2,
+    shadowColor: '#FDE68A',
+    shadowOpacity: 0.18,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 },
   },
   adviceBulletText: {
-    color: '#050816',
-    fontSize: 12,
+    color: '#23160A',
+    fontSize: 13,
     fontFamily: 'Inter_700Bold',
   },
   adviceItemText: {
-    color: '#fff',
-    fontSize: 13,
-    lineHeight: 19,
-    fontFamily: 'Inter_400Regular',
+    color: '#F8FAFC',
+    fontSize: 14,
+    lineHeight: 22,
+    fontFamily: 'Inter_500Medium',
     flex: 1,
   },
-  adviceFallbackText: { color: '#fff', fontSize: 13, lineHeight: 20, fontFamily: 'Inter_400Regular' },
+  adviceFallbackText: { color: '#F8FAFC', fontSize: 14, lineHeight: 22, fontFamily: 'Inter_500Medium' },
   mealSearchRow: { flexDirection: 'row', gap: 8, marginBottom: 14 },
   mealSearchInput: {
     backgroundColor: 'rgba(255,255,255,0.05)',
@@ -2441,6 +2793,14 @@ const styles = StyleSheet.create({
     height: 72,
     borderRadius: 14,
     backgroundColor: 'rgba(255,255,255,0.06)',
+  },
+  analysisPreviewFileIcon: {
+    width: 72,
+    height: 72,
+    borderRadius: 14,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   analysisPreviewMeta: {
     flex: 1,
@@ -2667,6 +3027,35 @@ const styles = StyleSheet.create({
   slItemNameChecked: { color: Colors.textMuted, textDecorationLine: 'line-through' },
   slItemQty: { fontSize: 13, color: Colors.textMuted, fontFamily: 'Inter_400Regular', textAlign: 'right', maxWidth: 130 },
   slItemQtyChecked: { color: 'rgba(255,255,255,0.2)' },
+  copyToastWrap: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: Platform.OS === 'ios' ? 106 : 94,
+    alignItems: 'center',
+    zIndex: 5,
+  },
+  copyToast: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: 'rgba(16,18,35,0.96)',
+    borderRadius: 999,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(168,85,247,0.28)',
+    shadowColor: '#000',
+    shadowOpacity: 0.25,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 8,
+  },
+  copyToastText: {
+    color: '#fff',
+    fontSize: 13,
+    fontFamily: 'Inter_700Bold',
+  },
 
   slBottomBar: {
     position: 'absolute',

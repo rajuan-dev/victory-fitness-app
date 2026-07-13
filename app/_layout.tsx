@@ -9,8 +9,8 @@ import {
   Inter_700Bold,
 } from '@expo-google-fonts/inter';
 import { Colors } from '../constants/Colors';
-import { fetchCurrentUser, getAuthUser, getValidAuthTokens, setAuthFailureHandler } from '../lib/api';
-import { getPostAuthRoute, isPublicRoute, isRouteAllowedForPlan } from '../lib/access';
+import { clearAuthTokens, fetchCurrentUser, getAuthUser, getValidAuthTokens, setAuthFailureHandler } from '../lib/api';
+import { getPostAuthRoute, isAdminRestrictedFromApp, isPublicRoute, isRouteAllowedForPlan } from '../lib/access';
 import { appendRunLog, formatRunLogMessage } from '../lib/runLog';
 import { LanguageProvider } from '../lib/i18n';
 import { blurActiveElementBeforeNavigation, replaceRoute } from '../lib/navigation';
@@ -54,6 +54,24 @@ export default function RootLayout() {
     const guard = async () => {
       const applyAccess = async (user: Awaited<ReturnType<typeof getAuthUser>>) => {
         if (!user) {
+          return false;
+        }
+
+        if (isAdminRestrictedFromApp(user)) {
+          await clearAuthTokens();
+          if (!isPublicRoute(pathname)) {
+            void appendRunLog({
+              level: 'warning',
+              title: 'Admin app access blocked',
+              message: `Admin session blocked in app for ${pathname}; redirecting to /login.`,
+              route: pathname,
+              context: 'RootLayout',
+            });
+            replaceRoute(router, '/login');
+            return true;
+          }
+
+          setCheckingAccess(false);
           return false;
         }
 
