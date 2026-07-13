@@ -556,17 +556,36 @@ async function buildChallengeProgressReportAsset(challengeId: string) {
     share_message: string;
   }>(`/challenges/${encodeURIComponent(challengeId)}/progress/report`);
 
-  const directory = FileSystem.cacheDirectory || FileSystem.documentDirectory || '';
   const fileName = response.file_name || 'victory-fitness-progress-report.png';
+  const mimeType = response.mime_type || 'image/png';
+  if (Platform.OS === 'web') {
+    return {
+      fileUri: `data:${mimeType};base64,${response.image_base64}`,
+      imageBase64: response.image_base64,
+      shareMessage: response.share_message,
+      mimeType,
+      fileName,
+    };
+  }
+
+  const directory = FileSystem.cacheDirectory || FileSystem.documentDirectory || '';
   const fileUri = `${directory}${fileName}`;
   await FileSystem.writeAsStringAsync(fileUri, response.image_base64, { encoding: FileSystem.EncodingType.Base64 });
   return {
     fileUri,
     imageBase64: response.image_base64,
     shareMessage: response.share_message,
-    mimeType: response.mime_type || 'image/png',
+    mimeType,
     fileName,
   };
+}
+
+async function getWebReportBlob(fileUri: string) {
+  const response = await fetch(fileUri);
+  if (!response.ok) {
+    throw new Error('Unable to prepare the progress card for download.');
+  }
+  return response.blob();
 }
 
 export default function ChallengeProgressScreen() {
@@ -878,9 +897,22 @@ export default function ChallengeProgressScreen() {
       return;
     }
     setReportAction('download');
-    try {
-      const asset = await buildChallengeProgressReportAsset(thread.challenge_id);
-      const shareUrl = Platform.OS === 'android'
+  try {
+    const asset = await buildChallengeProgressReportAsset(thread.challenge_id);
+    if (Platform.OS === 'web' && typeof document !== 'undefined') {
+      const blob = await getWebReportBlob(asset.fileUri);
+      const objectUrl = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = objectUrl;
+      anchor.download = asset.fileName;
+      anchor.rel = 'noopener';
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+      return;
+    }
+    const shareUrl = Platform.OS === 'android'
         ? await FileSystem.getContentUriAsync(asset.fileUri)
         : asset.fileUri;
       await Share.share({
@@ -901,9 +933,25 @@ export default function ChallengeProgressScreen() {
     }
 
     setReportAction('share');
-    try {
-      const asset = await buildChallengeProgressReportAsset(thread.challenge_id);
-      const shareUrl = Platform.OS === 'android'
+  try {
+    const asset = await buildChallengeProgressReportAsset(thread.challenge_id);
+    const webNavigator = Platform.OS === 'web' && typeof navigator !== 'undefined'
+      ? navigator as Navigator & {
+          share?: (data: { title?: string; text?: string; url?: string; files?: File[] }) => Promise<void>;
+          canShare?: (data?: { files?: File[] }) => boolean;
+        }
+      : null;
+    if (webNavigator?.share) {
+      const blob = await getWebReportBlob(asset.fileUri);
+      const file = new File([blob], asset.fileName, { type: asset.mimeType });
+      if (webNavigator.canShare?.({ files: [file] })) {
+        await webNavigator.share({ title: `${thread.title || 'Challenge'} Progress Card`, text: asset.shareMessage, files: [file] });
+      } else {
+        await webNavigator.share({ title: `${thread.title || 'Challenge'} Progress Card`, text: asset.shareMessage });
+      }
+      return;
+    }
+    const shareUrl = Platform.OS === 'android'
         ? await FileSystem.getContentUriAsync(asset.fileUri)
         : asset.fileUri;
       await Share.share({
