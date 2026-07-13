@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import {
+  Alert,
   View,
   Text,
   StyleSheet,
@@ -98,6 +99,14 @@ export default function LoginScreen() {
         return;
       }
       await setAuthTokens(auth);
+      if (auth.returning_user) {
+        Alert.alert(
+          auth.returning_user.title,
+          auth.returning_user.message,
+          [{ text: 'Choose your subscription', onPress: () => replaceRoute(router, '/plan') }, { text: 'Continue', style: 'cancel', onPress: () => replaceRoute(router, getPostAuthRoute(auth.user)) }],
+        );
+        return;
+      }
       replaceRoute(router, getPostAuthRoute(auth.user));
     } catch (error) {
       setErrorDialog(formatAppError(error));

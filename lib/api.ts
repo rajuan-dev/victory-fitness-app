@@ -1463,6 +1463,13 @@ export type AuthResponse = {
   session_token: string;
   token_type: string;
   expires_in: number;
+  returning_user?: {
+    title: string;
+    message: string;
+    action_label: string;
+    action_route: string;
+    trial_started_at?: string;
+  } | null;
   user: {
     id: string;
     name: string;
