@@ -558,7 +558,8 @@ async function buildChallengeProgressReportAsset(challengeId: string) {
 
   const fileName = response.file_name || 'victory-fitness-progress-report.png';
   const mimeType = response.mime_type || 'image/png';
-  if (Platform.OS === 'web') {
+  // Web/PWA must keep the image in memory. expo-file-system has no write API on web.
+  if (Platform.OS === 'web' || typeof FileSystem.writeAsStringAsync !== 'function') {
     return {
       fileUri: `data:${mimeType};base64,${response.image_base64}`,
       imageBase64: response.image_base64,
