@@ -672,6 +672,19 @@ export default function ChallengeProgressScreen() {
     [celebrationDay],
   );
 
+  const exercisesToDisplay = useMemo(() => {
+    if (celebrationExercises && celebrationExercises.length > 0) {
+      return celebrationExercises;
+    }
+    return [
+      'BARBELL BACK SQUAT',
+      'KETTLEBELL GOBLET SQUATS',
+      'LEG PRESS',
+      'DUMBBELL ROMANIAN DEADLIFTS',
+      'SMITH MACHINE CALF RAISES',
+    ];
+  }, [celebrationExercises]);
+
   const unitPointMap = useMemo(
     () => buildUnitPointMap(thread?.plan_days || [], thread?.points || 0),
     [thread?.plan_days, thread?.points],
@@ -1037,6 +1050,14 @@ export default function ChallengeProgressScreen() {
       />
       <Modal visible={Boolean(celebration)} transparent animationType="fade" onRequestClose={() => setCelebration(null)}>
         <View style={styles.celebrationBackdrop}>
+          {/* Backdrop Dot Grid */}
+          <View style={styles.backdropDots} pointerEvents="none">
+            {Array.from({ length: 96 }).map((_, index) => (
+              <View key={`backdrop-dot-${index}`} style={styles.backdropDot} />
+            ))}
+          </View>
+
+          {/* Confetti Animation */}
           {Array.from({ length: 18 }).map((_, index) => (
             <Animated.View
               key={`confetti-${index}`}
@@ -1046,110 +1067,76 @@ export default function ChallengeProgressScreen() {
               ]}
             />
           ))}
-          <View style={styles.celebrationCard}>
-            <View style={styles.celebrationBadge}><Ionicons name="trophy" size={28} color="#1D1600" /></View>
-            <Text style={styles.celebrationEyebrow}>CHALLENGE COMPLETE</Text>
-            <Text style={styles.celebrationTitle}>You showed up today.</Text>
-            <Text style={styles.celebrationText}>Day {celebration?.dayNumber} is complete. Your progress is saved and your points are locked in.</Text>
-            <View style={styles.celebrationPostcard}>
-              <View style={styles.postcardGlowFrame}>
-                <View style={styles.postcardDotGrid}>
-                  <View style={styles.postcardDots} pointerEvents="none">
-                    {Array.from({ length: 48 }).map((_, index) => <View key={`postcard-dot-${index}`} style={styles.postcardDot} />)}
-                  </View>
 
-                  {/* Header Logo */}
-                  <View style={styles.newPostcardLogoContainer}>
-                    <View style={styles.newPostcardAvatarBox}>
-                      {currentUser?.profileImage ? (
-                        <Image source={{ uri: currentUser.profileImage }} style={styles.newPostcardAvatarImage} />
-                      ) : (
-                        <Text style={styles.newPostcardAvatarFallbackText}>?</Text>
-                      )}
-                    </View>
-                    <Text style={styles.newPostcardBrandText}>{t('WORKOUT_CARD_YOUR_VICTORY').toUpperCase()}</Text>
-                  </View>
+          {/* Floating Actions Header (Download, Share, Close) */}
+          <View style={styles.floatingHeaderActions}>
+            <TouchableOpacity style={styles.floatingActionButton} onPress={() => void handleDownloadReport()} disabled={reportAction !== ''}>
+              <Ionicons name="download-outline" size={18} color="#fff" />
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.floatingActionButton} onPress={() => void handleShareCard()} disabled={reportAction !== ''}>
+              <Ionicons name="share-social-outline" size={18} color="#fff" />
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.floatingActionButton} onPress={() => setCelebration(null)}>
+              <Ionicons name="close" size={20} color="#fff" />
+            </TouchableOpacity>
+          </View>
 
-                  {/* Card Section */}
-                  <View style={styles.newPostcardCard}>
-                    <Text style={styles.newPostcardLabel}>{t('WORKOUT_CARD_COMPLETED').toUpperCase()}</Text>
-                    <Text style={styles.newPostcardTitle} numberOfLines={3}>
-                      {(celebrationDay?.title || thread?.title || 'Challenge').toUpperCase()}
-                    </Text>
-                    <View style={styles.newPostcardDivider} />
-                    <View style={styles.newPostcardExercises}>
-                      {(celebrationExercises.length > 0 ? celebrationExercises : ['Challenge day completed']).map((exercise) => (
-                        <View key={exercise} style={styles.newPostcardExerciseRow}>
-                          <View style={styles.newPostcardBullet} />
-                          <Text style={styles.newPostcardExerciseText} numberOfLines={1}>
-                            {exercise.toUpperCase()}
-                          </Text>
-                        </View>
-                      ))}
-                    </View>
-                  </View>
-
-                  {/* Metrics Row */}
-                  <View style={styles.newPostcardMetricsRow}>
-                    <View style={styles.newPostcardMetricTile}>
-                      <Text style={styles.newPostcardMetricLabel}>{t('WORKOUT_CARD_STREAK').toUpperCase()}</Text>
-                      <Text style={styles.newPostcardMetricValue}>
-                        <Text style={{ color: Colors.primary }}>{currentUser?.streak_days ?? 3}</Text> 🔥
-                      </Text>
-                    </View>
-                    <View style={styles.newPostcardMetricTile}>
-                      <Text style={styles.newPostcardMetricLabel}>{t('WORKOUT_CARD_INTENSITY').toUpperCase()}</Text>
-                      <Text style={styles.newPostcardMetricValueGut}>
-                        {thread?.difficulty ? t(thread.difficulty) : t('WORKOUT_CARD_GOOD')}
-                      </Text>
-                    </View>
-                  </View>
-
-                  {/* User Badge Button */}
-                  <View style={styles.newPostcardUserPill}>
-                    <Text style={styles.newPostcardUserPillText}>
-                      {(currentUser?.name || 'ADMIN TESTER').toUpperCase()}
-                    </Text>
-                  </View>
-
-                  {/* Bottom URL */}
-                  <Text style={styles.newPostcardUrl}>VICTORY-FITNESS.APP</Text>
+          {/* Postcard Layout */}
+          <View style={styles.celebrationCardContainer}>
+            {/* Logo Section */}
+            <View style={styles.newPostcardLogoContainer}>
+              <View style={styles.avatarOutlineBox}>
+                <View style={styles.avatarInnerBox}>
+                  <Text style={styles.avatarQuestionMark}>?</Text>
                 </View>
               </View>
-              <Text style={styles.postcardShareLabel}>SHARE YOUR VICTORY</Text>
-              <View style={styles.postcardSocialRow}>
-                <Ionicons name="logo-instagram" size={22} color="#fff" />
-                <Ionicons name="logo-tiktok" size={22} color="#fff" />
-                <Ionicons name="logo-snapchat" size={22} color="#111" />
-                <Ionicons name="logo-twitter" size={22} color="#fff" />
-                <Ionicons name="logo-linkedin" size={22} color="#fff" />
-                <Ionicons name="chatbubble-ellipses-outline" size={22} color="#fff" />
+              <Text style={styles.newPostcardBrandText}>{t('WORKOUT_CARD_YOUR_VICTORY').toUpperCase()}</Text>
+            </View>
+
+            {/* Card Section */}
+            <View style={styles.newPostcardCard}>
+              <Text style={styles.newPostcardLabel}>{t('WORKOUT_CARD_COMPLETED').toUpperCase()}</Text>
+              <Text style={styles.newPostcardTitle} numberOfLines={3}>
+                {(celebrationDay?.title || thread?.title || 'Challenge').toUpperCase()}
+              </Text>
+              <View style={styles.newPostcardDivider} />
+              <View style={styles.newPostcardExercises}>
+                {exercisesToDisplay.map((exercise) => (
+                  <View key={exercise} style={styles.newPostcardExerciseRow}>
+                    <View style={styles.newPostcardBullet} />
+                    <Text style={styles.newPostcardExerciseText} numberOfLines={1}>
+                      {exercise.toUpperCase()}
+                    </Text>
+                  </View>
+                ))}
               </View>
             </View>
-            <View style={styles.cardActions}>
-              <TouchableOpacity
-                style={[styles.cardActionButton, reportAction === 'download' && styles.cardActionButtonBusy]}
-                onPress={() => void handleDownloadReport()}
-                disabled={reportAction !== ''}
-                accessibilityLabel="Download progress card"
-              >
-                <Ionicons name="download-outline" size={21} color={Colors.primary} />
-                <Text style={styles.cardActionText}>Download</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.cardActionButton, reportAction === 'share' && styles.cardActionButtonBusy]}
-                onPress={() => void handleShareCard()}
-                disabled={reportAction !== ''}
-                accessibilityLabel="Share progress card"
-              >
-                <Ionicons name="share-social-outline" size={21} color={Colors.primary} />
-                <Text style={styles.cardActionText}>Share</Text>
-              </TouchableOpacity>
+
+            {/* Metrics Row */}
+            <View style={styles.newPostcardMetricsRow}>
+              <View style={styles.newPostcardMetricTile}>
+                <Text style={styles.newPostcardMetricLabel}>{t('WORKOUT_CARD_STREAK').toUpperCase()}</Text>
+                <Text style={styles.newPostcardMetricValue}>
+                  <Text style={{ color: '#00F0D0' }}>{currentUser?.streak_days ?? 3}</Text> 🔥
+                </Text>
+              </View>
+              <View style={styles.newPostcardMetricTile}>
+                <Text style={styles.newPostcardMetricLabel}>{t('WORKOUT_CARD_INTENSITY').toUpperCase()}</Text>
+                <Text style={styles.newPostcardMetricValueGut}>
+                  {thread?.difficulty ? t(thread.difficulty) : t('WORKOUT_CARD_GOOD')}
+                </Text>
+              </View>
             </View>
-            <TouchableOpacity style={styles.celebrationPrimary} onPress={() => void handleShareReportToCommunity()} disabled={reportAction !== ''}>
-              <Ionicons name="people-outline" size={18} color="#06201C" /><Text style={styles.celebrationPrimaryText}>Share to Community</Text>
+
+            {/* User Badge Button */}
+            <TouchableOpacity style={styles.newPostcardUserPill} activeOpacity={0.85} onPress={() => setCelebration(null)}>
+              <Text style={styles.newPostcardUserPillText}>
+                {(currentUser?.name || 'ADMIN TESTER').toUpperCase()}
+              </Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.celebrationClose} onPress={() => setCelebration(null)}><Text style={styles.celebrationCloseText}>Continue</Text></TouchableOpacity>
+
+            {/* Bottom URL */}
+            <Text style={styles.newPostcardUrl}>VICTORY-FITNESS.APP</Text>
           </View>
         </View>
       </Modal>
@@ -1945,68 +1932,113 @@ const styles = StyleSheet.create({
   dayDoneButtonText: { color: Colors.primary, fontSize: 12, fontFamily: 'Inter_700Bold' },
   dayDoneButtonTextCompleted: { color: '#001311' },
   completedDayActions: { flexDirection: 'row', gap: 10, marginTop: 10 },
-  celebrationBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.82)', alignItems: 'center', justifyContent: 'center', padding: 20, overflow: 'hidden' },
+  celebrationBackdrop: { flex: 1, backgroundColor: '#050B14', alignItems: 'center', justifyContent: 'center', padding: 20, overflow: 'hidden' },
   confettiPiece: { position: 'absolute', top: -20, width: 8, height: 16, borderRadius: 2 },
   celebrationCard: { width: '100%', maxWidth: 390, backgroundColor: '#101B2A', borderRadius: 24, borderWidth: 1, borderColor: 'rgba(0,240,208,0.32)', padding: 20, alignItems: 'center' },
   celebrationBadge: { width: 58, height: 58, borderRadius: 29, backgroundColor: Colors.accentGold, alignItems: 'center', justifyContent: 'center', marginBottom: 12 },
   celebrationEyebrow: { color: Colors.primary, fontSize: 11, letterSpacing: 1.3, fontFamily: 'Inter_700Bold' },
   celebrationTitle: { color: '#fff', fontSize: 24, textAlign: 'center', fontFamily: 'Inter_700Bold', marginTop: 6 },
   celebrationText: { color: Colors.textSecondary, fontSize: 13, lineHeight: 19, textAlign: 'center', fontFamily: 'Inter_400Regular', marginTop: 8 },
-  celebrationPostcard: { width: '100%', backgroundColor: '#050B14', borderRadius: 20, padding: 4, marginTop: 16, alignItems: 'center' },
-  postcardGlowFrame: { width: '100%', borderRadius: 18, backgroundColor: '#081220', padding: 14, borderWidth: 1, borderColor: 'rgba(255,255,255,0.06)' },
-  postcardDotGrid: { borderRadius: 12, paddingHorizontal: 4, paddingVertical: 4, overflow: 'hidden', width: '100%' },
+  celebrationPostcard: { width: '100%', alignItems: 'center' },
   postcardDots: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', alignContent: 'space-between', opacity: 0.15 },
   postcardDot: { width: 3, height: 3, borderRadius: 1.5, backgroundColor: Colors.primary },
+  
+  /* Backdrop Styles */
+  backdropDots: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    alignContent: 'space-between',
+    opacity: 0.12,
+  },
+  backdropDot: {
+    width: 3,
+    height: 3,
+    borderRadius: 1.5,
+    backgroundColor: '#00B7F0',
+    margin: 14,
+  },
+  celebrationCardContainer: {
+    width: '100%',
+    maxWidth: 390,
+    alignItems: 'center',
+  },
+  floatingHeaderActions: {
+    position: 'absolute',
+    top: 24,
+    right: 20,
+    flexDirection: 'row',
+    gap: 10,
+    zIndex: 999,
+  },
+  floatingActionButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.12)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarOutlineBox: {
+    width: 44,
+    height: 44,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.15)',
+    backgroundColor: '#050B14',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 8,
+  },
+  avatarInnerBox: {
+    width: 28,
+    height: 28,
+    backgroundColor: '#00B7F0',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarQuestionMark: {
+    color: '#ffffff',
+    fontSize: 18,
+    fontWeight: '900',
+    fontFamily: 'Inter_900Black',
+  },
   
   /* New Postcard Redesign Styles */
   newPostcardLogoContainer: {
     alignItems: 'center',
     marginBottom: 20,
   },
-  newPostcardAvatarBox: {
-    width: 44,
-    height: 44,
-    borderRadius: 8,
-    borderWidth: 1.5,
-    borderColor: Colors.primary,
-    backgroundColor: '#0F172A',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 10,
-  },
-  newPostcardAvatarImage: {
-    width: '100%',
-    height: '100%',
-    borderRadius: 6,
-  },
-  newPostcardAvatarFallbackText: {
-    color: '#fff',
-    fontSize: 22,
-    fontWeight: '800',
-    fontFamily: 'Inter_700Bold',
-  },
   newPostcardBrandText: {
     color: '#F8FAFC',
-    fontSize: 32,
+    fontSize: 34,
     fontFamily: 'Inter_900Black',
     fontWeight: '900',
-    letterSpacing: 2,
+    letterSpacing: -1,
     textAlign: 'center',
+    marginTop: 4,
   },
   newPostcardCard: {
-    backgroundColor: '#121214',
-    borderRadius: 20,
+    backgroundColor: '#111113',
+    borderRadius: 24,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
+    borderColor: 'rgba(255, 255, 255, 0.06)',
     padding: 24,
     marginBottom: 16,
     width: '100%',
   },
   newPostcardLabel: {
-    color: Colors.primary,
+    color: '#00B7F0',
     fontSize: 10,
     letterSpacing: 1.5,
     fontFamily: 'Inter_700Bold',
+    fontWeight: '700',
     marginBottom: 12,
     textAlign: 'center',
   },
@@ -2017,16 +2049,18 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter_900Black',
     fontWeight: '900',
     textAlign: 'center',
-    marginBottom: 16,
+    marginBottom: 12,
   },
   newPostcardDivider: {
     height: 1,
-    backgroundColor: 'rgba(255,255,255,0.1)',
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
     marginBottom: 16,
     width: '100%',
   },
   newPostcardExercises: {
     gap: 12,
+    width: '100%',
+    paddingLeft: 12,
   },
   newPostcardExerciseRow: {
     flexDirection: 'row',
@@ -2037,12 +2071,12 @@ const styles = StyleSheet.create({
     width: 6,
     height: 6,
     borderRadius: 3,
-    backgroundColor: Colors.primary,
+    backgroundColor: '#00B7F0',
   },
   newPostcardExerciseText: {
     flex: 1,
-    color: '#E2E8F0',
-    fontSize: 11,
+    color: '#CBD5E1',
+    fontSize: 12,
     fontFamily: 'Inter_700Bold',
     fontWeight: '700',
     letterSpacing: 0.5,
@@ -2055,35 +2089,37 @@ const styles = StyleSheet.create({
   },
   newPostcardMetricTile: {
     flex: 1,
-    backgroundColor: '#121214',
+    backgroundColor: '#111113',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
-    borderRadius: 14,
+    borderColor: 'rgba(255, 255, 255, 0.06)',
+    borderRadius: 16,
     paddingVertical: 14,
     alignItems: 'center',
     justifyContent: 'center',
   },
   newPostcardMetricLabel: {
-    color: 'rgba(255,255,255,0.4)',
-    fontSize: 10,
-    letterSpacing: 1,
+    color: 'rgba(255, 255, 255, 0.4)',
+    fontSize: 9,
+    letterSpacing: 1.5,
     fontFamily: 'Inter_700Bold',
-    marginBottom: 6,
+    fontWeight: '700',
+    marginBottom: 4,
+    textAlign: 'center',
   },
   newPostcardMetricValue: {
     color: '#fff',
-    fontSize: 18,
-    fontFamily: 'Inter_800ExtraBold',
-    fontWeight: '800',
+    fontSize: 22,
+    fontFamily: 'Inter_900Black',
+    fontWeight: '900',
   },
   newPostcardMetricValueGut: {
-    color: '#F43F5E',
-    fontSize: 18,
-    fontFamily: 'Inter_800ExtraBold',
-    fontWeight: '800',
+    color: '#FF4B72',
+    fontSize: 22,
+    fontFamily: 'Inter_900Black',
+    fontWeight: '900',
   },
   newPostcardUserPill: {
-    backgroundColor: Colors.primary,
+    backgroundColor: '#00B7F0',
     borderRadius: 999,
     paddingVertical: 10,
     paddingHorizontal: 28,
@@ -2091,14 +2127,15 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   newPostcardUserPillText: {
-    color: '#000',
+    color: '#000000',
     fontSize: 12,
     fontFamily: 'Inter_900Black',
     fontWeight: '900',
-    letterSpacing: 1,
+    letterSpacing: 1.5,
+    textAlign: 'center',
   },
   newPostcardUrl: {
-    color: 'rgba(255,255,255,0.3)',
+    color: 'rgba(255, 255, 255, 0.3)',
     textAlign: 'center',
     fontSize: 10,
     letterSpacing: 3,
