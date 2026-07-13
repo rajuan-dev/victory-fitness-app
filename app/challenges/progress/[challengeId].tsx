@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
+  Animated,
   Modal,
   Platform,
   RefreshControl,
@@ -98,6 +99,11 @@ type UnitPointMap = Record<string, number>;
 type CompletedReportEntry = {
   title: string;
   detail: string;
+};
+
+type CelebrationState = {
+  dayNumber: number;
+  points: number;
 };
 
 const GOOGLE_PLAY_URL = 'https://play.google.com/store';
@@ -582,7 +588,9 @@ export default function ChallengeProgressScreen() {
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({});
   const [videoModal, setVideoModal] = useState<{ title: string; videoUrl: string } | null>(null);
   const [dayCompletionConfirm, setDayCompletionConfirm] = useState<CompletionConfirmState | null>(null);
-  const [reportAction, setReportAction] = useState<'download' | 'community' | ''>('');
+  const [reportAction, setReportAction] = useState<'download' | 'share' | 'community' | ''>('');
+  const [celebration, setCelebration] = useState<CelebrationState | null>(null);
+  const celebrationAnimation = React.useRef(new Animated.Value(0)).current;
   const [errorDialog, setErrorDialog] = useState<{ title: string; message: string } | null>(null);
 
   const blurFocusedElement = useCallback(() => {
@@ -629,6 +637,16 @@ export default function ChallengeProgressScreen() {
     const elapsedDays = Math.max(0, Math.floor(msDiff / (1000 * 60 * 60 * 24)));
     return Math.min(Math.max(1, elapsedDays + 1), totalDays);
   }, [thread?.started_at, currentPlanDayNumber, thread?.duration_days, thread?.plan_days.length]);
+
+  const celebrationDay = useMemo(
+    () => thread?.plan_days.find((day) => day.day_number === celebration?.dayNumber) ?? null,
+    [celebration?.dayNumber, thread?.plan_days],
+  );
+
+  const celebrationExercises = useMemo(
+    () => (celebrationDay?.sections || []).flatMap((section) => section.exercises.map((exercise) => exercise.name)).slice(0, 5),
+    [celebrationDay],
+  );
 
   const unitPointMap = useMemo(
     () => buildUnitPointMap(thread?.plan_days || [], thread?.points || 0),
@@ -701,6 +719,13 @@ export default function ChallengeProgressScreen() {
   }, [loadThread]);
 
   const applyPlanProgress = useCallback((response: ChallengePlanProgressResponse) => {
+    const completedDay = response.viewer_plan_progress?.find((next) => next.completed && !thread?.viewer_plan_progress?.find((previous) => previous.day_number === next.day_number)?.completed);
+    if (completedDay) {
+      const completedPlanDay = thread?.plan_days.find((day) => day.day_number === completedDay.day_number);
+      setCelebration({ dayNumber: completedDay.day_number, points: completedPlanDay ? getDayPoints(completedPlanDay, unitPointMap) : 0 });
+      celebrationAnimation.setValue(0);
+      Animated.timing(celebrationAnimation, { toValue: 1, duration: 900, useNativeDriver: true }).start();
+    }
     setThread((current) => {
       if (!current || current.challenge_id !== response.challenge_id) {
         return current;
@@ -713,7 +738,7 @@ export default function ChallengeProgressScreen() {
         viewer_plan_progress: Array.isArray(response.viewer_plan_progress) ? response.viewer_plan_progress : [],
       };
     });
-  }, []);
+  }, [celebrationAnimation, thread, unitPointMap]);
 
   const openLinkedWorkout = useCallback((exercise: ChallengePlanExercise) => {
     const linkedVideoUrl = exercise.workout_video_url
@@ -855,13 +880,39 @@ export default function ChallengeProgressScreen() {
     setReportAction('download');
     try {
       const asset = await buildChallengeProgressReportAsset(thread.challenge_id);
+      const shareUrl = Platform.OS === 'android'
+        ? await FileSystem.getContentUriAsync(asset.fileUri)
+        : asset.fileUri;
       await Share.share({
         title: `${thread?.title || 'Challenge'} Progress Report`,
-        url: asset.fileUri,
+        url: shareUrl,
         message: asset.shareMessage,
       });
     } catch (error) {
       setErrorDialog(formatAppError(error, 'Failed to export the progress report.'));
+    } finally {
+      setReportAction('');
+    }
+  }, [thread]);
+
+  const handleShareCard = useCallback(async () => {
+    if (!thread) {
+      return;
+    }
+
+    setReportAction('share');
+    try {
+      const asset = await buildChallengeProgressReportAsset(thread.challenge_id);
+      const shareUrl = Platform.OS === 'android'
+        ? await FileSystem.getContentUriAsync(asset.fileUri)
+        : asset.fileUri;
+      await Share.share({
+        title: `${thread.title || 'Challenge'} Progress Card`,
+        url: shareUrl,
+        message: asset.shareMessage,
+      });
+    } catch (error) {
+      setErrorDialog(formatAppError(error, 'Failed to share the progress card.'));
     } finally {
       setReportAction('');
     }
@@ -913,6 +964,83 @@ export default function ChallengeProgressScreen() {
         message={errorDialog?.message ?? ''}
         onClose={() => setErrorDialog(null)}
       />
+      <Modal visible={Boolean(celebration)} transparent animationType="fade" onRequestClose={() => setCelebration(null)}>
+        <View style={styles.celebrationBackdrop}>
+          {Array.from({ length: 18 }).map((_, index) => (
+            <Animated.View
+              key={`confetti-${index}`}
+              style={[
+                styles.confettiPiece,
+                { left: `${5 + ((index * 37) % 90)}%`, backgroundColor: index % 3 === 0 ? Colors.accentGold : index % 3 === 1 ? Colors.primary : '#F472B6', transform: [{ translateY: celebrationAnimation.interpolate({ inputRange: [0, 1], outputRange: [-80 - index * 8, 480 + index * 14] }) }, { rotate: `${index * 24}deg` }] },
+              ]}
+            />
+          ))}
+          <View style={styles.celebrationCard}>
+            <View style={styles.celebrationBadge}><Ionicons name="trophy" size={28} color="#1D1600" /></View>
+            <Text style={styles.celebrationEyebrow}>CHALLENGE COMPLETE</Text>
+            <Text style={styles.celebrationTitle}>You showed up today.</Text>
+            <Text style={styles.celebrationText}>Day {celebration?.dayNumber} is complete. Your progress is saved and your points are locked in.</Text>
+            <View style={styles.celebrationPostcard}>
+              <View style={styles.postcardGlowFrame}>
+                <View style={styles.postcardDotGrid}>
+                  <View style={styles.postcardDots} pointerEvents="none">
+                    {Array.from({ length: 48 }).map((_, index) => <View key={`postcard-dot-${index}`} style={styles.postcardDot} />)}
+                  </View>
+                  <Text style={styles.postcardBrand}>V I C T O R Y</Text>
+                  <Text style={styles.postcardSubtitle}>F I T N E S S</Text>
+                  <Text style={styles.postcardLabel}>WORKOUT COMPLETED</Text>
+                  <Text style={styles.postcardTitle} numberOfLines={3}>{celebrationDay?.title || thread?.title || 'Challenge'}</Text>
+                  <View style={styles.postcardDivider} />
+                  <View style={styles.postcardExercises}>
+                    {(celebrationExercises.length > 0 ? celebrationExercises : ['Challenge day completed']).map((exercise) => (
+                      <View key={exercise} style={styles.postcardExerciseRow}><View style={styles.postcardBullet} /><Text style={styles.postcardExerciseText} numberOfLines={1}>{exercise}</Text></View>
+                    ))}
+                  </View>
+                  <View style={styles.postcardStatsGrid}>
+                    <View style={styles.postcardStatTile}><Text style={styles.postcardStatLabel}>DAY</Text><Text style={styles.postcardStatValue}>{celebration?.dayNumber}</Text></View>
+                    <View style={styles.postcardStatTile}><Text style={styles.postcardStatLabel}>POINTS</Text><Text style={styles.postcardStatValue}>+{celebration?.points || thread?.points || 0}</Text></View>
+                  </View>
+                  <View style={styles.postcardCta}><Text style={styles.postcardCtaText}>KEEP GOING</Text></View>
+                  <Text style={styles.postcardUrl}>VICTORY-FITNESS.APP</Text>
+                </View>
+              </View>
+              <Text style={styles.postcardShareLabel}>SHARE YOUR VICTORY</Text>
+              <View style={styles.postcardSocialRow}>
+                <Ionicons name="logo-instagram" size={22} color="#fff" />
+                <Ionicons name="logo-tiktok" size={22} color="#fff" />
+                <Ionicons name="logo-snapchat" size={22} color="#111" />
+                <Ionicons name="logo-twitter" size={22} color="#fff" />
+                <Ionicons name="logo-linkedin" size={22} color="#fff" />
+                <Ionicons name="chatbubble-ellipses-outline" size={22} color="#fff" />
+              </View>
+            </View>
+            <View style={styles.cardActions}>
+              <TouchableOpacity
+                style={[styles.cardActionButton, reportAction === 'download' && styles.cardActionButtonBusy]}
+                onPress={() => void handleDownloadReport()}
+                disabled={reportAction !== ''}
+                accessibilityLabel="Download progress card"
+              >
+                <Ionicons name="download-outline" size={21} color={Colors.primary} />
+                <Text style={styles.cardActionText}>Download</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.cardActionButton, reportAction === 'share' && styles.cardActionButtonBusy]}
+                onPress={() => void handleShareCard()}
+                disabled={reportAction !== ''}
+                accessibilityLabel="Share progress card"
+              >
+                <Ionicons name="share-social-outline" size={21} color={Colors.primary} />
+                <Text style={styles.cardActionText}>Share</Text>
+              </TouchableOpacity>
+            </View>
+            <TouchableOpacity style={styles.celebrationPrimary} onPress={() => void handleShareReportToCommunity()} disabled={reportAction !== ''}>
+              <Ionicons name="people-outline" size={18} color="#06201C" /><Text style={styles.celebrationPrimaryText}>Share to Community</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.celebrationClose} onPress={() => setCelebration(null)}><Text style={styles.celebrationCloseText}>Continue</Text></TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
       <Modal
         visible={Boolean(dayCompletionConfirm)}
         transparent
@@ -1648,5 +1776,45 @@ const styles = StyleSheet.create({
   },
   dayDoneButtonText: { color: Colors.primary, fontSize: 12, fontFamily: 'Inter_700Bold' },
   dayDoneButtonTextCompleted: { color: '#001311' },
+  celebrationBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.82)', alignItems: 'center', justifyContent: 'center', padding: 20, overflow: 'hidden' },
+  confettiPiece: { position: 'absolute', top: -20, width: 8, height: 16, borderRadius: 2 },
+  celebrationCard: { width: '100%', maxWidth: 390, backgroundColor: '#101B2A', borderRadius: 24, borderWidth: 1, borderColor: 'rgba(0,240,208,0.32)', padding: 20, alignItems: 'center' },
+  celebrationBadge: { width: 58, height: 58, borderRadius: 29, backgroundColor: Colors.accentGold, alignItems: 'center', justifyContent: 'center', marginBottom: 12 },
+  celebrationEyebrow: { color: Colors.primary, fontSize: 11, letterSpacing: 1.3, fontFamily: 'Inter_700Bold' },
+  celebrationTitle: { color: '#fff', fontSize: 24, textAlign: 'center', fontFamily: 'Inter_700Bold', marginTop: 6 },
+  celebrationText: { color: Colors.textSecondary, fontSize: 13, lineHeight: 19, textAlign: 'center', fontFamily: 'Inter_400Regular', marginTop: 8 },
+  celebrationPostcard: { width: '100%', backgroundColor: '#1B3047', borderRadius: 14, padding: 9, marginTop: 16, alignItems: 'center' },
+  postcardGlowFrame: { width: '100%', borderRadius: 13, borderWidth: 3, borderColor: '#00D8F5', backgroundColor: '#041624', padding: 7, shadowColor: '#00D8F5', shadowOpacity: 0.65, shadowRadius: 12, elevation: 7 },
+  postcardDotGrid: { borderRadius: 7, paddingHorizontal: 12, paddingVertical: 13, backgroundColor: '#061D2D', overflow: 'hidden' },
+  postcardDots: { position: 'absolute', top: 7, left: 7, right: 7, bottom: 7, flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', alignContent: 'space-between', opacity: 0.35 },
+  postcardDot: { width: 2, height: 2, borderRadius: 1, backgroundColor: '#21B7E7' },
+  postcardBrand: { color: '#F7FAFC', textAlign: 'center', fontSize: 21, letterSpacing: 2, fontFamily: 'Inter_700Bold' },
+  postcardSubtitle: { color: Colors.primary, textAlign: 'center', fontSize: 8, letterSpacing: 3.5, marginTop: 1, fontFamily: 'Inter_700Bold' },
+  postcardLabel: { color: '#00B7F0', textAlign: 'center', fontSize: 9, letterSpacing: 1.1, fontFamily: 'Inter_700Bold', marginTop: 14 },
+  postcardTitle: { color: '#F8FAFC', textAlign: 'center', fontSize: 20, lineHeight: 23, fontFamily: 'Inter_700Bold', marginTop: 4 },
+  postcardDivider: { height: 1, backgroundColor: 'rgba(255,255,255,0.18)', marginVertical: 10 },
+  postcardExercises: { gap: 5 },
+  postcardExerciseRow: { flexDirection: 'row', alignItems: 'center', gap: 7 },
+  postcardBullet: { width: 5, height: 5, borderRadius: 3, backgroundColor: Colors.primary },
+  postcardExerciseText: { flex: 1, color: '#E5E7EB', fontSize: 10, fontFamily: 'Inter_400Regular' },
+  postcardStatsGrid: { flexDirection: 'row', gap: 7, marginTop: 12 },
+  postcardStatTile: { flex: 1, alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.32)', borderWidth: 1, borderColor: 'rgba(0,240,208,0.18)', borderRadius: 8, paddingVertical: 7 },
+  postcardStatLabel: { color: '#CBD5E1', fontSize: 8, letterSpacing: 0.7, fontFamily: 'Inter_700Bold' },
+  postcardStatValue: { color: Colors.primary, fontSize: 16, fontFamily: 'Inter_700Bold', marginTop: 2 },
+  postcardCta: { alignSelf: 'center', backgroundColor: '#00C9EF', borderRadius: 999, paddingHorizontal: 22, paddingVertical: 7, marginTop: 10 },
+  postcardCtaText: { color: '#03212A', fontSize: 10, fontFamily: 'Inter_700Bold' },
+  postcardUrl: { color: '#A8B4C5', textAlign: 'center', fontSize: 8, letterSpacing: 1.5, marginTop: 9, fontFamily: 'Inter_700Bold' },
+  postcardShareLabel: { color: '#E5E7EB', fontSize: 10, letterSpacing: 1.2, fontFamily: 'Inter_700Bold', marginTop: 12 },
+  postcardSocialRow: { flexDirection: 'row', justifyContent: 'space-around', alignItems: 'center', width: '100%', marginTop: 8, paddingHorizontal: 4 },
+  celebrationPrimary: { width: '100%', flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 8, backgroundColor: Colors.primary, borderRadius: 12, paddingVertical: 13, marginTop: 16 },
+  celebrationPrimaryText: { color: '#06201C', fontSize: 13, fontFamily: 'Inter_700Bold' },
+  celebrationSecondary: { width: '100%', flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 8, borderWidth: 1, borderColor: 'rgba(0,240,208,0.35)', borderRadius: 12, paddingVertical: 12, marginTop: 9 },
+  celebrationSecondaryText: { color: Colors.primary, fontSize: 13, fontFamily: 'Inter_700Bold' },
+  cardActions: { width: '100%', flexDirection: 'row', gap: 10, marginTop: 12 },
+  cardActionButton: { flex: 1, minHeight: 54, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderWidth: 1, borderColor: 'rgba(0,240,208,0.32)', borderRadius: 12, backgroundColor: 'rgba(0,240,208,0.08)' },
+  cardActionButtonBusy: { opacity: 0.5 },
+  cardActionText: { color: Colors.primary, fontSize: 13, fontFamily: 'Inter_700Bold' },
+  celebrationClose: { paddingVertical: 10, marginTop: 3 },
+  celebrationCloseText: { color: Colors.textMuted, fontSize: 12, fontFamily: 'Inter_600SemiBold' },
   buttonDisabled: { opacity: 0.5 },
 });
