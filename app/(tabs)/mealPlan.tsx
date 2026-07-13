@@ -51,6 +51,7 @@ const NUTRITION_PLAN_POLL_INTERVAL_MS = 3000;
 const NUTRITION_PLAN_POLL_MAX_ATTEMPTS = 60;
 const GENDER_PLACEHOLDER = 'Please select...';
 const PLAN_DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] as const;
+const MEAL_KEYS = ['breakfast', 'lunch', 'dinner'] as const;
 type PlanTabId = 'my_plan' | 'tracker' | 'meal_analysis';
 type MealKey = 'breakfast' | 'lunch' | 'dinner';
 type AnalysisImageAsset = {
@@ -211,6 +212,21 @@ function OptionList({
 function getCurrentPlanDay() {
   const dayIndex = new Date().getDay();
   return PLAN_DAYS[(dayIndex + 6) % 7];
+}
+
+function mealCompletionKey(day: string, mealKey: string) {
+  return `${day}-${mealKey}`;
+}
+
+function isCompletionTrue(value: unknown) {
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'string') return ['true', '1', 'yes'].includes(value.trim().toLowerCase());
+  return value === 1;
+}
+
+function getNextPlanDay(day: string) {
+  const index = PLAN_DAYS.indexOf(day as (typeof PLAN_DAYS)[number]);
+  return index >= 0 && index < PLAN_DAYS.length - 1 ? PLAN_DAYS[index + 1] : null;
 }
 
 type MealEntry = { name: string; desc: string; kcal: number; p: number; c: number; f: number; ingredients: string[]; instructions?: string[]; };
@@ -392,7 +408,7 @@ function MealPlanResult({
       }
 
       Object.entries(meals).forEach(([mealKey, completed]) => {
-        flat[mealCompletionKey(day, mealKey)] = Boolean(completed);
+        flat[mealCompletionKey(day, mealKey)] = isCompletionTrue(completed);
       });
     });
 
@@ -483,7 +499,6 @@ function MealPlanResult({
   };
 
   const toggleExpand = (key: string) => setExpanded(prev => ({ ...prev, [key]: !prev[key] }));
-  const mealCompletionKey = (day: string, mealKey: string) => `${day}-${mealKey}`;
   const isMealComplete = (day: string, mealKey: string) => Boolean(mealCompletions[mealCompletionKey(day, mealKey)]);
   const setMealCompletion = async (day: string, mealKey: string, completed: boolean) => {
     const updatedPlan = await updateNutritionMealCompletion({
@@ -492,7 +507,20 @@ function MealPlanResult({
       completed,
     });
     setGeneratedPlan(updatedPlan);
-    setMealCompletions(normalizeMealCompletions(updatedPlan));
+    const nextMealCompletions = normalizeMealCompletions(updatedPlan);
+    setMealCompletions(nextMealCompletions);
+
+    if (completed) {
+      const currentDayComplete = MEAL_KEYS.every((key) =>
+        Boolean(nextMealCompletions[mealCompletionKey(day, key)]),
+      );
+      if (currentDayComplete) {
+        const nextPlanDay = getNextPlanDay(day);
+        if (nextPlanDay) {
+          setActiveDay(nextPlanDay);
+        }
+      }
+    }
   };
   const openMealModal = (day: string, mealKey: string, mealLabel: string, meal: MealEntry, expandKey: string) => {
     const cardKey = mealCompletionKey(day, mealKey);
@@ -550,6 +578,15 @@ function MealPlanResult({
     { key: 'lunch', label: getMealLabel('lunch', t), meal: day.lunch, completed: isMealComplete(activeDay, 'lunch') },
     { key: 'dinner', label: getMealLabel('dinner', t), meal: day.dinner, completed: isMealComplete(activeDay, 'dinner') },
   ];
+  const orderedMealCards = [
+    { key: 'breakfast' as MealKey, label: t('Breakfast'), meal: day.breakfast, expandKey: `${activeDay}-b` },
+    { key: 'lunch' as MealKey, label: t('Lunch'), meal: day.lunch, expandKey: `${activeDay}-l` },
+    { key: 'dinner' as MealKey, label: t('Dinner'), meal: day.dinner, expandKey: `${activeDay}-d` },
+  ].sort((first, second) => {
+    const firstCompleted = isMealComplete(activeDay, first.key);
+    const secondCompleted = isMealComplete(activeDay, second.key);
+    return Number(firstCompleted) - Number(secondCompleted);
+  });
   const completedMealsCount = dayMealStatuses.filter((item) => item.completed).length;
   const completedDayTotals = dayMealStatuses
     .filter((item) => item.completed)
@@ -1022,9 +1059,16 @@ function MealPlanResult({
                 <View style={styles.totalsItem}><Text style={styles.totalsIcon}>🫒</Text><Text style={styles.totalsVal}>{totalF}g F</Text></View>
               </View>
             </View>
-            <MealCard dayLabel={activeDay} mealKey="breakfast" label={t('Breakfast')} meal={day.breakfast} expandKey={`${activeDay}-b`} />
-            <MealCard dayLabel={activeDay} mealKey="lunch" label={t('Lunch')} meal={day.lunch} expandKey={`${activeDay}-l`} />
-            <MealCard dayLabel={activeDay} mealKey="dinner" label={t('Dinner')} meal={day.dinner} expandKey={`${activeDay}-d`} />
+            {orderedMealCards.map((mealCard) => (
+              <MealCard
+                key={`${activeDay}-${mealCard.key}`}
+                dayLabel={activeDay}
+                mealKey={mealCard.key}
+                label={mealCard.label}
+                meal={mealCard.meal}
+                expandKey={mealCard.expandKey}
+              />
+            ))}
             <TouchableOpacity style={styles.shoppingBtn} activeOpacity={0.85} onPress={() => setShowShopping(true)}>
               <View style={[styles.shoppingBtnGrad, { backgroundColor: Colors.accentPurple }]}>
                 <Text style={styles.shoppingBtnText}>{t('Weekly Shopping List')}</Text>

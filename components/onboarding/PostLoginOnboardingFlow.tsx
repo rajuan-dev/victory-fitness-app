@@ -26,6 +26,7 @@ import {
 } from '../../lib/onboarding';
 import { LanguageCode, useLanguage } from '../../lib/i18n';
 import { replaceRoute } from '../../lib/navigation';
+import { getPostAuthRoute } from '../../lib/access';
 
 const LANGUAGE_OPTIONS: Array<{ value: OnboardingLanguage; label: string }> = [
   { value: 'en', label: 'English' },
@@ -246,8 +247,8 @@ export default function PostLoginOnboardingFlow({ user }: Props) {
           suggestion: finalData.suggestion,
           completed: true,
         });
-        await updateCurrentUserProfile({ onboarding_completed: true });
-        replaceRoute(router, '/plan');
+        const updatedUser = await updateCurrentUserProfile({ onboarding_completed: true });
+        replaceRoute(router, getPostAuthRoute(updatedUser));
       } finally {
         setSaving(false);
       }

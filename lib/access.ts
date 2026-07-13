@@ -147,6 +147,16 @@ export function isPlanSelectionRoute(pathname: string): boolean {
   return pathname === PLAN_PATH;
 }
 
+function hasPreviouslySelectedPlan(user?: Pick<AuthUser, 'subscription_tier' | 'subscription_status' | 'subscription_is_purchased'> | null) {
+  const tier = normalizeSubscriptionTier(user?.subscription_tier);
+  const status = String(user?.subscription_status ?? '').trim().toUpperCase();
+  return tier !== 'NONE' && (status === 'ACTIVE' || Boolean(user?.subscription_is_purchased));
+}
+
+function hasCompletedSetup(user?: Pick<AuthUser, 'onboarding_completed' | 'subscription_tier' | 'subscription_status' | 'subscription_is_purchased'> | null) {
+  return Boolean(user?.onboarding_completed) || hasPreviouslySelectedPlan(user);
+}
+
 export function isPublicRoute(pathname: string): boolean {
   return ALLOWED_PUBLIC_PATHS.some((route) => pathname === route || pathname.startsWith(`${route}/`));
 }
@@ -155,23 +165,21 @@ export function isAdminRestrictedFromApp(user?: Pick<AuthUser, 'is_admin'> | nul
   return Boolean(user?.is_admin);
 }
 
-export function getPostAuthRoute(user?: Pick<AuthUser, 'id' | 'is_admin' | 'subscription_tier' | 'subscription_status' | 'onboarding_completed'> | null): string {
+export function getPostAuthRoute(user?: Pick<AuthUser, 'id' | 'is_admin' | 'subscription_tier' | 'subscription_status' | 'subscription_is_purchased' | 'onboarding_completed'> | null): string {
   if (!user) {
     return '/login';
   }
   if (isAdminRestrictedFromApp(user)) {
     return '/login';
   }
-  const onboardingCompleted = Boolean(user.onboarding_completed);
-  if (!onboardingCompleted) {
+  if (!hasCompletedSetup(user)) {
     return '/onboarding';
   }
   return isSubscriptionActive(user) ? '/(tabs)' : PLAN_PATH;
 }
 
-export function isRouteAllowedForPlan(pathname: string, user?: Pick<AuthUser, 'id' | 'is_admin' | 'subscription_tier' | 'subscription_status' | 'onboarding_completed'> | null): boolean {
-  const onboardingCompleted = Boolean(user?.onboarding_completed);
-  if (user && !onboardingCompleted) {
+export function isRouteAllowedForPlan(pathname: string, user?: Pick<AuthUser, 'id' | 'is_admin' | 'subscription_tier' | 'subscription_status' | 'subscription_is_purchased' | 'onboarding_completed'> | null): boolean {
+  if (user && !hasCompletedSetup(user)) {
     return pathname === '/onboarding' || pathname === '/login' || pathname === '/register' || pathname === '/verification';
   }
 

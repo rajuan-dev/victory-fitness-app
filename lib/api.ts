@@ -487,6 +487,21 @@ const BODY_METRICS_CACHE_TTL_MS = 30_000;
 const BROWSER_REFRESH_RETRY_MS = 30_000;
 const BODY_METRICS_RESOURCE_KEY = 'me-body-metrics';
 
+function normalizeBoolean(value: unknown, fallback = false) {
+  if (typeof value === 'boolean') {
+    return value;
+  }
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+    if (normalized === 'true' || normalized === '1' || normalized === 'yes') return true;
+    if (normalized === 'false' || normalized === '0' || normalized === 'no' || normalized === '') return false;
+  }
+  if (typeof value === 'number') {
+    return value !== 0;
+  }
+  return fallback;
+}
+
 function normalizeAuthUser(user: Partial<AuthUser> & { id?: string; name?: string; email?: string; is_verified?: boolean }): AuthUser {
   const normalizedSubscription = user.subscription && typeof user.subscription === 'object' ? user.subscription : undefined;
   return {
@@ -497,7 +512,7 @@ function normalizeAuthUser(user: Partial<AuthUser> & { id?: string; name?: strin
     is_admin: Boolean(user.is_admin),
     country: String(user.country ?? ''),
     profileImage: String(user.profileImage ?? ''),
-    onboarding_completed: Boolean(user.onboarding_completed),
+    onboarding_completed: normalizeBoolean(user.onboarding_completed),
     points: Math.max(Number(user.points ?? 0) || 0, 0),
     workouts_completed: Math.max(Number(user.workouts_completed ?? 0) || 0, 0),
     workouts_total: Math.max(Number(user.workouts_total ?? 0) || 0, 0),
@@ -520,7 +535,7 @@ function normalizeAuthUser(user: Partial<AuthUser> & { id?: string; name?: strin
         ? String(normalizedSubscription.confirmed_at)
         : null,
     subscription_billing_cycle: String(user.subscription_billing_cycle ?? normalizedSubscription?.billing_cycle ?? 'yearly'),
-    subscription_is_purchased: Boolean(user.subscription_is_purchased ?? normalizedSubscription?.is_purchased),
+    subscription_is_purchased: normalizeBoolean(user.subscription_is_purchased ?? normalizedSubscription?.is_purchased),
     subscription_purchase_source: String(user.subscription_purchase_source ?? normalizedSubscription?.purchase_source ?? ''),
     marketing_consent: Boolean(user.marketing_consent),
     subscription_access: Array.isArray(user.subscription_access)
@@ -536,7 +551,7 @@ function normalizeAuthUser(user: Partial<AuthUser> & { id?: string; name?: strin
           started_at: normalizedSubscription.started_at ? String(normalizedSubscription.started_at) : null,
           confirmed_at: normalizedSubscription.confirmed_at ? String(normalizedSubscription.confirmed_at) : null,
           billing_cycle: String(normalizedSubscription.billing_cycle ?? 'yearly'),
-          is_purchased: Boolean(normalizedSubscription.is_purchased),
+          is_purchased: normalizeBoolean(normalizedSubscription.is_purchased),
           purchase_source: String(normalizedSubscription.purchase_source ?? ''),
           access: Array.isArray(normalizedSubscription.access) ? normalizedSubscription.access.map((item) => String(item)) : [],
         }
