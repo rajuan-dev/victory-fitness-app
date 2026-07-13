@@ -1,11 +1,12 @@
 import React from 'react';
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 
 import { Colors } from '../constants/Colors';
 import { AuthUser, fetchCurrentUser } from '../lib/api';
+import { fetchChallengeOverviewData } from '../lib/screenData';
 
 type CampaignItem = {
   day: number;
@@ -16,6 +17,14 @@ type CampaignItem = {
   accent: string;
   action?: { label: string; route: string };
   fallback?: string;
+};
+
+type ChallengeAlert = {
+  challenge_id: string;
+  title: string;
+  progress: number;
+  points: number;
+  days_left: number;
 };
 
 const CAMPAIGN: CampaignItem[] = [
@@ -92,17 +101,44 @@ function formatDate(value?: string | null) {
 export default function NotificationsScreen() {
   const router = useRouter();
   const [user, setUser] = React.useState<AuthUser | null>(null);
+  const [challengeAlert, setChallengeAlert] = React.useState<ChallengeAlert | null>(null);
   const [loading, setLoading] = React.useState(true);
+  const [refreshing, setRefreshing] = React.useState(false);
+  const [loadError, setLoadError] = React.useState('');
+
+  const loadNotifications = React.useCallback(async (initialLoad = false) => {
+    if (initialLoad) setLoading(true);
+    else setRefreshing(true);
+
+    try {
+      setLoadError('');
+      const [nextUser, overview] = await Promise.all([
+        fetchCurrentUser(),
+        fetchChallengeOverviewData().catch(() => ({ active_challenges: [] })),
+      ]);
+      const overviewData = overview as { active_challenges?: Array<Partial<ChallengeAlert> & { id?: string }> };
+      const active = Array.isArray(overviewData?.active_challenges) ? overviewData.active_challenges[0] : null;
+      setUser(nextUser);
+      setChallengeAlert(active ? {
+        challenge_id: String(active.challenge_id || active.id || ''),
+        title: String(active.title || 'Today\'s challenge'),
+        progress: Math.max(0, Math.min(1, Number(active.progress || 0))),
+        points: Math.max(0, Number(active.points || 0)),
+        days_left: Math.max(0, Number(active.days_left || 0)),
+      } : null);
+    } catch (error) {
+      setLoadError(error instanceof Error ? error.message : 'Unable to load notifications right now.');
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, []);
 
   useFocusEffect(React.useCallback(() => {
     let cancelled = false;
-    void fetchCurrentUser().then((nextUser) => {
-      if (!cancelled) setUser(nextUser);
-    }).finally(() => {
-      if (!cancelled) setLoading(false);
-    });
+    if (!cancelled) void loadNotifications(!user);
     return () => { cancelled = true; };
-  }, []));
+  }, [loadNotifications, user]));
 
   const startedAt = user?.subscription_started_at ?? user?.subscription?.started_at;
   const trialDay = getTrialDay(startedAt);
@@ -110,10 +146,24 @@ export default function NotificationsScreen() {
   const isComplete = trialDay !== null && trialDay >= 5;
 
   if (loading) return <View style={styles.loading}><Text style={styles.muted}>Loading notifications...</Text></View>;
+  if (loadError && !user) {
+    return (
+      <View style={styles.loading}>
+        <Ionicons name="cloud-offline-outline" size={32} color={Colors.primary} />
+        <Text style={styles.emptyTitle}>Notifications unavailable</Text>
+        <Text style={styles.muted}>{loadError}</Text>
+        <TouchableOpacity style={styles.retryButton} onPress={() => void loadNotifications(true)}><Text style={styles.retryText}>Try Again</Text></TouchableOpacity>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => void loadNotifications(false)} tintColor={Colors.primary} colors={[Colors.primary]} />}
+      >
         <View style={styles.header}>
           <TouchableOpacity style={styles.iconButton} onPress={() => router.back()} accessibilityLabel="Go back">
             <Ionicons name="chevron-back" size={22} color={Colors.text} />
@@ -136,6 +186,27 @@ export default function NotificationsScreen() {
           <View style={styles.progressTrack}><View style={[styles.progressFill, { width: `${trialDay === null ? 0 : Math.min(trialDay / 5, 1) * 100}%` }]} /></View>
           <Text style={styles.summaryMeta}>Started {formatDate(startedAt)}</Text>
         </View>
+
+        {loadError ? <View style={styles.inlineError}><Ionicons name="alert-circle-outline" size={16} color="#FCA5A5" /><Text style={styles.inlineErrorText}>{loadError}</Text></View> : null}
+
+        {challengeAlert ? (
+          <View style={styles.challengeNotice}>
+            <View style={styles.challengeNoticeIcon}><Ionicons name={challengeAlert.progress >= 1 ? 'trophy-outline' : 'flame-outline'} size={21} color={challengeAlert.progress >= 1 ? Colors.accentGold : '#FBBF24'} /></View>
+            <View style={styles.challengeNoticeBody}>
+              <Text style={styles.challengeNoticeEyebrow}>CHALLENGE NOTIFICATION</Text>
+              <Text style={styles.challengeNoticeTitle}>{challengeAlert.progress >= 1 ? 'Challenge complete' : 'Finish today\'s challenge'}</Text>
+              <Text style={styles.challengeNoticeText}>
+                {challengeAlert.progress >= 1
+                  ? `You earned ${challengeAlert.points} points. Share your progress with the community.`
+                  : `Complete ${challengeAlert.title} today or miss ${challengeAlert.points} points.`}
+              </Text>
+              <TouchableOpacity style={styles.challengeNoticeAction} onPress={() => router.push((challengeAlert.progress >= 1 ? `/challenges/progress/${challengeAlert.challenge_id}` : `/challenges/${challengeAlert.challenge_id}`) as never)}>
+                <Text style={styles.challengeNoticeActionText}>{challengeAlert.progress >= 1 ? 'View Share Card' : 'Open Challenge'}</Text>
+                <Ionicons name="arrow-forward" size={15} color={Colors.primary} />
+              </TouchableOpacity>
+            </View>
+          </View>
+        ) : null}
 
         {trialDay === null ? (
           <View style={styles.emptyState}><Ionicons name="notifications-off-outline" size={30} color={Colors.primary} /><Text style={styles.emptyTitle}>Your trial timeline is not ready yet</Text><Text style={styles.muted}>Notifications will appear here once your Gold trial start date is recorded.</Text></View>
@@ -201,4 +272,16 @@ const styles = StyleSheet.create({
   muted: { color: Colors.textMuted, fontSize: 13, lineHeight: 19, textAlign: 'center', fontFamily: 'Inter_400Regular' },
   consentNote: { flexDirection: 'row', alignItems: 'flex-start', gap: 9, padding: 14, marginTop: 8, borderTopWidth: 1, borderTopColor: Colors.inputBorder },
   consentText: { flex: 1, color: Colors.textMuted, fontSize: 12, lineHeight: 17, fontFamily: 'Inter_400Regular' },
+  challengeNotice: { flexDirection: 'row', backgroundColor: 'rgba(245,158,11,0.1)', borderWidth: 1, borderColor: 'rgba(245,158,11,0.34)', borderRadius: 14, padding: 14, marginBottom: 14 },
+  challengeNoticeIcon: { width: 40, height: 40, borderRadius: 12, backgroundColor: 'rgba(245,158,11,0.14)', alignItems: 'center', justifyContent: 'center', marginRight: 11 },
+  challengeNoticeBody: { flex: 1 },
+  challengeNoticeEyebrow: { color: '#FBBF24', fontSize: 10, letterSpacing: 1, fontFamily: 'Inter_700Bold' },
+  challengeNoticeTitle: { color: Colors.text, fontSize: 16, fontFamily: 'Inter_700Bold', marginTop: 4 },
+  challengeNoticeText: { color: Colors.textSecondary, fontSize: 12, lineHeight: 17, fontFamily: 'Inter_400Regular', marginTop: 4 },
+  challengeNoticeAction: { alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 10 },
+  challengeNoticeActionText: { color: Colors.primary, fontSize: 12, fontFamily: 'Inter_700Bold' },
+  retryButton: { marginTop: 16, backgroundColor: Colors.primary, borderRadius: 10, paddingHorizontal: 18, paddingVertical: 11 },
+  retryText: { color: '#06201C', fontSize: 13, fontFamily: 'Inter_700Bold' },
+  inlineError: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: 'rgba(127,29,29,0.22)', borderWidth: 1, borderColor: 'rgba(248,113,113,0.35)', borderRadius: 10, padding: 10, marginBottom: 14 },
+  inlineErrorText: { flex: 1, color: '#FECACA', fontSize: 12, fontFamily: 'Inter_400Regular' },
 });
