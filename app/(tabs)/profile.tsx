@@ -61,6 +61,7 @@ const MENU_SECTIONS = [
         { icon: 'lock-closed-outline', label: 'Privacy Policy', tint: '#A855F7', route: '/profile/privacy' },
         { icon: 'language-outline', label: 'Language', tint: '#22C55E', action: 'language' },
         { icon: 'help-circle-outline', label: 'Help & Support', tint: '#8B5CF6', route: '/profile/support' },
+        { icon: 'notifications-outline', label: 'Trial Notifications', tint: '#00F0D0', route: '/notifications' },
       ],
   },
   {

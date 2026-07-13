@@ -116,6 +116,7 @@ export type AuthUser = {
   subscription_billing_cycle?: string;
   subscription_is_purchased?: boolean;
   subscription_purchase_source?: string;
+  marketing_consent?: boolean;
   subscription_access?: string[];
   subscription?: {
     tier?: string;
@@ -499,6 +500,7 @@ function normalizeAuthUser(user: Partial<AuthUser> & { id?: string; name?: strin
     subscription_billing_cycle: String(user.subscription_billing_cycle ?? normalizedSubscription?.billing_cycle ?? 'yearly'),
     subscription_is_purchased: Boolean(user.subscription_is_purchased ?? normalizedSubscription?.is_purchased),
     subscription_purchase_source: String(user.subscription_purchase_source ?? normalizedSubscription?.purchase_source ?? ''),
+    marketing_consent: Boolean(user.marketing_consent),
     subscription_access: Array.isArray(user.subscription_access)
       ? user.subscription_access.map((item) => String(item))
       : Array.isArray(normalizedSubscription?.access)
