@@ -84,10 +84,6 @@ export default function StrengthPlanDashboard() {
     };
   }, []);
 
-  if (checkingAccess) {
-    return null;
-  }
-
   const getDayProgress = (plan: StrengthPlanResponse, dayLabel: string): StrengthPlanDayProgress | undefined =>
     Array.isArray(plan.progress) ? plan.progress.find((entry) => entry.day === dayLabel) : undefined;
 
@@ -123,6 +119,10 @@ export default function StrengthPlanDashboard() {
     const interval = setInterval(updateTimer, 1000);
     return () => clearInterval(interval);
   }, [expandedPlanId, selectedDay, plans]);
+
+  if (checkingAccess) {
+    return null;
+  }
 
   const updatePlanProgressState = (nextPlan: StrengthPlanResponse) => {
     setPlans((current) =>

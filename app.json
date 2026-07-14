@@ -43,6 +43,7 @@
       "expo-router",
       "expo-font",
       "expo-audio",
+      "expo-notifications",
       [
         "expo-build-properties",
         {

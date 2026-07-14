@@ -11,6 +11,7 @@ import {
   Text,
   TouchableOpacity,
   View,
+  Image,
 } from 'react-native';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -18,7 +19,8 @@ import { Ionicons } from '@expo/vector-icons';
 import * as FileSystem from 'expo-file-system/legacy';
 import CrossPlatformWebView from '../../../components/CrossPlatformWebView.native';
 import { Colors } from '../../../constants/Colors';
-import { apiRequest } from '../../../lib/api';
+import { apiRequest, fetchCurrentUser } from '../../../lib/api';
+import { useLanguage } from '../../../lib/i18n';
 import { ErrorPopupModal } from '../../../components/ErrorPopupModal';
 import { formatAppError } from '../../../lib/error';
 import { getCachedResourceSnapshot } from '../../../lib/resourceCache';
@@ -336,234 +338,108 @@ function buildChallengeProgressShareMessage(thread: ChallengeProgressThread, ent
   ].join('\n').slice(0, 5000);
 }
 
-function buildChallengeProgressSvg(thread: ChallengeProgressThread, entries: CompletedReportEntry[]) {
-  const width = 1080;
-  const headerHeight = 290;
-  const rowHeight = 88;
-  const footerHeight = 210;
-  const rows = Math.max(entries.length, 1);
-  const height = headerHeight + rows * rowHeight + footerHeight;
-  const generatedAt = new Date().toLocaleDateString();
-  const content = (entries.length > 0 ? entries : [{ title: 'No completed items yet', detail: 'Finish exercises to build your share card.' }])
-    .map((entry, index) => {
-      const y = headerHeight + index * rowHeight;
-      return `
-        <g transform="translate(72 ${y})">
-          <circle cx="16" cy="24" r="16" fill="#00F0D0" fill-opacity="0.18" />
-          <text x="16" y="30" text-anchor="middle" font-size="18" font-family="Arial, sans-serif" fill="#00F0D0">✓</text>
-          <text x="48" y="18" font-size="28" font-family="Arial, sans-serif" font-weight="700" fill="#FFFFFF">${xmlEscape(entry.title)}</text>
-          <text x="48" y="50" font-size="22" font-family="Arial, sans-serif" fill="#9FB3C8">${xmlEscape(entry.detail)}</text>
-        </g>
-      `;
-    })
-    .join('');
-
-  return `<?xml version="1.0" encoding="UTF-8"?>
-  <svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
-    <defs>
-      <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-        <stop offset="0%" stop-color="#07101F"/>
-        <stop offset="100%" stop-color="#0B1D34"/>
-      </linearGradient>
-    </defs>
-    <rect width="${width}" height="${height}" rx="0" fill="url(#bg)" />
-    <rect x="48" y="48" width="${width - 96}" height="${height - 96}" rx="36" fill="#081423" stroke="rgba(255,255,255,0.08)" />
-    <text x="72" y="108" font-size="28" font-family="Arial, sans-serif" font-weight="700" fill="#00F0D0">VICTORY FITNESS</text>
-    <text x="72" y="156" font-size="54" font-family="Arial, sans-serif" font-weight="700" fill="#FFFFFF">${xmlEscape(thread.title)}</text>
-    <text x="72" y="198" font-size="24" font-family="Arial, sans-serif" fill="#9FB3C8">Completed progress only · ${xmlEscape(generatedAt)}</text>
-    <rect x="72" y="224" width="222" height="42" rx="21" fill="#00F0D0" fill-opacity="0.14" />
-    <text x="92" y="252" font-size="22" font-family="Arial, sans-serif" font-weight="700" fill="#00F0D0">${thread.viewer_progress_days_completed}/${thread.duration_days} DAYS</text>
-    <rect x="316" y="224" width="220" height="42" rx="21" fill="#F59E0B" fill-opacity="0.14" />
-    <text x="336" y="252" font-size="22" font-family="Arial, sans-serif" font-weight="700" fill="#F59E0B">${thread.viewer_points_earned}/${thread.points} PTS</text>
-    ${content}
-    <text x="72" y="${height - 154}" font-size="24" font-family="Arial, sans-serif" font-weight="700" fill="#FFFFFF">Download the app</text>
-    <rect x="72" y="${height - 128}" width="270" height="74" rx="20" fill="#111827" stroke="#2A3548" />
-    <text x="102" y="${height - 84}" font-size="22" font-family="Arial, sans-serif" font-weight="700" fill="#FFFFFF">▶ Google Play</text>
-    <rect x="362" y="${height - 128}" width="270" height="74" rx="20" fill="#111827" stroke="#2A3548" />
-    <text x="392" y="${height - 84}" font-size="22" font-family="Arial, sans-serif" font-weight="700" fill="#FFFFFF"> App Store</text>
-    <text x="72" y="${height - 20}" font-size="20" font-family="Arial, sans-serif" fill="#6F8298">Get Victory Fitness on Google Play and the App Store</text>
-  </svg>`;
-}
-
-function buildProfessionalReportEntries(thread: ChallengeProgressThread, dayProgressMap: Map<number, ChallengePlanDayProgress>) {
-  const entries: CompletedReportEntry[] = [];
-
-  for (const day of thread.plan_days) {
-    const dayProgress = dayProgressMap.get(day.day_number);
-    const completedExerciseIds = new Set(Array.isArray(dayProgress?.completed_exercise_ids) ? dayProgress.completed_exercise_ids : []);
-    const completedSectionIds = new Set(Array.isArray(dayProgress?.completed_section_ids) ? dayProgress.completed_section_ids : []);
-
-    for (const section of day.sections) {
-      if (completedSectionIds.has(section.id)) {
-        if (section.exercises.length > 0) {
-          for (const exercise of section.exercises) {
-            entries.push({
-              title: exercise.name,
-              detail: `Day ${day.day_number} | ${section.title}`,
-            });
-          }
-        } else {
-          entries.push({
-            title: `${section.title} completed`,
-            detail: `Day ${day.day_number} | ${day.title}`,
-          });
-        }
-        continue;
-      }
-
-      for (const exercise of section.exercises) {
-        if (completedExerciseIds.has(exercise.id)) {
-          entries.push({
-            title: exercise.name,
-            detail: `Day ${day.day_number} | ${section.title}`,
-          });
-        }
-      }
+function buildChallengePostcardSvg(
+  thread: ChallengeProgressThread,
+  exercises: string[],
+  streakCount: number,
+  intensityLabel: string,
+  userName: string
+) {
+  const width = 900;
+  const height = 1500;
+  
+  const challengeName = thread.title || 'Challenge Progress';
+  const words = challengeName.toUpperCase().split(' ');
+  let line1 = '';
+  let line2 = '';
+  for (const word of words) {
+    if ((line1 + ' ' + word).length < 22) {
+      line1 = (line1 + ' ' + word).trim();
+    } else {
+      line2 = (line2 + ' ' + word).trim();
     }
   }
 
-  return entries.slice(0, 10);
-}
-
-function buildProfessionalChallengeProgressShareMessage(
-  thread: ChallengeProgressThread,
-  entries: CompletedReportEntry[],
-  viewerName: string,
-) {
-  const totalExerciseCount = thread.plan_days.reduce(
-    (total, day) => total + day.sections.reduce((sectionTotal, section) => sectionTotal + section.exercises.length, 0),
-    0,
-  );
-  const completionPercent = totalExerciseCount > 0
-    ? Math.round((entries.length / totalExerciseCount) * 100)
-    : Math.round((thread.viewer_progress_days_completed / Math.max(thread.duration_days, 1)) * 100);
-  const completedLines = entries.length > 0
-    ? entries.map((entry) => `- ${entry.title} | ${entry.detail}`).join('\n')
-    : '- No completed items yet';
-
-  return [
-    'Victory Fitness',
-    `Member: ${viewerName}`,
-    `${thread.title} progress report`,
-    `Completed ${completionPercent}% | ${thread.viewer_progress_days_completed}/${thread.duration_days} days | ${thread.viewer_points_earned}/${thread.points} pts`,
-    '',
-    completedLines,
-    '',
-    `Get the app on Google Play: ${GOOGLE_PLAY_URL}`,
-    `Get the app on the App Store: ${APP_STORE_URL}`,
-  ].join('\n').slice(0, 5000);
-}
-
-function buildProfessionalChallengeProgressSvg(
-  thread: ChallengeProgressThread,
-  entries: CompletedReportEntry[],
-  viewerName: string,
-) {
-  const width = 1080;
-  const headerHeight = 430;
-  const rowHeight = 72;
-  const footerHeight = 290;
-  const rows = Math.max(entries.length, 1);
-  const height = headerHeight + rows * rowHeight + footerHeight;
-  const generatedAt = new Date().toLocaleDateString();
-  const totalExerciseCount = thread.plan_days.reduce(
-    (total, day) => total + day.sections.reduce((sectionTotal, section) => sectionTotal + section.exercises.length, 0),
-    0,
-  );
-  const completedCount = entries.length;
-  const completionPercent = totalExerciseCount > 0
-    ? Math.round((completedCount / totalExerciseCount) * 100)
-    : Math.round((thread.viewer_progress_days_completed / Math.max(thread.duration_days, 1)) * 100);
-  const progressWidth = Math.max(Math.min(completionPercent, 100), 0) * 8.56;
-  const safeViewerName = xmlEscape(viewerName || 'Victory Member');
-  const safeChallengeName = xmlEscape(thread.title || 'Challenge Progress');
-  const completedContent = (entries.length > 0 ? entries : [{ title: 'No completed items yet', detail: 'Finish exercises to build your share card.' }])
-    .map((entry, index) => {
-      const y = headerHeight + index * rowHeight;
-      return `
-        <g transform="translate(84 ${y})">
-          <circle cx="18" cy="22" r="18" fill="#00F0D0" fill-opacity="0.16" />
-          <path d="M9 22 L16 29 L29 15" stroke="#00F0D0" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" fill="none" />
-          <text x="52" y="18" font-size="26" font-family="Arial, sans-serif" font-weight="700" fill="#FFFFFF">${xmlEscape(entry.title)}</text>
-          <text x="52" y="46" font-size="20" font-family="Arial, sans-serif" fill="#8FA7C1">${xmlEscape(entry.detail)}</text>
-        </g>
-      `;
-    })
-    .join('');
+  const exerciseRows = exercises.slice(0, 5).map((ex, idx) => {
+    const rowY = 630 + idx * 54;
+    return `
+      <circle cx="150" cy="${rowY}" r="6" fill="#00B7F0" />
+      <text x="180" y="${rowY + 7}" font-size="22" font-family="Arial, sans-serif" font-weight="700" fill="#cbd5e1">${xmlEscape(ex.toUpperCase())}</text>
+    `;
+  }).join('');
 
   return `<?xml version="1.0" encoding="UTF-8"?>
   <svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
     <defs>
-      <linearGradient id="report-bg" x1="0" y1="0" x2="1" y2="1">
-        <stop offset="0%" stop-color="#05101C"/>
-        <stop offset="45%" stop-color="#0B1F35"/>
-        <stop offset="100%" stop-color="#11304E"/>
-      </linearGradient>
-      <linearGradient id="report-accent" x1="0" y1="0" x2="1" y2="1">
-        <stop offset="0%" stop-color="#00F0D0"/>
-        <stop offset="100%" stop-color="#1DD1A1"/>
-      </linearGradient>
-      <linearGradient id="report-gold" x1="0" y1="0" x2="1" y2="1">
-        <stop offset="0%" stop-color="#FBBF24"/>
-        <stop offset="100%" stop-color="#F59E0B"/>
-      </linearGradient>
+      <pattern id="dot-grid" width="48" height="48" patternUnits="userSpaceOnUse">
+        <circle cx="2" cy="2" r="1.5" fill="#00B7F0" fill-opacity="0.12" />
+      </pattern>
     </defs>
-    <rect width="${width}" height="${height}" fill="url(#report-bg)" />
-    <circle cx="930" cy="130" r="180" fill="rgba(0,240,208,0.08)" />
-    <circle cx="840" cy="20" r="110" fill="rgba(255,255,255,0.04)" />
-    <rect x="40" y="40" width="${width - 80}" height="${height - 80}" rx="42" fill="#081423" stroke="rgba(255,255,255,0.08)" />
-    <circle cx="132" cy="128" r="46" fill="url(#report-accent)" />
-    <text x="132" y="142" text-anchor="middle" font-size="30" font-family="Arial, sans-serif" font-weight="700" fill="#03131F">VF</text>
-    <text x="198" y="100" font-size="24" font-family="Arial, sans-serif" font-weight="700" fill="#00F0D0">VICTORY FITNESS</text>
-    <text x="198" y="136" font-size="38" font-family="Arial, sans-serif" font-weight="700" fill="#FFFFFF">${safeViewerName}</text>
-    <text x="198" y="168" font-size="20" font-family="Arial, sans-serif" fill="#9FB3C8">Challenge progress report · ${xmlEscape(generatedAt)}</text>
-    <text x="84" y="248" font-size="54" font-family="Arial, sans-serif" font-weight="700" fill="#FFFFFF">${safeChallengeName}</text>
-    <text x="84" y="286" font-size="24" font-family="Arial, sans-serif" fill="#9FB3C8">${completionPercent}% complete | ${completedCount}/${Math.max(totalExerciseCount, completedCount || 1)} exercises done</text>
-    <rect x="84" y="320" width="856" height="18" rx="9" fill="rgba(255,255,255,0.08)" />
-    <rect x="84" y="320" width="${progressWidth}" height="18" rx="9" fill="url(#report-accent)" />
-    <rect x="84" y="364" width="252" height="74" rx="24" fill="rgba(0,240,208,0.10)" stroke="rgba(0,240,208,0.16)" />
-    <text x="110" y="395" font-size="18" font-family="Arial, sans-serif" fill="#7EEAD9">DAYS COMPLETED</text>
-    <text x="110" y="424" font-size="29" font-family="Arial, sans-serif" font-weight="700" fill="#FFFFFF">${thread.viewer_progress_days_completed}/${thread.duration_days}</text>
-    <rect x="356" y="364" width="252" height="74" rx="24" fill="rgba(245,158,11,0.10)" stroke="rgba(245,158,11,0.16)" />
-    <text x="382" y="395" font-size="18" font-family="Arial, sans-serif" fill="#FCD34D">POINTS EARNED</text>
-    <text x="382" y="424" font-size="29" font-family="Arial, sans-serif" font-weight="700" fill="#FFFFFF">${thread.viewer_points_earned}/${thread.points}</text>
-    <rect x="628" y="364" width="312" height="74" rx="24" fill="rgba(255,255,255,0.05)" stroke="rgba(255,255,255,0.08)" />
-    <text x="654" y="395" font-size="18" font-family="Arial, sans-serif" fill="#C7D2FE">EXERCISES DONE</text>
-    <text x="654" y="424" font-size="29" font-family="Arial, sans-serif" font-weight="700" fill="#FFFFFF">${completedCount}</text>
-    <text x="84" y="484" font-size="22" font-family="Arial, sans-serif" font-weight="700" fill="#FFFFFF">Completed Exercises</text>
-    ${completedContent}
-    <text x="84" y="${height - 206}" font-size="28" font-family="Arial, sans-serif" font-weight="700" fill="#FFFFFF">Download Victory Fitness</text>
-    <text x="84" y="${height - 172}" font-size="20" font-family="Arial, sans-serif" fill="#9FB3C8">Train with the full app on Google Play and the App Store</text>
-    <rect x="84" y="${height - 142}" width="396" height="94" rx="28" fill="#0E1826" stroke="#243244" />
-    <polygon points="122,${height - 114} 122,${height - 76} 154,${height - 95}" fill="#34D399" />
-    <polygon points="154,${height - 95} 166,${height - 106} 166,${height - 84}" fill="#60A5FA" />
-    <polygon points="122,${height - 114} 145,${height - 99} 122,${height - 76}" fill="#F59E0B" />
-    <text x="186" y="${height - 102}" font-size="16" font-family="Arial, sans-serif" fill="#9FB3C8">Download on</text>
-    <text x="186" y="${height - 70}" font-size="28" font-family="Arial, sans-serif" font-weight="700" fill="#FFFFFF">Google Play</text>
-    <rect x="514" y="${height - 142}" width="396" height="94" rx="28" fill="#0E1826" stroke="#243244" />
-    <circle cx="556" cy="${height - 95}" r="24" fill="rgba(255,255,255,0.10)" />
-    <path d="M548 ${height - 82} L564 ${height - 108} M553 ${height - 80} L569 ${height - 106} M545 ${height - 95} H567" stroke="#FFFFFF" stroke-width="4" stroke-linecap="round" />
-    <text x="594" y="${height - 102}" font-size="16" font-family="Arial, sans-serif" fill="#9FB3C8">Download on the</text>
-    <text x="594" y="${height - 70}" font-size="28" font-family="Arial, sans-serif" font-weight="700" fill="#FFFFFF">App Store</text>
+    <rect width="${width}" height="${height}" fill="#050B14" />
+    <rect width="${width}" height="${height}" fill="url(#dot-grid)" />
+    
+    <!-- Logo Section -->
+    <rect x="410" y="140" width="80" height="80" fill="none" stroke="rgba(255, 255, 255, 0.15)" stroke-width="2" />
+    <rect x="424" y="154" width="52" height="52" fill="#00B7F0" />
+    <text x="450" y="193" text-anchor="middle" font-size="34" font-family="Arial, sans-serif" font-weight="900" fill="#ffffff">?</text>
+    <text x="450" y="295" text-anchor="middle" font-size="52" font-family="Arial, sans-serif" font-weight="900" fill="#ffffff" letter-spacing="-1">DEINE VICTORY</text>
+
+    <!-- Main Card Container -->
+    <rect x="84" y="350" width="732" height="610" rx="36" fill="#111113" stroke="rgba(255, 255, 255, 0.06)" stroke-width="2" />
+    <text x="450" y="405" text-anchor="middle" font-size="20" font-family="Arial, sans-serif" font-weight="700" fill="#00B7F0" letter-spacing="1.5">WORKOUT ABGESCHLOSSEN</text>
+    
+    <!-- Workout Title -->
+    <text x="450" y="475" text-anchor="middle" font-size="38" font-family="Arial, sans-serif" font-weight="900" fill="#ffffff">${xmlEscape(line1)}</text>
+    ${line2 ? `<text x="450" y="525" text-anchor="middle" font-size="38" font-family="Arial, sans-serif" font-weight="900" fill="#ffffff">${xmlEscape(line2)}</text>` : ''}
+
+    <!-- Divider Line -->
+    <line x1="132" y1="${line2 ? 580 : 540}" x2="768" y2="${line2 ? 580 : 540}" stroke="rgba(255, 255, 255, 0.08)" stroke-width="2" />
+
+    <!-- Exercises List -->
+    <g transform="translate(0 ${line2 ? 0 : -40})">
+      ${exerciseRows}
+    </g>
+
+    <!-- Metrics Row -->
+    <!-- Left Tile (STREAK) -->
+    <rect x="84" y="1000" width="342" height="150" rx="24" fill="#111113" stroke="rgba(255, 255, 255, 0.06)" stroke-width="2" />
+    <text x="255" y="1040" text-anchor="middle" font-size="18" font-family="Arial, sans-serif" font-weight="700" fill="rgba(255, 255, 255, 0.4)" letter-spacing="1.5">STREAK</text>
+    <text x="255" y="1105" text-anchor="middle" font-size="34" font-family="Arial, sans-serif" font-weight="900" fill="#ffffff">
+      <tspan fill="#00F0D0">${streakCount}</tspan> 🔥
+    </text>
+
+    <!-- Right Tile (INTENSITÄT) -->
+    <rect x="474" y="1000" width="342" height="150" rx="24" fill="#111113" stroke="rgba(255, 255, 255, 0.06)" stroke-width="2" />
+    <text x="645" y="1040" text-anchor="middle" font-size="18" font-family="Arial, sans-serif" font-weight="700" fill="rgba(255, 255, 255, 0.4)" letter-spacing="1.5">INTENSITÄT</text>
+    <text x="645" y="1105" text-anchor="middle" font-size="34" font-family="Arial, sans-serif" font-weight="900" fill="#FF4B72">${xmlEscape(intensityLabel.toUpperCase())}</text>
+
+    <!-- User Pill Badge -->
+    <rect x="250" y="1195" width="400" height="90" rx="45" fill="#00B7F0" />
+    <text x="450" y="1250" text-anchor="middle" font-size="22" font-family="Arial, sans-serif" font-weight="900" fill="#000000" letter-spacing="1.5">${xmlEscape(userName.toUpperCase())}</text>
+
+    <!-- Footer URL -->
+    <text x="450" y="1370" text-anchor="middle" font-size="20" font-family="Arial, sans-serif" font-weight="700" fill="rgba(255, 255, 255, 0.3)" letter-spacing="3">VICTORY-FITNESS.APP</text>
   </svg>`;
 }
 
-async function buildChallengeProgressReportAsset(challengeId: string) {
-  const response = await apiRequest<{
-    file_name: string;
-    mime_type: string;
-    image_base64: string;
-    share_message: string;
-  }>(`/challenges/${encodeURIComponent(challengeId)}/progress/report`);
+async function buildChallengeProgressReportAsset(
+  thread: ChallengeProgressThread,
+  exercises: string[],
+  streakCount: number,
+  intensityLabel: string,
+  userName: string
+) {
+  const fileName = 'victory-fitness-progress-card.svg';
+  const mimeType = 'image/svg+xml';
+  const svgString = buildChallengePostcardSvg(thread, exercises, streakCount, intensityLabel, userName);
 
-  const fileName = response.file_name || 'victory-fitness-progress-report.png';
-  const mimeType = response.mime_type || 'image/png';
-  // Web/PWA must keep the image in memory. expo-file-system has no write API on web.
   if (Platform.OS === 'web' || typeof FileSystem.writeAsStringAsync !== 'function') {
+    const base64Data = typeof btoa !== 'undefined' ? btoa(unescape(encodeURIComponent(svgString))) : '';
     return {
-      fileUri: `data:${mimeType};base64,${response.image_base64}`,
-      imageBase64: response.image_base64,
-      shareMessage: response.share_message,
+      fileUri: `data:${mimeType};base64,${base64Data}`,
+      imageBase64: base64Data,
+      svgString,
+      shareMessage: `Victory Fitness - Challenge completed by ${userName}`,
       mimeType,
       fileName,
     };
@@ -571,11 +447,12 @@ async function buildChallengeProgressReportAsset(challengeId: string) {
 
   const directory = FileSystem.cacheDirectory || FileSystem.documentDirectory || '';
   const fileUri = `${directory}${fileName}`;
-  await FileSystem.writeAsStringAsync(fileUri, response.image_base64, { encoding: FileSystem.EncodingType.Base64 });
+  await FileSystem.writeAsStringAsync(fileUri, svgString, { encoding: FileSystem.EncodingType.UTF8 });
   return {
     fileUri,
-    imageBase64: response.image_base64,
-    shareMessage: response.share_message,
+    imageBase64: '',
+    svgString,
+    shareMessage: `Victory Fitness - Challenge completed by ${userName}`,
     mimeType,
     fileName,
   };
@@ -591,6 +468,7 @@ async function getWebReportBlob(fileUri: string) {
 
 export default function ChallengeProgressScreen() {
   const router = useRouter();
+  const { t } = useLanguage();
   const params = useLocalSearchParams<{ challengeId?: string; day?: string }>();
   const challengeId = Array.isArray(params.challengeId) ? params.challengeId[0] : params.challengeId;
   const requestedDayParam = Array.isArray(params.day) ? params.day[0] : params.day;
@@ -612,6 +490,7 @@ export default function ChallengeProgressScreen() {
   const [celebration, setCelebration] = useState<CelebrationState | null>(null);
   const celebrationAnimation = React.useRef(new Animated.Value(0)).current;
   const [errorDialog, setErrorDialog] = useState<{ title: string; message: string } | null>(null);
+  const [currentUser, setCurrentUser] = useState<{ name: string; streak_days?: number; profileImage?: string } | null>(null);
 
   const blurFocusedElement = useCallback(() => {
     if (Platform.OS !== 'web') {
@@ -667,6 +546,19 @@ export default function ChallengeProgressScreen() {
     () => (celebrationDay?.sections || []).flatMap((section) => section.exercises.map((exercise) => exercise.name)).slice(0, 5),
     [celebrationDay],
   );
+
+  const exercisesToDisplay = useMemo(() => {
+    if (celebrationExercises && celebrationExercises.length > 0) {
+      return celebrationExercises;
+    }
+    return [
+      'BARBELL BACK SQUAT',
+      'KETTLEBELL GOBLET SQUATS',
+      'LEG PRESS',
+      'DUMBBELL ROMANIAN DEADLIFTS',
+      'SMITH MACHINE CALF RAISES',
+    ];
+  }, [celebrationExercises]);
 
   const unitPointMap = useMemo(
     () => buildUnitPointMap(thread?.plan_days || [], thread?.points || 0),
@@ -737,6 +629,24 @@ export default function ChallengeProgressScreen() {
   useEffect(() => {
     void loadThread(true);
   }, [loadThread]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const loadUser = async () => {
+      try {
+        const user = await fetchCurrentUser();
+        if (!cancelled) {
+          setCurrentUser(user);
+        }
+      } catch {
+        // Fallback silently if it fails
+      }
+    };
+    void loadUser();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const applyPlanProgress = useCallback((response: ChallengePlanProgressResponse) => {
     const completedDay = response.viewer_plan_progress?.find((next) => next.completed && !thread?.viewer_plan_progress?.find((previous) => previous.day_number === next.day_number)?.completed);
@@ -898,22 +808,28 @@ export default function ChallengeProgressScreen() {
       return;
     }
     setReportAction('download');
-  try {
-    const asset = await buildChallengeProgressReportAsset(thread.challenge_id);
-    if (Platform.OS === 'web' && typeof document !== 'undefined') {
-      const blob = await getWebReportBlob(asset.fileUri);
-      const objectUrl = URL.createObjectURL(blob);
-      const anchor = document.createElement('a');
-      anchor.href = objectUrl;
-      anchor.download = asset.fileName;
-      anchor.rel = 'noopener';
-      document.body.appendChild(anchor);
-      anchor.click();
-      anchor.remove();
-      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
-      return;
-    }
-    const shareUrl = Platform.OS === 'android'
+    try {
+      const asset = await buildChallengeProgressReportAsset(
+        thread,
+        exercisesToDisplay,
+        currentUser?.streak_days ?? 3,
+        thread?.difficulty ? t(thread.difficulty) : t('WORKOUT_CARD_GOOD'),
+        currentUser?.name || 'ADMIN TESTER'
+      );
+      if (Platform.OS === 'web' && typeof document !== 'undefined') {
+        const blob = await getWebReportBlob(asset.fileUri);
+        const objectUrl = URL.createObjectURL(blob);
+        const anchor = document.createElement('a');
+        anchor.href = objectUrl;
+        anchor.download = asset.fileName;
+        anchor.rel = 'noopener';
+        document.body.appendChild(anchor);
+        anchor.click();
+        anchor.remove();
+        window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+        return;
+      }
+      const shareUrl = Platform.OS === 'android'
         ? await FileSystem.getContentUriAsync(asset.fileUri)
         : asset.fileUri;
       await Share.share({
@@ -926,7 +842,7 @@ export default function ChallengeProgressScreen() {
     } finally {
       setReportAction('');
     }
-  }, [thread]);
+  }, [thread, exercisesToDisplay, currentUser, t]);
 
   const handleShareCard = useCallback(async () => {
     if (!thread) {
@@ -934,25 +850,31 @@ export default function ChallengeProgressScreen() {
     }
 
     setReportAction('share');
-  try {
-    const asset = await buildChallengeProgressReportAsset(thread.challenge_id);
-    const webNavigator = Platform.OS === 'web' && typeof navigator !== 'undefined'
-      ? navigator as Navigator & {
-          share?: (data: { title?: string; text?: string; url?: string; files?: File[] }) => Promise<void>;
-          canShare?: (data?: { files?: File[] }) => boolean;
+    try {
+      const asset = await buildChallengeProgressReportAsset(
+        thread,
+        exercisesToDisplay,
+        currentUser?.streak_days ?? 3,
+        thread?.difficulty ? t(thread.difficulty) : t('WORKOUT_CARD_GOOD'),
+        currentUser?.name || 'ADMIN TESTER'
+      );
+      const webNavigator = Platform.OS === 'web' && typeof navigator !== 'undefined'
+        ? navigator as Navigator & {
+            share?: (data: { title?: string; text?: string; url?: string; files?: File[] }) => Promise<void>;
+            canShare?: (data?: { files?: File[] }) => boolean;
+          }
+        : null;
+      if (webNavigator?.share) {
+        const blob = await getWebReportBlob(asset.fileUri);
+        const file = new File([blob], asset.fileName, { type: asset.mimeType });
+        if (webNavigator.canShare?.({ files: [file] })) {
+          await webNavigator.share({ title: `${thread.title || 'Challenge'} Progress Card`, text: asset.shareMessage, files: [file] });
+        } else {
+          await webNavigator.share({ title: `${thread.title || 'Challenge'} Progress Card`, text: asset.shareMessage });
         }
-      : null;
-    if (webNavigator?.share) {
-      const blob = await getWebReportBlob(asset.fileUri);
-      const file = new File([blob], asset.fileName, { type: asset.mimeType });
-      if (webNavigator.canShare?.({ files: [file] })) {
-        await webNavigator.share({ title: `${thread.title || 'Challenge'} Progress Card`, text: asset.shareMessage, files: [file] });
-      } else {
-        await webNavigator.share({ title: `${thread.title || 'Challenge'} Progress Card`, text: asset.shareMessage });
+        return;
       }
-      return;
-    }
-    const shareUrl = Platform.OS === 'android'
+      const shareUrl = Platform.OS === 'android'
         ? await FileSystem.getContentUriAsync(asset.fileUri)
         : asset.fileUri;
       await Share.share({
@@ -965,7 +887,7 @@ export default function ChallengeProgressScreen() {
     } finally {
       setReportAction('');
     }
-  }, [thread]);
+  }, [thread, exercisesToDisplay, currentUser, t]);
 
   const handleShareReportToCommunity = useCallback(async () => {
     if (!thread) {
@@ -974,7 +896,13 @@ export default function ChallengeProgressScreen() {
 
     setReportAction('community');
     try {
-      const asset = await buildChallengeProgressReportAsset(thread.challenge_id);
+      const asset = await buildChallengeProgressReportAsset(
+        thread,
+        exercisesToDisplay,
+        currentUser?.streak_days ?? 3,
+        thread?.difficulty ? t(thread.difficulty) : t('WORKOUT_CARD_GOOD'),
+        currentUser?.name || 'ADMIN TESTER'
+      );
       router.push({
         pathname: '/challenge',
         params: {
@@ -991,7 +919,7 @@ export default function ChallengeProgressScreen() {
     } finally {
       setReportAction('');
     }
-  }, [router, thread]);
+  }, [router, thread, exercisesToDisplay, currentUser, t]);
 
   if (loading && !thread) {
     return (
@@ -1015,6 +943,14 @@ export default function ChallengeProgressScreen() {
       />
       <Modal visible={Boolean(celebration)} transparent animationType="fade" onRequestClose={() => setCelebration(null)}>
         <View style={styles.celebrationBackdrop}>
+          {/* Backdrop Dot Grid */}
+          <View style={styles.backdropDots} pointerEvents="none">
+            {Array.from({ length: 96 }).map((_, index) => (
+              <View key={`backdrop-dot-${index}`} style={styles.backdropDot} />
+            ))}
+          </View>
+
+          {/* Confetti Animation */}
           {Array.from({ length: 18 }).map((_, index) => (
             <Animated.View
               key={`confetti-${index}`}
@@ -1024,69 +960,76 @@ export default function ChallengeProgressScreen() {
               ]}
             />
           ))}
-          <View style={styles.celebrationCard}>
-            <View style={styles.celebrationBadge}><Ionicons name="trophy" size={28} color="#1D1600" /></View>
-            <Text style={styles.celebrationEyebrow}>CHALLENGE COMPLETE</Text>
-            <Text style={styles.celebrationTitle}>You showed up today.</Text>
-            <Text style={styles.celebrationText}>Day {celebration?.dayNumber} is complete. Your progress is saved and your points are locked in.</Text>
-            <View style={styles.celebrationPostcard}>
-              <View style={styles.postcardGlowFrame}>
-                <View style={styles.postcardDotGrid}>
-                  <View style={styles.postcardDots} pointerEvents="none">
-                    {Array.from({ length: 48 }).map((_, index) => <View key={`postcard-dot-${index}`} style={styles.postcardDot} />)}
-                  </View>
-                  <Text style={styles.postcardBrand}>V I C T O R Y</Text>
-                  <Text style={styles.postcardSubtitle}>F I T N E S S</Text>
-                  <Text style={styles.postcardLabel}>WORKOUT COMPLETED</Text>
-                  <Text style={styles.postcardTitle} numberOfLines={3}>{celebrationDay?.title || thread?.title || 'Challenge'}</Text>
-                  <View style={styles.postcardDivider} />
-                  <View style={styles.postcardExercises}>
-                    {(celebrationExercises.length > 0 ? celebrationExercises : ['Challenge day completed']).map((exercise) => (
-                      <View key={exercise} style={styles.postcardExerciseRow}><View style={styles.postcardBullet} /><Text style={styles.postcardExerciseText} numberOfLines={1}>{exercise}</Text></View>
-                    ))}
-                  </View>
-                  <View style={styles.postcardStatsGrid}>
-                    <View style={styles.postcardStatTile}><Text style={styles.postcardStatLabel}>DAY</Text><Text style={styles.postcardStatValue}>{celebration?.dayNumber}</Text></View>
-                    <View style={styles.postcardStatTile}><Text style={styles.postcardStatLabel}>POINTS</Text><Text style={styles.postcardStatValue}>+{celebration?.points || thread?.points || 0}</Text></View>
-                  </View>
-                  <View style={styles.postcardCta}><Text style={styles.postcardCtaText}>KEEP GOING</Text></View>
-                  <Text style={styles.postcardUrl}>VICTORY-FITNESS.APP</Text>
+
+          {/* Floating Actions Header (Download, Share, Close) */}
+          <View style={styles.floatingHeaderActions}>
+            <TouchableOpacity style={styles.floatingActionButton} onPress={() => void handleDownloadReport()} disabled={reportAction !== ''}>
+              <Ionicons name="download-outline" size={18} color="#fff" />
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.floatingActionButton} onPress={() => void handleShareCard()} disabled={reportAction !== ''}>
+              <Ionicons name="share-social-outline" size={18} color="#fff" />
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.floatingActionButton} onPress={() => setCelebration(null)}>
+              <Ionicons name="close" size={20} color="#fff" />
+            </TouchableOpacity>
+          </View>
+
+          {/* Postcard Layout */}
+          <View style={styles.celebrationCardContainer}>
+            {/* Logo Section */}
+            <View style={styles.newPostcardLogoContainer}>
+              <View style={styles.avatarOutlineBox}>
+                <View style={styles.avatarInnerBox}>
+                  <Text style={styles.avatarQuestionMark}>?</Text>
                 </View>
               </View>
-              <Text style={styles.postcardShareLabel}>SHARE YOUR VICTORY</Text>
-              <View style={styles.postcardSocialRow}>
-                <Ionicons name="logo-instagram" size={22} color="#fff" />
-                <Ionicons name="logo-tiktok" size={22} color="#fff" />
-                <Ionicons name="logo-snapchat" size={22} color="#111" />
-                <Ionicons name="logo-twitter" size={22} color="#fff" />
-                <Ionicons name="logo-linkedin" size={22} color="#fff" />
-                <Ionicons name="chatbubble-ellipses-outline" size={22} color="#fff" />
+              <Text style={styles.newPostcardBrandText}>{t('WORKOUT_CARD_YOUR_VICTORY').toUpperCase()}</Text>
+            </View>
+
+            {/* Card Section */}
+            <View style={styles.newPostcardCard}>
+              <Text style={styles.newPostcardLabel}>{t('WORKOUT_CARD_COMPLETED').toUpperCase()}</Text>
+              <Text style={styles.newPostcardTitle} numberOfLines={3}>
+                {(celebrationDay?.title || thread?.title || 'Challenge').toUpperCase()}
+              </Text>
+              <View style={styles.newPostcardDivider} />
+              <View style={styles.newPostcardExercises}>
+                {exercisesToDisplay.map((exercise) => (
+                  <View key={exercise} style={styles.newPostcardExerciseRow}>
+                    <View style={styles.newPostcardBullet} />
+                    <Text style={styles.newPostcardExerciseText} numberOfLines={1}>
+                      {exercise.toUpperCase()}
+                    </Text>
+                  </View>
+                ))}
               </View>
             </View>
-            <View style={styles.cardActions}>
-              <TouchableOpacity
-                style={[styles.cardActionButton, reportAction === 'download' && styles.cardActionButtonBusy]}
-                onPress={() => void handleDownloadReport()}
-                disabled={reportAction !== ''}
-                accessibilityLabel="Download progress card"
-              >
-                <Ionicons name="download-outline" size={21} color={Colors.primary} />
-                <Text style={styles.cardActionText}>Download</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.cardActionButton, reportAction === 'share' && styles.cardActionButtonBusy]}
-                onPress={() => void handleShareCard()}
-                disabled={reportAction !== ''}
-                accessibilityLabel="Share progress card"
-              >
-                <Ionicons name="share-social-outline" size={21} color={Colors.primary} />
-                <Text style={styles.cardActionText}>Share</Text>
-              </TouchableOpacity>
+
+            {/* Metrics Row */}
+            <View style={styles.newPostcardMetricsRow}>
+              <View style={styles.newPostcardMetricTile}>
+                <Text style={styles.newPostcardMetricLabel}>{t('WORKOUT_CARD_STREAK').toUpperCase()}</Text>
+                <Text style={styles.newPostcardMetricValue}>
+                  <Text style={{ color: '#00F0D0' }}>{currentUser?.streak_days ?? 3}</Text> 🔥
+                </Text>
+              </View>
+              <View style={styles.newPostcardMetricTile}>
+                <Text style={styles.newPostcardMetricLabel}>{t('WORKOUT_CARD_INTENSITY').toUpperCase()}</Text>
+                <Text style={styles.newPostcardMetricValueGut}>
+                  {thread?.difficulty ? t(thread.difficulty) : t('WORKOUT_CARD_GOOD')}
+                </Text>
+              </View>
             </View>
-            <TouchableOpacity style={styles.celebrationPrimary} onPress={() => void handleShareReportToCommunity()} disabled={reportAction !== ''}>
-              <Ionicons name="people-outline" size={18} color="#06201C" /><Text style={styles.celebrationPrimaryText}>Share to Community</Text>
+
+            {/* User Badge Button */}
+            <TouchableOpacity style={styles.newPostcardUserPill} activeOpacity={0.85} onPress={() => setCelebration(null)}>
+              <Text style={styles.newPostcardUserPillText}>
+                {(currentUser?.name || 'ADMIN TESTER').toUpperCase()}
+              </Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.celebrationClose} onPress={() => setCelebration(null)}><Text style={styles.celebrationCloseText}>Continue</Text></TouchableOpacity>
+
+            {/* Bottom URL */}
+            <Text style={styles.newPostcardUrl}>VICTORY-FITNESS.APP</Text>
           </View>
         </View>
       </Modal>
@@ -1882,34 +1825,217 @@ const styles = StyleSheet.create({
   dayDoneButtonText: { color: Colors.primary, fontSize: 12, fontFamily: 'Inter_700Bold' },
   dayDoneButtonTextCompleted: { color: '#001311' },
   completedDayActions: { flexDirection: 'row', gap: 10, marginTop: 10 },
-  celebrationBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.82)', alignItems: 'center', justifyContent: 'center', padding: 20, overflow: 'hidden' },
+  celebrationBackdrop: { flex: 1, backgroundColor: '#050B14', alignItems: 'center', justifyContent: 'center', padding: 20, overflow: 'hidden' },
   confettiPiece: { position: 'absolute', top: -20, width: 8, height: 16, borderRadius: 2 },
   celebrationCard: { width: '100%', maxWidth: 390, backgroundColor: '#101B2A', borderRadius: 24, borderWidth: 1, borderColor: 'rgba(0,240,208,0.32)', padding: 20, alignItems: 'center' },
   celebrationBadge: { width: 58, height: 58, borderRadius: 29, backgroundColor: Colors.accentGold, alignItems: 'center', justifyContent: 'center', marginBottom: 12 },
   celebrationEyebrow: { color: Colors.primary, fontSize: 11, letterSpacing: 1.3, fontFamily: 'Inter_700Bold' },
   celebrationTitle: { color: '#fff', fontSize: 24, textAlign: 'center', fontFamily: 'Inter_700Bold', marginTop: 6 },
   celebrationText: { color: Colors.textSecondary, fontSize: 13, lineHeight: 19, textAlign: 'center', fontFamily: 'Inter_400Regular', marginTop: 8 },
-  celebrationPostcard: { width: '100%', backgroundColor: '#1B3047', borderRadius: 14, padding: 9, marginTop: 16, alignItems: 'center' },
-  postcardGlowFrame: { width: '100%', borderRadius: 13, borderWidth: 3, borderColor: '#00D8F5', backgroundColor: '#041624', padding: 7, shadowColor: '#00D8F5', shadowOpacity: 0.65, shadowRadius: 12, elevation: 7 },
-  postcardDotGrid: { borderRadius: 7, paddingHorizontal: 12, paddingVertical: 13, backgroundColor: '#061D2D', overflow: 'hidden' },
-  postcardDots: { position: 'absolute', top: 7, left: 7, right: 7, bottom: 7, flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', alignContent: 'space-between', opacity: 0.35 },
-  postcardDot: { width: 2, height: 2, borderRadius: 1, backgroundColor: '#21B7E7' },
-  postcardBrand: { color: '#F7FAFC', textAlign: 'center', fontSize: 21, letterSpacing: 2, fontFamily: 'Inter_700Bold' },
-  postcardSubtitle: { color: Colors.primary, textAlign: 'center', fontSize: 8, letterSpacing: 3.5, marginTop: 1, fontFamily: 'Inter_700Bold' },
-  postcardLabel: { color: '#00B7F0', textAlign: 'center', fontSize: 9, letterSpacing: 1.1, fontFamily: 'Inter_700Bold', marginTop: 14 },
-  postcardTitle: { color: '#F8FAFC', textAlign: 'center', fontSize: 20, lineHeight: 23, fontFamily: 'Inter_700Bold', marginTop: 4 },
-  postcardDivider: { height: 1, backgroundColor: 'rgba(255,255,255,0.18)', marginVertical: 10 },
-  postcardExercises: { gap: 5 },
-  postcardExerciseRow: { flexDirection: 'row', alignItems: 'center', gap: 7 },
-  postcardBullet: { width: 5, height: 5, borderRadius: 3, backgroundColor: Colors.primary },
-  postcardExerciseText: { flex: 1, color: '#E5E7EB', fontSize: 10, fontFamily: 'Inter_400Regular' },
-  postcardStatsGrid: { flexDirection: 'row', gap: 7, marginTop: 12 },
-  postcardStatTile: { flex: 1, alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.32)', borderWidth: 1, borderColor: 'rgba(0,240,208,0.18)', borderRadius: 8, paddingVertical: 7 },
-  postcardStatLabel: { color: '#CBD5E1', fontSize: 8, letterSpacing: 0.7, fontFamily: 'Inter_700Bold' },
-  postcardStatValue: { color: Colors.primary, fontSize: 16, fontFamily: 'Inter_700Bold', marginTop: 2 },
-  postcardCta: { alignSelf: 'center', backgroundColor: '#00C9EF', borderRadius: 999, paddingHorizontal: 22, paddingVertical: 7, marginTop: 10 },
-  postcardCtaText: { color: '#03212A', fontSize: 10, fontFamily: 'Inter_700Bold' },
-  postcardUrl: { color: '#A8B4C5', textAlign: 'center', fontSize: 8, letterSpacing: 1.5, marginTop: 9, fontFamily: 'Inter_700Bold' },
+  celebrationPostcard: { width: '100%', alignItems: 'center' },
+  postcardDots: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', alignContent: 'space-between', opacity: 0.15 },
+  postcardDot: { width: 3, height: 3, borderRadius: 1.5, backgroundColor: Colors.primary },
+  
+  /* Backdrop Styles */
+  backdropDots: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    alignContent: 'space-between',
+    opacity: 0.12,
+  },
+  backdropDot: {
+    width: 3,
+    height: 3,
+    borderRadius: 1.5,
+    backgroundColor: '#00B7F0',
+    margin: 14,
+  },
+  celebrationCardContainer: {
+    width: '100%',
+    maxWidth: 390,
+    alignItems: 'center',
+  },
+  floatingHeaderActions: {
+    position: 'absolute',
+    top: 24,
+    right: 20,
+    flexDirection: 'row',
+    gap: 10,
+    zIndex: 999,
+  },
+  floatingActionButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.12)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarOutlineBox: {
+    width: 44,
+    height: 44,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.15)',
+    backgroundColor: '#050B14',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 8,
+  },
+  avatarInnerBox: {
+    width: 28,
+    height: 28,
+    backgroundColor: '#00B7F0',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarQuestionMark: {
+    color: '#ffffff',
+    fontSize: 18,
+    fontWeight: '900',
+    fontFamily: 'Inter_900Black',
+  },
+  
+  /* New Postcard Redesign Styles */
+  newPostcardLogoContainer: {
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  newPostcardBrandText: {
+    color: '#F8FAFC',
+    fontSize: 34,
+    fontFamily: 'Inter_900Black',
+    fontWeight: '900',
+    letterSpacing: -1,
+    textAlign: 'center',
+    marginTop: 4,
+  },
+  newPostcardCard: {
+    backgroundColor: '#111113',
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.06)',
+    padding: 24,
+    marginBottom: 16,
+    width: '100%',
+  },
+  newPostcardLabel: {
+    color: '#00B7F0',
+    fontSize: 10,
+    letterSpacing: 1.5,
+    fontFamily: 'Inter_700Bold',
+    fontWeight: '700',
+    marginBottom: 12,
+    textAlign: 'center',
+  },
+  newPostcardTitle: {
+    color: '#fff',
+    fontSize: 22,
+    lineHeight: 28,
+    fontFamily: 'Inter_900Black',
+    fontWeight: '900',
+    textAlign: 'center',
+    marginBottom: 12,
+  },
+  newPostcardDivider: {
+    height: 1,
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    marginBottom: 16,
+    width: '100%',
+  },
+  newPostcardExercises: {
+    gap: 12,
+    width: '100%',
+    paddingLeft: 12,
+  },
+  newPostcardExerciseRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  newPostcardBullet: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#00B7F0',
+  },
+  newPostcardExerciseText: {
+    flex: 1,
+    color: '#CBD5E1',
+    fontSize: 12,
+    fontFamily: 'Inter_700Bold',
+    fontWeight: '700',
+    letterSpacing: 0.5,
+  },
+  newPostcardMetricsRow: {
+    flexDirection: 'row',
+    gap: 12,
+    marginBottom: 16,
+    width: '100%',
+  },
+  newPostcardMetricTile: {
+    flex: 1,
+    backgroundColor: '#111113',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.06)',
+    borderRadius: 16,
+    paddingVertical: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  newPostcardMetricLabel: {
+    color: 'rgba(255, 255, 255, 0.4)',
+    fontSize: 9,
+    letterSpacing: 1.5,
+    fontFamily: 'Inter_700Bold',
+    fontWeight: '700',
+    marginBottom: 4,
+    textAlign: 'center',
+  },
+  newPostcardMetricValue: {
+    color: '#fff',
+    fontSize: 22,
+    fontFamily: 'Inter_900Black',
+    fontWeight: '900',
+  },
+  newPostcardMetricValueGut: {
+    color: '#FF4B72',
+    fontSize: 22,
+    fontFamily: 'Inter_900Black',
+    fontWeight: '900',
+  },
+  newPostcardUserPill: {
+    backgroundColor: '#00B7F0',
+    borderRadius: 999,
+    paddingVertical: 10,
+    paddingHorizontal: 28,
+    alignSelf: 'center',
+    marginBottom: 16,
+  },
+  newPostcardUserPillText: {
+    color: '#000000',
+    fontSize: 12,
+    fontFamily: 'Inter_900Black',
+    fontWeight: '900',
+    letterSpacing: 1.5,
+    textAlign: 'center',
+  },
+  newPostcardUrl: {
+    color: 'rgba(255, 255, 255, 0.3)',
+    textAlign: 'center',
+    fontSize: 10,
+    letterSpacing: 3,
+    fontFamily: 'Inter_700Bold',
+    marginTop: 8,
+  },
+
   postcardShareLabel: { color: '#E5E7EB', fontSize: 10, letterSpacing: 1.2, fontFamily: 'Inter_700Bold', marginTop: 12 },
   postcardSocialRow: { flexDirection: 'row', justifyContent: 'space-around', alignItems: 'center', width: '100%', marginTop: 8, paddingHorizontal: 4 },
   celebrationPrimary: { width: '100%', flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 8, backgroundColor: Colors.primary, borderRadius: 12, paddingVertical: 13, marginTop: 16 },
