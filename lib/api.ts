@@ -828,6 +828,21 @@ export async function fetchCurrentUser() {
   return currentUserRequestPromise;
 }
 
+export type AppNotification = {
+  id: string;
+  type: string;
+  title: string;
+  message: string;
+  data?: Record<string, unknown>;
+  created_at: string;
+  read: boolean;
+};
+
+export async function fetchAppNotifications() {
+  const response = await apiRequest<{ items: AppNotification[] }>('/me/notifications');
+  return response.items || [];
+}
+
 export async function updateCurrentUserProfile(payload: {
   name?: string;
   email?: string;

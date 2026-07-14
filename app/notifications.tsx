@@ -5,7 +5,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 
 import { Colors } from '../constants/Colors';
-import { AuthUser, fetchCurrentUser } from '../lib/api';
+import { AppNotification, AuthUser, fetchAppNotifications, fetchCurrentUser } from '../lib/api';
+import { registerForPushNotificationsAsync } from '../lib/pushNotifications';
 import { fetchChallengeOverviewData, fetchCommunityPostsData } from '../lib/screenData';
 
 type CampaignItem = {
@@ -113,6 +114,8 @@ export default function NotificationsScreen() {
   const [user, setUser] = React.useState<AuthUser | null>(null);
   const [challengeAlert, setChallengeAlert] = React.useState<ChallengeAlert | null>(null);
   const [activityNotifications, setActivityNotifications] = React.useState<ActivityNotification[]>([]);
+  const [pushNotifications, setPushNotifications] = React.useState<AppNotification[]>([]);
+  const [permissionMessage, setPermissionMessage] = React.useState('');
   const [loading, setLoading] = React.useState(true);
   const [refreshing, setRefreshing] = React.useState(false);
   const [loadError, setLoadError] = React.useState('');
@@ -123,14 +126,16 @@ export default function NotificationsScreen() {
 
     try {
       setLoadError('');
-      const [nextUser, overview, community] = await Promise.all([
+      const [nextUser, overview, community, storedNotifications] = await Promise.all([
         fetchCurrentUser(),
         fetchChallengeOverviewData().catch(() => ({ active_challenges: [] })),
         fetchCommunityPostsData().catch(() => ({ posts: [] })),
+        fetchAppNotifications().catch(() => []),
       ]);
       const overviewData = overview as { active_challenges?: Array<Partial<ChallengeAlert> & { id?: string }> };
       const active = Array.isArray(overviewData?.active_challenges) ? overviewData.active_challenges[0] : null;
       setUser(nextUser);
+      setPushNotifications(storedNotifications);
       setChallengeAlert(active ? {
         challenge_id: String(active.challenge_id || active.id || ''),
         title: String(active.title || 'Today\'s challenge'),
@@ -189,6 +194,15 @@ export default function NotificationsScreen() {
   const activeDay = trialDay === null ? 0 : Math.min(trialDay, 5);
   const isComplete = trialDay !== null && trialDay >= 5;
 
+  const enableNotifications = async () => {
+    try {
+      const token = await registerForPushNotificationsAsync();
+      setPermissionMessage(token ? 'Notifications enabled.' : 'Notifications were not enabled. Check browser or device settings.');
+    } catch {
+      setPermissionMessage('Unable to enable notifications. Check browser or device settings.');
+    }
+  };
+
   if (loading) return <View style={styles.loading}><Text style={styles.muted}>Loading notifications...</Text></View>;
   if (loadError && !user) {
     return (
@@ -218,6 +232,24 @@ export default function NotificationsScreen() {
           </View>
           <View style={[styles.statusDot, isComplete && styles.statusDotComplete]} />
         </View>
+
+        <View style={styles.permissionCard}>
+          <View style={styles.permissionRow}><Ionicons name="notifications-outline" size={22} color={Colors.primary} /><Text style={styles.permissionText}>Get an alert when new workouts are published.</Text></View>
+          <TouchableOpacity style={styles.permissionButton} onPress={() => void enableNotifications()}><Text style={styles.permissionButtonText}>Enable notifications</Text></TouchableOpacity>
+          {permissionMessage ? <Text style={styles.permissionStatus}>{permissionMessage}</Text> : null}
+        </View>
+
+        {pushNotifications.length > 0 ? (
+          <View style={styles.activitySection}>
+            <Text style={styles.activitySectionTitle}>NEW FROM VICTORY FITNESS</Text>
+            {pushNotifications.map((item) => (
+              <View key={item.id} style={styles.activityItem}>
+                <View style={[styles.activityIcon, { backgroundColor: `${Colors.primary}20` }]}><Ionicons name="sparkles-outline" size={21} color={Colors.primary} /></View>
+                <View style={styles.activityBody}><Text style={[styles.activityCategory, { color: Colors.primary }]}>{item.type.replaceAll('_', ' ').toUpperCase()}</Text><Text style={styles.activityTitle}>{item.title}</Text><Text style={styles.activityText}>{item.message}</Text><Text style={styles.permissionStatus}>{formatDate(item.created_at)}</Text></View>
+              </View>
+            ))}
+          </View>
+        ) : null}
 
         <View style={styles.summary}>
           <View style={styles.summaryTop}>
@@ -310,6 +342,12 @@ const styles = StyleSheet.create({
   muted: { color: Colors.textMuted, fontSize: 13, lineHeight: 19, textAlign: 'center', fontFamily: 'Inter_400Regular' },
   consentNote: { flexDirection: 'row', alignItems: 'flex-start', gap: 9, padding: 14, marginTop: 8, borderTopWidth: 1, borderTopColor: Colors.inputBorder },
   consentText: { flex: 1, color: Colors.textMuted, fontSize: 12, lineHeight: 17, fontFamily: 'Inter_400Regular' },
+  permissionCard: { backgroundColor: Colors.surface, borderRadius: 16, padding: 14, borderWidth: 1, borderColor: Colors.inputBorder, marginBottom: 20 },
+  permissionRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  permissionText: { color: Colors.text, fontSize: 13, lineHeight: 18, flex: 1 },
+  permissionButton: { alignSelf: 'flex-start', marginTop: 12, backgroundColor: Colors.primary, borderRadius: 10, paddingHorizontal: 16, paddingVertical: 9 },
+  permissionButtonText: { color: Colors.background, fontFamily: 'Inter_700Bold', fontSize: 12 },
+  permissionStatus: { color: Colors.textMuted, fontSize: 11, marginTop: 7 },
   challengeNotice: { flexDirection: 'row', backgroundColor: 'rgba(245,158,11,0.1)', borderWidth: 1, borderColor: 'rgba(245,158,11,0.34)', borderRadius: 14, padding: 14, marginBottom: 14 },
   challengeNoticeIcon: { width: 40, height: 40, borderRadius: 12, backgroundColor: 'rgba(245,158,11,0.14)', alignItems: 'center', justifyContent: 'center', marginRight: 11 },
   challengeNoticeBody: { flex: 1 },
