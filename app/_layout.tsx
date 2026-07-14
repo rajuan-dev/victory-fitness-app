@@ -14,6 +14,7 @@ import { getPostAuthRoute, isAdminRestrictedFromApp, isPublicRoute, isRouteAllow
 import { appendRunLog, formatRunLogMessage } from '../lib/runLog';
 import { LanguageProvider } from '../lib/i18n';
 import { blurActiveElementBeforeNavigation, replaceRoute } from '../lib/navigation';
+import { registerForPushNotificationsAsync } from '../lib/pushNotifications';
 
 export default function RootLayout() {
   const router = useRouter();
@@ -189,6 +190,16 @@ export default function RootLayout() {
   useEffect(() => {
     blurActiveElementBeforeNavigation();
   }, [pathname]);
+
+  useEffect(() => {
+    if (!fontsLoaded || checkingAccess || isPublicRoute(pathname)) {
+      return;
+    }
+
+    void registerForPushNotificationsAsync().catch(() => {
+      // Notifications are optional and must not block app access.
+    });
+  }, [checkingAccess, fontsLoaded, pathname]);
 
   useEffect(() => {
     if (lastLoggedRouteRef.current === pathname) {

@@ -1,6 +1,27 @@
 const CACHE_NAME = 'victory-fitness-v3';
 const APP_SHELL = ['/', '/manifest.webmanifest', '/icon-192.png', '/icon-512.png'];
 
+importScripts('https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js');
+importScripts('https://www.gstatic.com/firebasejs/10.14.1/firebase-messaging-compat.js');
+
+firebase.initializeApp({
+  apiKey: '__FIREBASE_API_KEY__',
+  authDomain: '__FIREBASE_PROJECT_ID__.firebaseapp.com',
+  projectId: '__FIREBASE_PROJECT_ID__',
+  storageBucket: '__FIREBASE_PROJECT_ID__.firebasestorage.app',
+  messagingSenderId: '__FIREBASE_MESSAGING_SENDER_ID__',
+  appId: '__FIREBASE_APP_ID__'
+});
+
+firebase.messaging().onBackgroundMessage((payload) => {
+  const notification = payload.notification || {};
+  self.registration.showNotification(notification.title || 'Victory Fitness', {
+    body: notification.body || 'You have a new update from Victory Fitness.',
+    icon: '/icon-192.png',
+    data: payload.data || {}
+  });
+});
+
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_SHELL)).then(() => self.skipWaiting())
