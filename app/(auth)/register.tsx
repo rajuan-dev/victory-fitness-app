@@ -12,7 +12,7 @@ import {
   Dimensions,
   ActivityIndicator,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Colors } from '../../constants/Colors';
 import { AuthInput } from '../../components/AuthInput';
 import { AuthButton } from '../../components/AuthButton';
@@ -24,6 +24,7 @@ const { height } = Dimensions.get('window');
 
 export default function RegisterScreen() {
   const router = useRouter();
+  const { source } = useLocalSearchParams<{ source?: string }>();
   const [name, setName] = useState('');
   const [surname, setSurname] = useState('');
   const [email, setEmail] = useState('');
@@ -54,6 +55,7 @@ export default function RegisterScreen() {
           mobile: mobile.trim(),
           password,
           marketing_consent: marketingConsent,
+          signup_source: String(source || 'organic').trim().slice(0, 120) || 'organic',
         },
       });
       router.push({
