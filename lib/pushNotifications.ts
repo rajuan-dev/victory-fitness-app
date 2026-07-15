@@ -1,5 +1,4 @@
 import { Platform } from 'react-native';
-import * as Notifications from 'expo-notifications';
 import Constants from 'expo-constants';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { apiRequest } from './api';
@@ -11,14 +10,28 @@ export const FIREBASE_VAPID_KEY = String(process.env?.EXPO_PUBLIC_FIREBASE_VAPID
 
 const REGISTERED_TOKEN_KEY = 'victory_push_token';
 
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowBanner: true,
-    shouldShowList: true,
-    shouldPlaySound: true,
-    shouldSetBadge: false,
-  }),
-});
+type NotificationsModule = typeof import('expo-notifications');
+let notificationsModule: NotificationsModule | null = null;
+
+function getNativeNotifications(): NotificationsModule {
+  if (Platform.OS === 'web') {
+    throw new Error('Native notifications are unavailable on web.');
+  }
+
+  if (!notificationsModule) {
+    notificationsModule = require('expo-notifications') as NotificationsModule;
+    notificationsModule.setNotificationHandler({
+      handleNotification: async () => ({
+        shouldShowBanner: true,
+        shouldShowList: true,
+        shouldPlaySound: true,
+        shouldSetBadge: false,
+      }),
+    });
+  }
+
+  return notificationsModule;
+}
 
 export async function registerForPushNotificationsAsync(): Promise<string | null> {
   if (Platform.OS === 'web' || !Constants.isDevice) {
@@ -30,17 +43,19 @@ export async function registerForPushNotificationsAsync(): Promise<string | null
     return null;
   }
 
+  const notifications = getNativeNotifications();
+
   if (Platform.OS === 'android') {
-    await Notifications.setNotificationChannelAsync('default', {
+    await notifications.setNotificationChannelAsync('default', {
       name: 'Victory Fitness',
-      importance: Notifications.AndroidImportance.DEFAULT,
+      importance: notifications.AndroidImportance.DEFAULT,
       vibrationPattern: [0, 250, 250, 250],
       lightColor: '#7C3AED',
     });
   }
 
   const projectId = Constants.expoConfig?.extra?.eas?.projectId;
-  const token = (await Notifications.getExpoPushTokenAsync(projectId ? { projectId } : undefined)).data;
+  const token = (await notifications.getExpoPushTokenAsync(projectId ? { projectId } : undefined)).data;
   const previousToken = await AsyncStorage.getItem(REGISTERED_TOKEN_KEY);
   if (previousToken !== token) {
     await apiRequest('/me/push-token', { method: 'POST', body: { token, platform: Platform.OS } });
@@ -58,10 +73,11 @@ export async function requestNotificationPermissionAsync(): Promise<boolean> {
     return false;
   }
 
-  const existing = await Notifications.getPermissionsAsync() as unknown as { granted: boolean };
+  const notifications = getNativeNotifications();
+  const existing = await notifications.getPermissionsAsync() as unknown as { granted: boolean };
   if (existing.granted) {
     return true;
   }
 
-  return (await Notifications.requestPermissionsAsync() as unknown as { granted: boolean }).granted;
+  return (await notifications.requestPermissionsAsync() as unknown as { granted: boolean }).granted;
 }
