@@ -264,10 +264,14 @@ export default function NotificationsScreen() {
           <View style={styles.activitySection}>
             <Text style={styles.activitySectionTitle}>NEW FROM VICTORY FITNESS</Text>
             {pushNotifications.map((item) => (
-              <View key={item.id} style={styles.activityItem}>
+              <TouchableOpacity key={item.id} style={styles.activityItem} onPress={() => {
+                const route = typeof item.data?.videoRoute === 'string' ? item.data.videoRoute : typeof item.data?.route === 'string' ? item.data.route : null;
+                if (route) router.push(route as never);
+              }} activeOpacity={0.82}>
                 <View style={[styles.activityIcon, { backgroundColor: `${Colors.primary}20` }]}><Ionicons name="sparkles-outline" size={21} color={Colors.primary} /></View>
                 <View style={styles.activityBody}><Text style={[styles.activityCategory, { color: Colors.primary }]}>{item.type.replaceAll('_', ' ').toUpperCase()}</Text><Text style={styles.activityTitle}>{item.title}</Text><Text style={styles.activityText}>{item.message}</Text><Text style={styles.permissionStatus}>{formatDate(item.created_at)}</Text></View>
-              </View>
+                {typeof item.data?.videoRoute === 'string' ? <Ionicons name="chevron-forward" size={18} color={Colors.textMuted} /> : null}
+              </TouchableOpacity>
             ))}
           </View>
         ) : null}
