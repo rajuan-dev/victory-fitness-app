@@ -105,8 +105,25 @@ function getTrialDay(startedAt?: string | null) {
 
 function formatDate(value?: string | null) {
   if (!value) return 'Not available';
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? 'Not available' : date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+  const timestamp = new Date(value).getTime();
+  if (!Number.isFinite(timestamp)) return 'Not available';
+
+  const elapsedMinutes = Math.max(0, Math.floor((Date.now() - timestamp) / 60000));
+  if (elapsedMinutes < 1) return 'Just now';
+  if (elapsedMinutes < 60) return `${elapsedMinutes} minute${elapsedMinutes === 1 ? '' : 's'} ago`;
+
+  const elapsedHours = Math.floor(elapsedMinutes / 60);
+  if (elapsedHours < 24) return `${elapsedHours} hour${elapsedHours === 1 ? '' : 's'} ago`;
+
+  const elapsedDays = Math.floor(elapsedHours / 24);
+  if (elapsedDays < 7) return `${elapsedDays} day${elapsedDays === 1 ? '' : 's'} ago`;
+  if (elapsedDays < 28) {
+    const weeks = Math.floor(elapsedDays / 7);
+    return `${weeks} week${weeks === 1 ? '' : 's'} ago`;
+  }
+
+  const months = Math.floor(elapsedDays / 28);
+  return `${months} month${months === 1 ? '' : 's'} ago`;
 }
 
 export default function NotificationsScreen() {
