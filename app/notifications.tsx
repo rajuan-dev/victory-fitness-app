@@ -6,7 +6,7 @@ import { useFocusEffect } from '@react-navigation/native';
 
 import { Colors } from '../constants/Colors';
 import { AppNotification, AuthUser, fetchAppNotifications, fetchCurrentUser } from '../lib/api';
-import { registerForPushNotificationsAsync } from '../lib/pushNotifications';
+import { registerForPushNotificationsAsync, requestNotificationPermissionAsync } from '../lib/pushNotifications';
 import { fetchChallengeOverviewData, fetchCommunityPostsData } from '../lib/screenData';
 
 type CampaignItem = {
@@ -196,8 +196,13 @@ export default function NotificationsScreen() {
 
   const enableNotifications = async () => {
     try {
+      const permissionGranted = await requestNotificationPermissionAsync();
+      if (!permissionGranted) {
+        setPermissionMessage('Notifications are blocked. Allow them in browser or device settings, then try again.');
+        return;
+      }
       const token = await registerForPushNotificationsAsync();
-      setPermissionMessage(token ? 'Notifications enabled.' : 'Notifications were not enabled. Check browser or device settings.');
+      setPermissionMessage(token ? 'Notifications enabled.' : 'Permission granted, but push setup is unavailable. Check web push configuration.');
     } catch {
       setPermissionMessage('Unable to enable notifications. Check browser or device settings.');
     }
