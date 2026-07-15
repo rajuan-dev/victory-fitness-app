@@ -21,37 +21,68 @@ declare global {
 
 const REGISTERED_TOKEN_KEY = 'victory_push_token';
 let foregroundListenerInstalled = false;
+let webPushSetupPromise: Promise<boolean> | null = null;
+
+/**
+ * Requests browser notification permission and installs the foreground
+ * listener. This is intentionally independent from token registration so the
+ * permission prompt can be shown before a user signs in.
+ */
+export function setupWebPushNotificationsAsync(): Promise<boolean> {
+  if (webPushSetupPromise) {
+    return webPushSetupPromise;
+  }
+
+  webPushSetupPromise = (async () => {
+    if (typeof window === 'undefined' || !('Notification' in window) || !('serviceWorker' in navigator)) {
+      return false;
+    }
+
+    const vapidKey = String(process.env?.EXPO_PUBLIC_FIREBASE_VAPID_KEY ?? '').trim();
+    if (!vapidKey || !window.firebase) {
+      return false;
+    }
+
+    let permission = Notification.permission;
+    if (permission === 'default') {
+      permission = await Notification.requestPermission();
+    }
+    if (permission !== 'granted') {
+      return false;
+    }
+
+    const registration = await navigator.serviceWorker.ready;
+    if (!foregroundListenerInstalled) {
+      window.firebase.messaging().onMessage((payload) => {
+        const title = payload.notification?.title || 'Victory Fitness';
+        const body = payload.notification?.body || 'You have a new update from Victory Fitness.';
+        if (Notification.permission === 'granted') {
+          new Notification(title, { body, icon: '/icon-192.png' });
+        }
+      });
+      foregroundListenerInstalled = true;
+    }
+
+    // Keep the registration alive for the token request below.
+    void registration;
+    return true;
+  })().catch(() => false);
+
+  return webPushSetupPromise;
+}
 
 export async function registerWebPushNotificationsAsync(): Promise<string | null> {
-  if (typeof window === 'undefined' || !('Notification' in window) || !('serviceWorker' in navigator)) {
+  if (!(await setupWebPushNotificationsAsync())) {
     return null;
   }
 
   const vapidKey = String(process.env?.EXPO_PUBLIC_FIREBASE_VAPID_KEY ?? '').trim();
-  if (!vapidKey || !window.firebase) {
-    return null;
-  }
-
-  let permission = Notification.permission;
-  if (permission !== 'granted') {
-    permission = await Notification.requestPermission();
-  }
-  if (permission !== 'granted') {
-    return null;
-  }
-
   const registration = await navigator.serviceWorker.ready;
-  if (!foregroundListenerInstalled) {
-    window.firebase.messaging().onMessage((payload) => {
-      const title = payload.notification?.title || 'Victory Fitness';
-      const body = payload.notification?.body || 'You have a new update from Victory Fitness.';
-      if (Notification.permission === 'granted') {
-        new Notification(title, { body, icon: '/icon-192.png' });
-      }
-    });
-    foregroundListenerInstalled = true;
+  const firebase = window.firebase;
+  if (!firebase) {
+    return null;
   }
-  const token = await window.firebase.messaging().getToken({ vapidKey, serviceWorkerRegistration: registration });
+  const token = await firebase.messaging().getToken({ vapidKey, serviceWorkerRegistration: registration });
   if (!token) {
     return null;
   }
