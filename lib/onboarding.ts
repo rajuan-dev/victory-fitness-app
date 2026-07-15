@@ -202,11 +202,6 @@ export async function completeOnboarding(data: OnboardingData) {
 }
 
 export async function shouldShowWeightUpdatePrompt(userId: string) {
-  const data = await getOnboardingData(userId);
-  if (!data?.personalProfile.weight) {
-    return true;
-  }
-
   const [lastPromptDate, promptUserId] = await Promise.all([
     readStorageValue(LAST_WEIGHT_PROMPT_DATE_KEY),
     readStorageValue(LAST_WEIGHT_PROMPT_USER_KEY),
@@ -216,6 +211,9 @@ export async function shouldShowWeightUpdatePrompt(userId: string) {
     return true;
   }
 
+  // The backend onboarding flow does not always create a local onboardingData
+  // record. A handled prompt must therefore be checked before relying on the
+  // local weight value, otherwise the prompt reappears on every home visit.
   if (!lastPromptDate) {
     return true;
   }
@@ -225,7 +223,11 @@ export async function shouldShowWeightUpdatePrompt(userId: string) {
     return true;
   }
 
-  return Date.now() - lastPromptTime >= WEIGHT_PROMPT_INTERVAL_DAYS * MS_PER_DAY;
+  if (Date.now() - lastPromptTime < WEIGHT_PROMPT_INTERVAL_DAYS * MS_PER_DAY) {
+    return false;
+  }
+
+  return true;
 }
 
 export async function updateUserWeight(userId: string, weight: string) {

@@ -14,8 +14,7 @@ import { getPostAuthRoute, isAdminRestrictedFromApp, isPublicRoute, isRouteAllow
 import { appendRunLog, formatRunLogMessage } from '../lib/runLog';
 import { LanguageProvider } from '../lib/i18n';
 import { blurActiveElementBeforeNavigation, replaceRoute } from '../lib/navigation';
-import { registerForPushNotificationsAsync } from '../lib/pushNotifications';
-import { setupWebPushNotificationsAsync } from '../lib/firebaseWebPush';
+import { registerForPushNotificationsAsync, requestNotificationPermissionAsync } from '../lib/pushNotifications';
 
 export default function RootLayout() {
   const router = useRouter();
@@ -197,11 +196,9 @@ export default function RootLayout() {
       return;
     }
 
-    // Ask on the first web visit. Token registration still happens after
-    // authentication in the effect below, because the API requires a user.
-    if (typeof window !== 'undefined' && window.Notification) {
-      void setupWebPushNotificationsAsync();
-    }
+    // Ask as soon as the app opens. Token registration still happens after
+    // authentication because the API requires a user.
+    void requestNotificationPermissionAsync();
   }, [fontsLoaded]);
 
   useEffect(() => {
