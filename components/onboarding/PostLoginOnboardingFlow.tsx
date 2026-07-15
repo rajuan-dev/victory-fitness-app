@@ -102,6 +102,7 @@ export default function PostLoginOnboardingFlow({ user }: Props) {
   const [saving, setSaving] = useState(false);
   const [step, setStep] = useState(0);
   const [errors, setErrors] = useState<ValidationErrors>({});
+  const [saveError, setSaveError] = useState('');
   const [data, setData] = useState<OnboardingData | null>(null);
   const [showGenderModal, setShowGenderModal] = useState(false);
 
@@ -177,17 +178,26 @@ export default function PostLoginOnboardingFlow({ user }: Props) {
     }
 
     if (step === 1) {
+      const age = Number(data.personalProfile.age);
+      const height = Number(data.personalProfile.height);
+      const weight = Number(data.personalProfile.weight);
       if (!data.personalProfile.age.trim()) {
         nextErrors.age = 'Age is required.';
+      } else if (!Number.isFinite(age) || age < 13 || age > 120) {
+        nextErrors.age = 'Enter an age between 13 and 120.';
       }
       if (!data.personalProfile.gender.trim()) {
         nextErrors.gender = 'Gender is required.';
       }
       if (!data.personalProfile.height.trim()) {
         nextErrors.height = 'Height is required.';
+      } else if (!Number.isFinite(height) || height < 80 || height > 250) {
+        nextErrors.height = 'Enter a height between 80 and 250 cm.';
       }
       if (!data.personalProfile.weight.trim()) {
         nextErrors.weight = 'Weight is required.';
+      } else if (!Number.isFinite(weight) || weight <= 0 || weight > 500) {
+        nextErrors.weight = 'Enter a valid weight.';
       }
     }
 
@@ -222,6 +232,8 @@ export default function PostLoginOnboardingFlow({ user }: Props) {
       return;
     }
 
+    setSaveError('');
+
     if (step === 0 && data.language && isSupportedAppLanguage(data.language)) {
       await setLanguage(data.language);
     }
@@ -249,6 +261,8 @@ export default function PostLoginOnboardingFlow({ user }: Props) {
         });
         const updatedUser = await updateCurrentUserProfile({ onboarding_completed: true });
         replaceRoute(router, getPostAuthRoute(updatedUser));
+      } catch {
+        setSaveError('Unable to save your onboarding details. Please try again.');
       } finally {
         setSaving(false);
       }
@@ -260,9 +274,16 @@ export default function PostLoginOnboardingFlow({ user }: Props) {
       ...data,
       suggestion: nextStep >= 3 ? suggestion : data.suggestion,
     };
-    await persistDraft(nextData, nextStep);
-    setStep(nextStep);
-    setErrors({});
+    setSaving(true);
+    try {
+      await persistDraft(nextData, nextStep);
+      setStep(nextStep);
+      setErrors({});
+    } catch {
+      setSaveError('Unable to save your progress. Please try again.');
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleBack = async () => {
@@ -270,9 +291,17 @@ export default function PostLoginOnboardingFlow({ user }: Props) {
       return;
     }
     const nextStep = step - 1;
-    await persistDraft(data, nextStep);
-    setStep(nextStep);
-    setErrors({});
+    setSaveError('');
+    setSaving(true);
+    try {
+      await persistDraft(data, nextStep);
+      setStep(nextStep);
+      setErrors({});
+    } catch {
+      setSaveError('Unable to save your progress. Please try again.');
+    } finally {
+      setSaving(false);
+    }
   };
 
   const updateData = async (updater: (current: OnboardingData) => OnboardingData) => {
@@ -541,6 +570,7 @@ export default function PostLoginOnboardingFlow({ user }: Props) {
           ) : null}
         </View>
 
+        {saveError ? <Text style={styles.saveError}>{saveError}</Text> : null}
         <View style={styles.actionsRow}>
           <Pressable onPress={() => void handleBack()} disabled={step === 0 || saving} style={[styles.secondaryButton, step === 0 && styles.secondaryButtonDisabled]}>
             <Text style={styles.secondaryButtonText}>{step === 3 ? 'Review Answers' : 'Back'}</Text>
@@ -805,6 +835,14 @@ const styles = StyleSheet.create({
     fontSize: 12,
     marginTop: -2,
     marginBottom: 10,
+  },
+  saveError: {
+    color: Colors.accentDanger,
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 13,
+    lineHeight: 19,
+    marginTop: 16,
+    textAlign: 'center',
   },
   questionTitle: {
     color: Colors.text,
