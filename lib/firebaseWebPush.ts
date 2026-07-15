@@ -33,13 +33,8 @@ export function setupWebPushNotificationsAsync(): Promise<boolean> {
     return webPushSetupPromise;
   }
 
-  webPushSetupPromise = (async () => {
+  const setupPromise = (async () => {
     if (typeof window === 'undefined' || !('Notification' in window) || !('serviceWorker' in navigator)) {
-      return false;
-    }
-
-    const vapidKey = String(process.env?.EXPO_PUBLIC_FIREBASE_VAPID_KEY ?? '').trim();
-    if (!vapidKey || !window.firebase) {
       return false;
     }
 
@@ -49,6 +44,11 @@ export function setupWebPushNotificationsAsync(): Promise<boolean> {
     }
     if (permission !== 'granted') {
       return false;
+    }
+
+    const vapidKey = String(process.env?.EXPO_PUBLIC_FIREBASE_VAPID_KEY ?? '').trim();
+    if (!vapidKey || !window.firebase) {
+      return true;
     }
 
     const registration = await navigator.serviceWorker.ready;
@@ -67,6 +67,14 @@ export function setupWebPushNotificationsAsync(): Promise<boolean> {
     void registration;
     return true;
   })().catch(() => false);
+
+  webPushSetupPromise = setupPromise.then((result) => {
+    // Allow a later retry if Firebase scripts/config were not ready yet.
+    if (!result || (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'default')) {
+      webPushSetupPromise = null;
+    }
+    return result;
+  });
 
   return webPushSetupPromise;
 }
