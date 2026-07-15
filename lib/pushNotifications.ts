@@ -3,7 +3,7 @@ import * as Notifications from 'expo-notifications';
 import Constants from 'expo-constants';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { apiRequest } from './api';
-import { registerWebPushNotificationsAsync } from './firebaseWebPush';
+import { registerWebPushNotificationsAsync, setupWebPushNotificationsAsync } from './firebaseWebPush';
 
 declare const process: { env?: Record<string, string | undefined> };
 
@@ -25,11 +25,7 @@ export async function registerForPushNotificationsAsync(): Promise<string | null
     return Platform.OS === 'web' ? registerWebPushNotificationsAsync() : null;
   }
 
-  const existing = await Notifications.getPermissionsAsync() as unknown as { granted: boolean };
-  let granted = existing.granted;
-  if (!granted) {
-    granted = (await Notifications.requestPermissionsAsync() as unknown as { granted: boolean }).granted;
-  }
+  const granted = await requestNotificationPermissionAsync();
   if (!granted) {
     return null;
   }
@@ -51,4 +47,21 @@ export async function registerForPushNotificationsAsync(): Promise<string | null
     await AsyncStorage.setItem(REGISTERED_TOKEN_KEY, token);
   }
   return token;
+}
+
+export async function requestNotificationPermissionAsync(): Promise<boolean> {
+  if (Platform.OS === 'web') {
+    return setupWebPushNotificationsAsync();
+  }
+
+  if (!Constants.isDevice) {
+    return false;
+  }
+
+  const existing = await Notifications.getPermissionsAsync() as unknown as { granted: boolean };
+  if (existing.granted) {
+    return true;
+  }
+
+  return (await Notifications.requestPermissionsAsync() as unknown as { granted: boolean }).granted;
 }
