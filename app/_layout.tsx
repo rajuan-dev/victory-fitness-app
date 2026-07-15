@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Stack, usePathname, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { View, StyleSheet } from 'react-native';
+import { Text, TouchableOpacity, View, StyleSheet } from 'react-native';
 import {
   useFonts,
   Inter_400Regular,
@@ -15,6 +15,20 @@ import { appendRunLog, formatRunLogMessage } from '../lib/runLog';
 import { LanguageProvider } from '../lib/i18n';
 import { blurActiveElementBeforeNavigation, replaceRoute } from '../lib/navigation';
 import { registerForPushNotificationsAsync, requestNotificationPermissionAsync } from '../lib/pushNotifications';
+
+export function ErrorBoundary({ error, retry }: { error: Error; retry: () => void }) {
+  return (
+    <View style={styles.errorBoundary}>
+      <Text style={styles.errorBoundaryTitle}>Something went wrong</Text>
+      <Text style={styles.errorBoundaryMessage}>
+        We couldn&apos;t load this screen. Your data is safe—please try again.
+      </Text>
+      <TouchableOpacity style={styles.errorBoundaryButton} onPress={retry} activeOpacity={0.85}>
+        <Text style={styles.errorBoundaryButtonText}>Try again</Text>
+      </TouchableOpacity>
+    </View>
+  );
+}
 
 export default function RootLayout() {
   const router = useRouter();
@@ -279,6 +293,41 @@ export default function RootLayout() {
 }
 
 const styles = StyleSheet.create({
+  errorBoundary: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 28,
+    backgroundColor: Colors.background,
+    gap: 12,
+  },
+  errorBoundaryTitle: {
+    color: '#fff',
+    fontSize: 22,
+    fontFamily: 'Inter_700Bold',
+    textAlign: 'center',
+  },
+  errorBoundaryMessage: {
+    color: Colors.textMuted,
+    fontSize: 14,
+    lineHeight: 22,
+    textAlign: 'center',
+    fontFamily: 'Inter_400Regular',
+  },
+  errorBoundaryButton: {
+    marginTop: 6,
+    minHeight: 46,
+    paddingHorizontal: 24,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Colors.accentBlue,
+  },
+  errorBoundaryButtonText: {
+    color: '#06111f',
+    fontSize: 14,
+    fontFamily: 'Inter_700Bold',
+  },
   container: {
     flex: 1,
     backgroundColor: Colors.background,
