@@ -29,6 +29,7 @@ export default function VerificationScreen() {
   const codeInputRef = useRef<TextInput>(null);
   const [code, setCode] = useState('');
   const [loading, setLoading] = useState(false);
+  const [resending, setResending] = useState(false);
   const [resendSeconds, setResendSeconds] = useState(45);
   const [errorDialog, setErrorDialog] = useState<{ title: string; message: string } | null>(null);
 
@@ -68,7 +69,7 @@ export default function VerificationScreen() {
     }
   };
 
-  const handleResend = () => {
+  const handleResend = async () => {
     if (!email) {
       setErrorDialog({
         title: 'Missing Email',
@@ -77,10 +78,20 @@ export default function VerificationScreen() {
       return;
     }
 
-    setErrorDialog({
-      title: 'Resend Unavailable',
-      message: 'Please register again to receive a new code.',
-    });
+    if (resendSeconds > 0 || resending) return;
+
+    setResending(true);
+    try {
+      await apiRequest('/auth/resend-verification', {
+        method: 'POST',
+        body: { email },
+      });
+      setResendSeconds(45);
+    } catch (error) {
+      setErrorDialog(formatAppError(error));
+    } finally {
+      setResending(false);
+    }
   };
 
   return (
@@ -163,11 +174,11 @@ export default function VerificationScreen() {
               <TouchableOpacity
                 style={styles.resendButton}
                 onPress={handleResend}
-                disabled={resendSeconds > 0}
+                disabled={resendSeconds > 0 || resending}
                 activeOpacity={0.8}
               >
                 <Text style={[styles.resendButtonText, resendSeconds > 0 && styles.resendButtonTextDisabled]}>
-                  I didn&apos;t receive a code
+                  {resending ? 'Sending code...' : 'I didn&apos;t receive a code'}
                 </Text>
               </TouchableOpacity>
             </View>
