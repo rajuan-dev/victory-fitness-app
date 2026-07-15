@@ -66,15 +66,6 @@
     ],
     "extra": {
       "router": {},
-      "firebase": {
-        "apiKey": "AIzaSyBaZpJIyqJMTEUws_SdcV0o6MxwiKtXk3U",
-        "projectId": "victoria-43064",
-        "messagingSenderId": "836252231647",
-        "appId": "1:836252231647:web:a8ae11e9223a389100c66a",
-        "vapidKey": "BMEcOv7AOGWtMTMwhwGoSRHR7sXeWQcZ-dI8MYxaCKskXKWOgTMrGViUirpevGN3wX9Hbjn4V2fDVrfv1qzvpEk",
-        "androidClientId": "836252231647-rfur081mb0evr4gdn4p0hl3nh7micc41.apps.googleusercontent.com",
-        "webClientId": "836252231647-j88dvgm52ujadqpa85mf83mul5a9a8o1.apps.googleusercontent.com"
-      },
       "googleHealthConnect": {
         "clientId": "664344615268-kjsk6iq3ae0stfuu025o6hsdp988cvrl.apps.googleusercontent.com",
         "projectId": "victoria-43064",
