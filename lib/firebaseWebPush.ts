@@ -56,19 +56,10 @@ export function setupWebPushNotificationsAsync(): Promise<boolean> {
     }
 
     const registration = await navigator.serviceWorker.ready;
-    if (!foregroundListenerInstalled) {
-      window.firebase.messaging().onMessage((payload) => {
-        const title = payload.notification?.title || 'Victory Fitness';
-        const body = payload.notification?.body || 'You have a new update from Victory Fitness.';
-        if (Notification.permission === 'granted') {
-          new Notification(title, { body, icon: '/icon-192.png' });
-        }
-      });
-      foregroundListenerInstalled = true;
+    if (!registration || !registration.active || !registration.pushManager) {
+      return false;
     }
 
-    // Keep the registration alive for the token request below.
-    void registration;
     return true;
   })().catch(() => false);
 
@@ -109,6 +100,21 @@ export async function registerWebPushNotificationsAsync(): Promise<string | null
   }
   if (!token) {
     return null;
+  }
+
+  if (!foregroundListenerInstalled) {
+    try {
+      firebase.messaging().onMessage((payload) => {
+        const title = payload.notification?.title || 'Victory Fitness';
+        const body = payload.notification?.body || 'You have a new update from Victory Fitness.';
+        if (Notification.permission === 'granted') {
+          new Notification(title, { body, icon: '/icon-192.png' });
+        }
+      });
+      foregroundListenerInstalled = true;
+    } catch {
+      // Background delivery still works through sw.js; foreground display is optional.
+    }
   }
 
   if ((await AsyncStorage.getItem(REGISTERED_TOKEN_KEY)) !== token) {
