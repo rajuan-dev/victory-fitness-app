@@ -249,7 +249,6 @@ export default function NotificationsScreen() {
             <Ionicons name="chevron-back" size={22} color={Colors.text} />
           </TouchableOpacity>
           <View style={styles.headerCopy}>
-            <Text style={styles.eyebrow}>GOLD TRIAL</Text>
             <Text style={styles.title}>Notifications</Text>
           </View>
           <View style={[styles.statusDot, isComplete && styles.statusDotComplete]} />
