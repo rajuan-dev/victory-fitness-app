@@ -23,6 +23,10 @@ const REGISTERED_TOKEN_KEY = 'victory_push_token';
 let foregroundListenerInstalled = false;
 let webPushSetupPromise: Promise<boolean> | null = null;
 
+function hasWebPushConfiguration() {
+  return Boolean(String(process.env?.EXPO_PUBLIC_FIREBASE_VAPID_KEY ?? '').trim() && window.firebase);
+}
+
 /**
  * Requests browser notification permission and installs the foreground
  * listener. This is intentionally independent from token registration so the
@@ -80,17 +84,29 @@ export function setupWebPushNotificationsAsync(): Promise<boolean> {
 }
 
 export async function registerWebPushNotificationsAsync(): Promise<string | null> {
-  if (!(await setupWebPushNotificationsAsync())) {
+  if (typeof window === 'undefined' || !('Notification' in window) || !('serviceWorker' in navigator) || !('PushManager' in window)) {
+    return null;
+  }
+
+  if (!(await setupWebPushNotificationsAsync()) || !hasWebPushConfiguration()) {
     return null;
   }
 
   const vapidKey = String(process.env?.EXPO_PUBLIC_FIREBASE_VAPID_KEY ?? '').trim();
   const registration = await navigator.serviceWorker.ready;
+  if (!registration.pushManager) {
+    return null;
+  }
   const firebase = window.firebase;
   if (!firebase) {
     return null;
   }
-  const token = await firebase.messaging().getToken({ vapidKey, serviceWorkerRegistration: registration });
+  let token: string;
+  try {
+    token = await firebase.messaging().getToken({ vapidKey, serviceWorkerRegistration: registration });
+  } catch {
+    return null;
+  }
   if (!token) {
     return null;
   }
