@@ -117,12 +117,12 @@ function formatDate(value?: string | null) {
 
   const elapsedDays = Math.floor(elapsedHours / 24);
   if (elapsedDays < 7) return `${elapsedDays} day${elapsedDays === 1 ? '' : 's'} ago`;
-  if (elapsedDays < 30) {
+  if (elapsedDays < 28) {
     const weeks = Math.floor(elapsedDays / 7);
     return `${weeks} week${weeks === 1 ? '' : 's'} ago`;
   }
 
-  const months = Math.floor(elapsedDays / 30);
+  const months = Math.floor(elapsedDays / 28);
   return `${months} month${months === 1 ? '' : 's'} ago`;
 }
 
