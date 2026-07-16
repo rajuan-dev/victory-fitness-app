@@ -8,6 +8,7 @@ import { Colors } from '../constants/Colors';
 import { AppNotification, AuthUser, deleteActivityNotification, deleteAppNotification, fetchAppNotifications, fetchCurrentUser, fetchDismissedActivityNotifications, markAppNotificationRead } from '../lib/api';
 import { registerForPushNotificationsAsync, requestNotificationPermissionAsync, subscribeToPushNotifications } from '../lib/pushNotifications';
 import { fetchChallengeOverviewData, fetchCommunityPostsData } from '../lib/screenData';
+import { goBackOrReplace } from '../lib/navigation';
 
 type CampaignItem = {
   day: number;
@@ -297,7 +298,7 @@ export default function NotificationsScreen() {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => void loadNotifications(false)} tintColor={Colors.primary} colors={[Colors.primary]} />}
       >
         <View style={styles.header}>
-          <TouchableOpacity style={styles.iconButton} onPress={() => router.back()} accessibilityLabel="Go back">
+          <TouchableOpacity style={styles.iconButton} onPress={() => goBackOrReplace(router, '/(tabs)')} accessibilityLabel="Go back">
             <Ionicons name="chevron-back" size={22} color={Colors.text} />
           </TouchableOpacity>
           <View style={styles.headerCopy}>
