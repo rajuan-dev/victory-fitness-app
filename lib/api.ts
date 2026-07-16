@@ -851,6 +851,12 @@ export async function deleteAppNotification(notificationId: string) {
   });
 }
 
+export async function markAppNotificationRead(notificationId: string) {
+  return apiRequest<{ read: boolean }>(`/me/notifications/${encodeURIComponent(notificationId)}/read`, {
+    method: 'PATCH',
+  });
+}
+
 export async function fetchDismissedActivityNotifications() {
   const response = await apiRequest<{ ids: string[] }>('/me/activity-notifications/dismissed');
   return response.ids || [];
