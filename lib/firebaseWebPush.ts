@@ -5,7 +5,7 @@ declare const process: { env?: Record<string, string | undefined> };
 
 type FirebaseMessaging = {
   getToken(options: { vapidKey: string; serviceWorkerRegistration: ServiceWorkerRegistration }): Promise<string>;
-  onMessage(callback: (payload: { notification?: { title?: string; body?: string } }) => void): () => void;
+  onMessage(callback: (payload: { notification?: { title?: string; body?: string }; data?: Record<string, unknown> }) => void): () => void;
 };
 
 type FirebaseGlobal = {
@@ -109,7 +109,7 @@ export async function registerWebPushNotificationsAsync(
       firebase.messaging().onMessage((payload) => {
         const title = payload.notification?.title || 'Victory Fitness';
         const body = payload.notification?.body || 'You have a new update from Victory Fitness.';
-        onNotification?.({ title, message: body, data: {} });
+        onNotification?.({ title, message: body, data: payload.data || {} });
         if (Notification.permission === 'granted') {
           new Notification(title, { body, icon: '/icon-192.png' });
         }
