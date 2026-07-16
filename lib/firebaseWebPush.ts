@@ -74,7 +74,9 @@ export function setupWebPushNotificationsAsync(): Promise<boolean> {
   return webPushSetupPromise;
 }
 
-export async function registerWebPushNotificationsAsync(): Promise<string | null> {
+export async function registerWebPushNotificationsAsync(
+  onNotification?: (event: { title: string; message: string; data: Record<string, unknown> }) => void,
+): Promise<string | null> {
   if (typeof window === 'undefined' || !('Notification' in window) || !('serviceWorker' in navigator) || !('PushManager' in window)) {
     return null;
   }
@@ -107,6 +109,7 @@ export async function registerWebPushNotificationsAsync(): Promise<string | null
       firebase.messaging().onMessage((payload) => {
         const title = payload.notification?.title || 'Victory Fitness';
         const body = payload.notification?.body || 'You have a new update from Victory Fitness.';
+        onNotification?.({ title, message: body, data: {} });
         if (Notification.permission === 'granted') {
           new Notification(title, { body, icon: '/icon-192.png' });
         }

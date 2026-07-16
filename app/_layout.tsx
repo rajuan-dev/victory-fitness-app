@@ -14,7 +14,7 @@ import { getPostAuthRoute, isAdminRestrictedFromApp, isPublicRoute, isRouteAllow
 import { appendRunLog, formatRunLogMessage } from '../lib/runLog';
 import { LanguageProvider } from '../lib/i18n';
 import { blurActiveElementBeforeNavigation, replaceRoute } from '../lib/navigation';
-import { registerForPushNotificationsAsync, requestNotificationPermissionAsync } from '../lib/pushNotifications';
+import { PushNotificationEvent, registerForPushNotificationsAsync, requestNotificationPermissionAsync, subscribeToPushNotifications } from '../lib/pushNotifications';
 
 export function ErrorBoundary({ error, retry }: { error: Error; retry: () => void }) {
   return (
@@ -41,6 +41,15 @@ export default function RootLayout() {
     Inter_700Bold,
   });
   const [checkingAccess, setCheckingAccess] = useState(true);
+  const [toastNotification, setToastNotification] = useState<PushNotificationEvent | null>(null);
+
+  useEffect(() => {
+    const unsubscribe = subscribeToPushNotifications((notification) => {
+      setToastNotification(notification);
+      setTimeout(() => setToastNotification(null), 5000);
+    });
+    return () => { unsubscribe(); };
+  }, []);
 
   useEffect(() => {
     setAuthFailureHandler(() => {
@@ -287,6 +296,25 @@ export default function RootLayout() {
             animation: 'none',
           }}
         />
+        {toastNotification ? (
+          <TouchableOpacity
+            style={styles.notificationToast}
+            onPress={() => {
+              setToastNotification(null);
+              router.push('/notifications');
+            }}
+            activeOpacity={0.9}
+          >
+            <View style={styles.notificationToastIcon}><Text style={styles.notificationToastIconText}>!</Text></View>
+            <View style={styles.notificationToastCopy}>
+              <Text style={styles.notificationToastTitle} numberOfLines={1}>{toastNotification.title}</Text>
+              <Text style={styles.notificationToastMessage} numberOfLines={2}>{toastNotification.message}</Text>
+            </View>
+            <TouchableOpacity onPress={() => setToastNotification(null)} hitSlop={10} accessibilityLabel="Dismiss notification">
+              <Text style={styles.notificationToastClose}>×</Text>
+            </TouchableOpacity>
+          </TouchableOpacity>
+        ) : null}
       </View>
     </LanguageProvider>
   );
@@ -332,4 +360,37 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: Colors.background,
   },
+  notificationToast: {
+    position: 'absolute',
+    top: 48,
+    left: 14,
+    right: 14,
+    zIndex: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    padding: 13,
+    borderRadius: 16,
+    backgroundColor: '#14213D',
+    borderWidth: 1,
+    borderColor: `${Colors.primary}80`,
+    shadowColor: '#000',
+    shadowOpacity: 0.25,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 5 },
+    elevation: 8,
+  },
+  notificationToastIcon: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Colors.primary,
+  },
+  notificationToastIconText: { color: '#07111F', fontSize: 18, fontFamily: 'Inter_700Bold' },
+  notificationToastCopy: { flex: 1 },
+  notificationToastTitle: { color: '#FFFFFF', fontSize: 14, fontFamily: 'Inter_700Bold' },
+  notificationToastMessage: { marginTop: 2, color: '#CBD5E1', fontSize: 12, lineHeight: 17, fontFamily: 'Inter_400Regular' },
+  notificationToastClose: { color: '#CBD5E1', fontSize: 24, lineHeight: 24 },
 });

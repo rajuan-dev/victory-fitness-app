@@ -6,7 +6,7 @@ import { useFocusEffect } from '@react-navigation/native';
 
 import { Colors } from '../constants/Colors';
 import { AppNotification, AuthUser, deleteAppNotification, fetchAppNotifications, fetchCurrentUser } from '../lib/api';
-import { registerForPushNotificationsAsync, requestNotificationPermissionAsync } from '../lib/pushNotifications';
+import { registerForPushNotificationsAsync, requestNotificationPermissionAsync, subscribeToPushNotifications } from '../lib/pushNotifications';
 import { fetchChallengeOverviewData, fetchCommunityPostsData } from '../lib/screenData';
 
 type CampaignItem = {
@@ -205,6 +205,13 @@ export default function NotificationsScreen() {
     if (!cancelled) void loadNotifications(!user);
     return () => { cancelled = true; };
   }, [loadNotifications, user]));
+
+  React.useEffect(() => {
+    const unsubscribe = subscribeToPushNotifications(() => {
+      void fetchAppNotifications().then(setPushNotifications).catch(() => undefined);
+    });
+    return () => { unsubscribe(); };
+  }, []);
 
   const startedAt = user?.subscription_started_at ?? user?.subscription?.started_at;
   const trialDay = getTrialDay(startedAt);
