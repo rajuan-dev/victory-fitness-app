@@ -297,8 +297,8 @@ export default function RootLayout() {
           >
             <View style={styles.notificationToastIcon}><Text style={styles.notificationToastIconText}>!</Text></View>
             <View style={styles.notificationToastCopy}>
-              <Text style={styles.notificationToastTitle} numberOfLines={1}>{toastNotification.title}</Text>
-              <Text style={styles.notificationToastMessage} numberOfLines={2}>{toastNotification.message}</Text>
+              <Text style={styles.notificationToastTitle}>{toastNotification.title}</Text>
+              <Text style={styles.notificationToastMessage}>{toastNotification.message}</Text>
             </View>
             <TouchableOpacity onPress={() => setToastNotification(null)} hitSlop={10} accessibilityLabel="Dismiss notification">
               <Text style={styles.notificationToastClose}>×</Text>
