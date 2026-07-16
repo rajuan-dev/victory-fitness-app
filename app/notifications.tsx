@@ -374,12 +374,17 @@ export default function NotificationsScreen() {
       <Modal visible={Boolean(selectedNotification)} transparent animationType="fade" onRequestClose={() => setSelectedNotification(null)}>
         <View style={styles.detailOverlay}>
           <View style={styles.detailCard}>
-            <Text style={styles.detailCategory}>{selectedNotification?.category}</Text>
+            <View style={styles.detailHeader}>
+              <View style={styles.detailIcon}><Ionicons name="notifications-outline" size={22} color={Colors.primary} /></View>
+              <View style={styles.detailHeaderCopy}><Text style={styles.detailCategory}>{selectedNotification?.category}</Text><Text style={styles.detailDate}>{selectedNotification?.created_at ? formatDate(selectedNotification.created_at) : 'Just now'}</Text></View>
+              <TouchableOpacity style={styles.detailCloseIcon} onPress={() => setSelectedNotification(null)} accessibilityLabel="Close notification details"><Ionicons name="close" size={22} color={Colors.textMuted} /></TouchableOpacity>
+            </View>
             <Text style={styles.detailTitle}>{selectedNotification?.title}</Text>
             <Text style={styles.detailMessage}>{selectedNotification?.message}</Text>
-            {selectedNotification?.created_at ? <Text style={styles.permissionStatus}>{formatDate(selectedNotification.created_at)}</Text> : null}
-            {selectedNotification?.route ? <TouchableOpacity style={styles.detailAction} onPress={() => { setSelectedNotification(null); router.push(selectedNotification.route as never); }}><Text style={styles.detailActionText}>Open</Text></TouchableOpacity> : null}
-            <TouchableOpacity style={styles.detailClose} onPress={() => setSelectedNotification(null)}><Text style={styles.detailCloseText}>Close</Text></TouchableOpacity>
+            <View style={styles.detailActions}>
+              {selectedNotification?.route ? <TouchableOpacity style={styles.detailAction} onPress={() => { setSelectedNotification(null); router.push(selectedNotification.route as never); }}><Text style={styles.detailActionText}>Open notification</Text><Ionicons name="arrow-forward" size={16} color={Colors.background} /></TouchableOpacity> : null}
+              <TouchableOpacity style={styles.detailClose} onPress={() => setSelectedNotification(null)}><Text style={styles.detailCloseText}>Close</Text></TouchableOpacity>
+            </View>
           </View>
         </View>
       </Modal>
@@ -434,13 +439,19 @@ const styles = StyleSheet.create({
   permissionButtonText: { color: Colors.background, fontFamily: 'Inter_700Bold', fontSize: 12 },
   permissionStatus: { color: Colors.textMuted, fontSize: 11, marginTop: 7 },
   detailOverlay: { flex: 1, justifyContent: 'center', padding: 20, backgroundColor: 'rgba(0,0,0,0.72)' },
-  detailCard: { backgroundColor: Colors.surface, borderRadius: 18, padding: 20, borderWidth: 1, borderColor: Colors.inputBorder },
+  detailCard: { backgroundColor: Colors.surface, borderRadius: 22, padding: 20, borderWidth: 1, borderColor: `${Colors.primary}45`, shadowColor: '#000', shadowOpacity: 0.35, shadowRadius: 18, shadowOffset: { width: 0, height: 8 }, elevation: 12 },
+  detailHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 18 },
+  detailIcon: { width: 44, height: 44, borderRadius: 14, alignItems: 'center', justifyContent: 'center', backgroundColor: `${Colors.primary}20` },
+  detailHeaderCopy: { flex: 1, marginLeft: 11 },
   detailCategory: { color: Colors.primary, fontSize: 10, letterSpacing: 1, fontFamily: 'Inter_700Bold' },
+  detailDate: { color: Colors.textMuted, fontSize: 11, marginTop: 4, fontFamily: 'Inter_400Regular' },
+  detailCloseIcon: { width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.06)' },
   detailTitle: { color: Colors.text, fontSize: 21, lineHeight: 27, marginTop: 8, fontFamily: 'Inter_700Bold' },
-  detailMessage: { color: Colors.textSecondary, fontSize: 14, lineHeight: 21, marginTop: 10, fontFamily: 'Inter_400Regular' },
-  detailAction: { alignSelf: 'flex-start', marginTop: 18, backgroundColor: Colors.primary, borderRadius: 10, paddingHorizontal: 18, paddingVertical: 11 },
+  detailMessage: { color: Colors.textSecondary, fontSize: 14, lineHeight: 22, marginTop: 10, fontFamily: 'Inter_400Regular' },
+  detailActions: { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 22 },
+  detailAction: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: Colors.primary, borderRadius: 11, paddingHorizontal: 15, paddingVertical: 11 },
   detailActionText: { color: Colors.background, fontFamily: 'Inter_700Bold', fontSize: 13 },
-  detailClose: { alignSelf: 'flex-start', marginTop: 12, paddingVertical: 7 },
+  detailClose: { paddingHorizontal: 8, paddingVertical: 9 },
   detailCloseText: { color: Colors.textMuted, fontFamily: 'Inter_600SemiBold', fontSize: 13 },
   challengeNotice: { flexDirection: 'row', backgroundColor: 'rgba(245,158,11,0.1)', borderWidth: 1, borderColor: 'rgba(245,158,11,0.34)', borderRadius: 14, padding: 14, marginBottom: 14 },
   challengeNoticeIcon: { width: 40, height: 40, borderRadius: 12, backgroundColor: 'rgba(245,158,11,0.14)', alignItems: 'center', justifyContent: 'center', marginRight: 11 },
