@@ -1,11 +1,11 @@
 import React from 'react';
-import { RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Modal, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 
 import { Colors } from '../constants/Colors';
-import { AppNotification, AuthUser, deleteActivityNotification, deleteAppNotification, fetchAppNotifications, fetchCurrentUser, fetchDismissedActivityNotifications } from '../lib/api';
+import { AppNotification, AuthUser, deleteActivityNotification, deleteAppNotification, fetchAppNotifications, fetchCurrentUser, fetchDismissedActivityNotifications, markAppNotificationRead } from '../lib/api';
 import { registerForPushNotificationsAsync, requestNotificationPermissionAsync, subscribeToPushNotifications } from '../lib/pushNotifications';
 import { fetchChallengeOverviewData, fetchCommunityPostsData } from '../lib/screenData';
 
@@ -138,6 +138,7 @@ export default function NotificationsScreen() {
   const [refreshing, setRefreshing] = React.useState(false);
   const [loadError, setLoadError] = React.useState('');
   const [deletingNotificationId, setDeletingNotificationId] = React.useState<string | null>(null);
+  const [selectedNotification, setSelectedNotification] = React.useState<{ title: string; message: string; category: string; created_at?: string | null; route?: string } | null>(null);
 
   const loadNotifications = React.useCallback(async (initialLoad = false) => {
     if (initialLoad) setLoading(true);
@@ -227,8 +228,8 @@ export default function NotificationsScreen() {
 
   const startedAt = user?.subscription_started_at ?? user?.subscription?.started_at;
   const trialDay = getTrialDay(startedAt);
-  const activeDay = trialDay === null ? 0 : Math.min(trialDay, 5);
   const isComplete = trialDay !== null && trialDay >= 5;
+  const unreadCount = pushNotifications.filter((item) => !item.read).length + activityNotifications.length;
 
   const enableNotifications = async () => {
     try {
@@ -266,6 +267,16 @@ export default function NotificationsScreen() {
       .finally(() => setDeletingNotificationId(null));
   };
 
+  const openAppNotification = (item: AppNotification) => {
+    const route = typeof item.data?.videoRoute === 'string' ? item.data.videoRoute : typeof item.data?.route === 'string' ? item.data.route : undefined;
+    setSelectedNotification({ title: item.title, message: item.message, category: item.type.replaceAll('_', ' ').toUpperCase(), created_at: item.created_at, route });
+    if (!item.read) {
+      void markAppNotificationRead(item.id).then(() => {
+        setPushNotifications((current) => current.map((notification) => notification.id === item.id ? { ...notification, read: true } : notification));
+      }).catch(() => undefined);
+    }
+  };
+
   if (loading) return <View style={styles.loading}><Text style={styles.muted}>Loading notifications...</Text></View>;
   if (loadError && !user) {
     return (
@@ -290,7 +301,7 @@ export default function NotificationsScreen() {
             <Ionicons name="chevron-back" size={22} color={Colors.text} />
           </TouchableOpacity>
           <View style={styles.headerCopy}>
-            <Text style={styles.title}>Notifications</Text>
+            <View style={styles.titleRow}><Text style={styles.title}>Notifications</Text>{unreadCount > 0 ? <View style={styles.unreadBadge}><Text style={styles.unreadBadgeText}>{unreadCount}</Text></View> : null}</View>
           </View>
           <View style={[styles.statusDot, isComplete && styles.statusDotComplete]} />
         </View>
@@ -306,10 +317,7 @@ export default function NotificationsScreen() {
             <Text style={styles.activitySectionTitle}>NEW FROM VICTORY FITNESS</Text>
             {pushNotifications.map((item) => (
               <View key={item.id} style={styles.activityItem}>
-                <TouchableOpacity style={styles.notificationContentButton} onPress={() => {
-                  const route = typeof item.data?.videoRoute === 'string' ? item.data.videoRoute : typeof item.data?.route === 'string' ? item.data.route : null;
-                  if (route) router.push(route as never);
-                }} activeOpacity={0.82}>
+                <TouchableOpacity style={styles.notificationContentButton} onPress={() => openAppNotification(item)} activeOpacity={0.82}>
                 <View style={[styles.activityIcon, { backgroundColor: `${Colors.primary}20` }]}><Ionicons name="sparkles-outline" size={21} color={Colors.primary} /></View>
                 <View style={styles.activityBody}><Text style={[styles.activityCategory, { color: Colors.primary }]}>{item.type.replaceAll('_', ' ').toUpperCase()}</Text><Text style={styles.activityTitle}>{item.title}</Text><Text style={styles.activityText}>{item.message}</Text><Text style={styles.permissionStatus}>{formatDate(item.created_at)}</Text></View>
                 </TouchableOpacity>
@@ -340,7 +348,7 @@ export default function NotificationsScreen() {
             <Text style={styles.activitySectionTitle}>CHALLENGES & COMMUNITY</Text>
             {activityNotifications.map((item) => (
               <View key={item.id} style={styles.activityItem}>
-                <TouchableOpacity style={styles.notificationContentButton} onPress={() => router.push(item.route as never)} activeOpacity={0.82}>
+                <TouchableOpacity style={styles.notificationContentButton} onPress={() => setSelectedNotification({ title: item.title, message: item.message, category: item.category, created_at: item.created_at, route: item.route })} activeOpacity={0.82}>
                 <View style={[styles.activityIcon, { backgroundColor: `${item.accent}20` }]}><Ionicons name={item.icon} size={21} color={item.accent} /></View>
                 <View style={styles.activityBody}><Text style={[styles.activityCategory, { color: item.accent }]}>{item.category}</Text><Text style={styles.activityTitle}>{item.title}</Text><Text style={styles.activityText}>{item.message}</Text></View>
                 <Ionicons name="chevron-forward" size={18} color={Colors.textMuted} />
@@ -357,25 +365,24 @@ export default function NotificationsScreen() {
           <View style={styles.emptyState}><Ionicons name="notifications-off-outline" size={30} color={Colors.primary} /><Text style={styles.emptyTitle}>Your trial timeline is not ready yet</Text><Text style={styles.muted}>Notifications will appear here once your Gold trial start date is recorded.</Text></View>
         ) : null}
 
-        {CAMPAIGN.map((item) => {
-          const available = item.day <= activeDay;
-          const current = item.day === activeDay && !isComplete;
-          return (
-            <View key={item.day} style={[styles.item, !available && styles.itemUpcoming, current && styles.itemCurrent]}>
-              <View style={[styles.itemIcon, { backgroundColor: `${item.accent}20` }]}><Ionicons name={item.icon} size={21} color={item.accent} /></View>
-              <View style={styles.itemBody}>
-                <View style={styles.itemMeta}><Text style={[styles.day, { color: item.accent }]}>DAY {item.day}</Text><Text style={styles.label}>{item.label}</Text></View>
-                <Text style={styles.itemTitle}>{item.title}</Text>
-                <Text style={styles.message}>{item.message}</Text>
-                {available && item.fallback ? <Text style={styles.fallback}><Ionicons name="information-circle-outline" size={14} color={Colors.textMuted} /> {item.fallback}</Text> : null}
-                {available && item.action ? <TouchableOpacity style={[styles.action, { borderColor: `${item.accent}70` }]} onPress={() => router.push(item.action!.route as never)}><Text style={[styles.actionText, { color: item.accent }]}>{item.action.label}</Text><Ionicons name="arrow-forward" size={16} color={item.accent} /></TouchableOpacity> : null}
-              </View>
-            </View>
-          );
-        })}
+        {pushNotifications.length === 0 && activityNotifications.length === 0 ? (
+          <View style={styles.emptyState}><Ionicons name="notifications-off-outline" size={30} color={Colors.primary} /><Text style={styles.emptyTitle}>No notifications yet</Text><Text style={styles.muted}>New notifications will appear here after they are created by the backend.</Text></View>
+        ) : null}
 
         <View style={styles.consentNote}><Ionicons name="shield-checkmark-outline" size={18} color={Colors.primary} /><Text style={styles.consentText}>{user?.marketing_consent ? 'You agreed to email/SMS re-engagement at signup.' : 'Marketing consent is off. Future win-back messages will not be sent.'}</Text></View>
       </ScrollView>
+      <Modal visible={Boolean(selectedNotification)} transparent animationType="fade" onRequestClose={() => setSelectedNotification(null)}>
+        <View style={styles.detailOverlay}>
+          <View style={styles.detailCard}>
+            <Text style={styles.detailCategory}>{selectedNotification?.category}</Text>
+            <Text style={styles.detailTitle}>{selectedNotification?.title}</Text>
+            <Text style={styles.detailMessage}>{selectedNotification?.message}</Text>
+            {selectedNotification?.created_at ? <Text style={styles.permissionStatus}>{formatDate(selectedNotification.created_at)}</Text> : null}
+            {selectedNotification?.route ? <TouchableOpacity style={styles.detailAction} onPress={() => { setSelectedNotification(null); router.push(selectedNotification.route as never); }}><Text style={styles.detailActionText}>Open</Text></TouchableOpacity> : null}
+            <TouchableOpacity style={styles.detailClose} onPress={() => setSelectedNotification(null)}><Text style={styles.detailCloseText}>Close</Text></TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -387,8 +394,11 @@ const styles = StyleSheet.create({
   header: { flexDirection: 'row', alignItems: 'center', marginBottom: 22, paddingTop: 8 },
   iconButton: { width: 40, height: 40, borderRadius: 20, backgroundColor: Colors.surface, alignItems: 'center', justifyContent: 'center' },
   headerCopy: { flex: 1, marginLeft: 12 },
+  titleRow: { flexDirection: 'row', alignItems: 'center', gap: 9 },
   eyebrow: { color: Colors.primary, fontSize: 11, fontFamily: 'Inter_700Bold', letterSpacing: 1.2 },
   title: { color: Colors.text, fontSize: 26, fontFamily: 'Inter_700Bold', marginTop: 3 },
+  unreadBadge: { minWidth: 24, height: 24, paddingHorizontal: 7, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: '#F87171' },
+  unreadBadgeText: { color: '#FFFFFF', fontSize: 12, fontFamily: 'Inter_700Bold' },
   statusDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: Colors.primary },
   statusDotComplete: { backgroundColor: Colors.accentGold },
   summary: { backgroundColor: Colors.surface, borderRadius: 16, padding: 18, borderWidth: 1, borderColor: Colors.inputBorder, marginBottom: 20 },
@@ -423,6 +433,15 @@ const styles = StyleSheet.create({
   permissionButton: { alignSelf: 'flex-start', marginTop: 12, backgroundColor: Colors.primary, borderRadius: 10, paddingHorizontal: 16, paddingVertical: 9 },
   permissionButtonText: { color: Colors.background, fontFamily: 'Inter_700Bold', fontSize: 12 },
   permissionStatus: { color: Colors.textMuted, fontSize: 11, marginTop: 7 },
+  detailOverlay: { flex: 1, justifyContent: 'center', padding: 20, backgroundColor: 'rgba(0,0,0,0.72)' },
+  detailCard: { backgroundColor: Colors.surface, borderRadius: 18, padding: 20, borderWidth: 1, borderColor: Colors.inputBorder },
+  detailCategory: { color: Colors.primary, fontSize: 10, letterSpacing: 1, fontFamily: 'Inter_700Bold' },
+  detailTitle: { color: Colors.text, fontSize: 21, lineHeight: 27, marginTop: 8, fontFamily: 'Inter_700Bold' },
+  detailMessage: { color: Colors.textSecondary, fontSize: 14, lineHeight: 21, marginTop: 10, fontFamily: 'Inter_400Regular' },
+  detailAction: { alignSelf: 'flex-start', marginTop: 18, backgroundColor: Colors.primary, borderRadius: 10, paddingHorizontal: 18, paddingVertical: 11 },
+  detailActionText: { color: Colors.background, fontFamily: 'Inter_700Bold', fontSize: 13 },
+  detailClose: { alignSelf: 'flex-start', marginTop: 12, paddingVertical: 7 },
+  detailCloseText: { color: Colors.textMuted, fontFamily: 'Inter_600SemiBold', fontSize: 13 },
   challengeNotice: { flexDirection: 'row', backgroundColor: 'rgba(245,158,11,0.1)', borderWidth: 1, borderColor: 'rgba(245,158,11,0.34)', borderRadius: 14, padding: 14, marginBottom: 14 },
   challengeNoticeIcon: { width: 40, height: 40, borderRadius: 12, backgroundColor: 'rgba(245,158,11,0.14)', alignItems: 'center', justifyContent: 'center', marginRight: 11 },
   challengeNoticeBody: { flex: 1 },
