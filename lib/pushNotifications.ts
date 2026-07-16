@@ -56,11 +56,11 @@ export async function registerForPushNotificationsAsync(): Promise<string | null
 
   const projectId = Constants.expoConfig?.extra?.eas?.projectId;
   const token = (await notifications.getExpoPushTokenAsync(projectId ? { projectId } : undefined)).data;
-  const previousToken = await AsyncStorage.getItem(REGISTERED_TOKEN_KEY);
-  if (previousToken !== token) {
-    await apiRequest('/me/push-token', { method: 'POST', body: { token, platform: Platform.OS } });
-    await AsyncStorage.setItem(REGISTERED_TOKEN_KEY, token);
-  }
+  // Register on every authenticated app session. The same device token can
+  // belong to a different account after logout, so a global local-storage
+  // cache can otherwise prevent the new account from receiving pushes.
+  await apiRequest('/me/push-token', { method: 'POST', body: { token, platform: Platform.OS } });
+  await AsyncStorage.setItem(REGISTERED_TOKEN_KEY, token);
   return token;
 }
 

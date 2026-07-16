@@ -117,9 +117,9 @@ export async function registerWebPushNotificationsAsync(): Promise<string | null
     }
   }
 
-  if ((await AsyncStorage.getItem(REGISTERED_TOKEN_KEY)) !== token) {
-    await apiRequest('/me/push-token', { method: 'POST', body: { token, platform: 'web' } });
-    await AsyncStorage.setItem(REGISTERED_TOKEN_KEY, token);
-  }
+  // Do not rely on a device-wide cache: after logout/login the same browser
+  // token must also be registered for the newly authenticated account.
+  await apiRequest('/me/push-token', { method: 'POST', body: { token, platform: 'web' } });
+  await AsyncStorage.setItem(REGISTERED_TOKEN_KEY, token);
   return token;
 }
