@@ -222,7 +222,9 @@ export default function NotificationsScreen() {
 
   React.useEffect(() => {
     const unsubscribe = subscribeToPushNotifications(() => {
-      void fetchAppNotifications().then(setPushNotifications).catch(() => undefined);
+      void fetchAppNotifications()
+        .then((items) => setPushNotifications([...items].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())))
+        .catch(() => undefined);
     });
     return () => { unsubscribe(); };
   }, []);
