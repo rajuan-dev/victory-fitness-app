@@ -109,6 +109,7 @@ type AuthTokens = {
 
 export type AuthUser = {
   id: string;
+  created_at?: string | null;
   name: string;
   email: string;
   is_verified: boolean;
@@ -506,6 +507,7 @@ function normalizeAuthUser(user: Partial<AuthUser> & { id?: string; name?: strin
   const normalizedSubscription = user.subscription && typeof user.subscription === 'object' ? user.subscription : undefined;
   return {
     id: String(user.id ?? ''),
+    created_at: user.created_at ? String(user.created_at) : null,
     name: String(user.name ?? ''),
     email: String(user.email ?? ''),
     is_verified: Boolean(user.is_verified),
