@@ -1,5 +1,5 @@
 import React from 'react';
-import { Alert, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
@@ -136,6 +136,7 @@ export default function NotificationsScreen() {
   const [loading, setLoading] = React.useState(true);
   const [refreshing, setRefreshing] = React.useState(false);
   const [loadError, setLoadError] = React.useState('');
+  const [deletingNotificationId, setDeletingNotificationId] = React.useState<string | null>(null);
 
   const loadNotifications = React.useCallback(async (initialLoad = false) => {
     if (initialLoad) setLoading(true);
@@ -233,23 +234,16 @@ export default function NotificationsScreen() {
   };
 
   const removeNotification = (item: AppNotification) => {
-    Alert.alert('Delete notification?', 'This notification will be removed from your inbox.', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Delete',
-        style: 'destructive',
-        onPress: () => {
-          void (async () => {
-            try {
-              await deleteAppNotification(item.id);
-              setPushNotifications((current) => current.filter((notification) => notification.id !== item.id));
-            } catch {
-              setLoadError('Unable to delete this notification right now.');
-            }
-          })();
-        },
-      },
-    ]);
+    if (deletingNotificationId) return;
+    setDeletingNotificationId(item.id);
+    void deleteAppNotification(item.id)
+      .then(() => {
+        setPushNotifications((current) => current.filter((notification) => notification.id !== item.id));
+      })
+      .catch(() => {
+        setLoadError('Unable to delete this notification right now.');
+      })
+      .finally(() => setDeletingNotificationId(null));
   };
 
   if (loading) return <View style={styles.loading}><Text style={styles.muted}>Loading notifications...</Text></View>;
@@ -291,16 +285,18 @@ export default function NotificationsScreen() {
           <View style={styles.activitySection}>
             <Text style={styles.activitySectionTitle}>NEW FROM VICTORY FITNESS</Text>
             {pushNotifications.map((item) => (
-              <TouchableOpacity key={item.id} style={styles.activityItem} onPress={() => {
-                const route = typeof item.data?.videoRoute === 'string' ? item.data.videoRoute : typeof item.data?.route === 'string' ? item.data.route : null;
-                if (route) router.push(route as never);
-              }} activeOpacity={0.82}>
+              <View key={item.id} style={styles.activityItem}>
+                <TouchableOpacity style={styles.notificationContentButton} onPress={() => {
+                  const route = typeof item.data?.videoRoute === 'string' ? item.data.videoRoute : typeof item.data?.route === 'string' ? item.data.route : null;
+                  if (route) router.push(route as never);
+                }} activeOpacity={0.82}>
                 <View style={[styles.activityIcon, { backgroundColor: `${Colors.primary}20` }]}><Ionicons name="sparkles-outline" size={21} color={Colors.primary} /></View>
                 <View style={styles.activityBody}><Text style={[styles.activityCategory, { color: Colors.primary }]}>{item.type.replaceAll('_', ' ').toUpperCase()}</Text><Text style={styles.activityTitle}>{item.title}</Text><Text style={styles.activityText}>{item.message}</Text><Text style={styles.permissionStatus}>{formatDate(item.created_at)}</Text></View>
-                <TouchableOpacity onPress={() => removeNotification(item)} hitSlop={10} accessibilityLabel="Delete notification">
-                  <Ionicons name="trash-outline" size={19} color={Colors.textMuted} />
                 </TouchableOpacity>
-              </TouchableOpacity>
+                <TouchableOpacity style={styles.deleteNotificationButton} onPress={() => removeNotification(item)} disabled={deletingNotificationId === item.id} accessibilityLabel="Delete notification">
+                  <Ionicons name="trash-outline" size={20} color={deletingNotificationId === item.id ? Colors.textMuted : '#F87171'} />
+                </TouchableOpacity>
+              </View>
             ))}
           </View>
         ) : null}
@@ -413,6 +409,8 @@ const styles = StyleSheet.create({
   activitySection: { marginBottom: 16 },
   activitySectionTitle: { color: Colors.textMuted, fontSize: 10, letterSpacing: 1.2, fontFamily: 'Inter_700Bold', marginBottom: 9 },
   activityItem: { flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.surface, borderRadius: 14, padding: 14, marginBottom: 9, borderWidth: 1, borderColor: Colors.inputBorder },
+  notificationContentButton: { flex: 1, flexDirection: 'row', alignItems: 'center', minWidth: 0 },
+  deleteNotificationButton: { marginLeft: 10, padding: 8, borderRadius: 10, backgroundColor: 'rgba(248,113,113,0.12)' },
   activityIcon: { width: 42, height: 42, borderRadius: 12, alignItems: 'center', justifyContent: 'center', marginRight: 11 },
   activityBody: { flex: 1, minWidth: 0 },
   activityCategory: { fontSize: 10, letterSpacing: 1, fontFamily: 'Inter_700Bold' },
