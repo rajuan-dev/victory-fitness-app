@@ -1,5 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import {
+  Image,
+  Modal,
+  Platform,
+  Share,
   View,
   Text,
   StyleSheet,
@@ -8,6 +12,7 @@ import {
   ActivityIndicator,
   Alert,
 } from 'react-native';
+import * as FileSystem from 'expo-file-system/legacy';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Stack, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -21,10 +26,58 @@ import {
   StrengthPlanResponse,
   updateStrengthWorkoutPlanProgress,
 } from '../../lib/workout-plans';
+import { fetchCurrentUser } from '../../lib/api';
 import { goBackOrReplace } from '../../lib/navigation';
 import { useModuleAccessGuard } from '../../lib/useModuleAccessGuard';
 import { useLanguage } from '../../lib/i18n';
 import { formatAppError } from '../../lib/error';
+
+type CompletionCard = {
+  svg: string;
+  dataUri: string;
+  fileName: string;
+  shareMessage: string;
+};
+
+function escapeSvg(value: string) {
+  return String(value || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+function buildStrengthCompletionCard(
+  plan: StrengthPlanResponse,
+  dayLabel: string,
+  userName: string,
+  completedDays: number,
+  totalDays: number,
+  completedExerciseNames: string[],
+  totalExercises: number,
+): CompletionCard {
+  const title = escapeSvg(plan.summary || 'Custom Strength Plan');
+  const member = escapeSvg(userName || 'Victory Member');
+  const rows = completedExerciseNames.slice(0, 7).map((name, index) => `<text x="150" y="${690 + index * 42}" fill="#F7F7F7" font-size="24" font-family="Arial">✓ ${escapeSvg(name)}</text>`).join('');
+  const progress = totalDays > 0 ? Math.min(1, completedDays / totalDays) : 0;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="900" height="1400" viewBox="0 0 900 1400">
+    <rect width="900" height="1400" fill="#03192A"/>
+    <rect x="36" y="80" width="828" height="1260" rx="34" fill="#06111D" stroke="#00D9F5" stroke-width="3"/>
+    <circle cx="450" cy="190" r="44" fill="#00D9F5"/><text x="450" y="205" text-anchor="middle" fill="#03192A" font-size="34" font-family="Arial" font-weight="700">VF</text>
+    <text x="450" y="300" text-anchor="middle" fill="#F7F7F7" font-size="42" font-family="Arial" font-weight="700">YOUR VICTORY</text>
+    <text x="450" y="355" text-anchor="middle" fill="#00D9F5" font-size="24" font-family="Arial" font-weight="700">STRENGTH WORKOUT COMPLETED</text>
+    <text x="450" y="450" text-anchor="middle" fill="#F7F7F7" font-size="34" font-family="Arial" font-weight="700">${title}</text>
+    <text x="450" y="505" text-anchor="middle" fill="#A9B8C8" font-size="24" font-family="Arial">${escapeSvg(dayLabel)} · ${member}</text>
+    <rect x="130" y="555" width="640" height="20" rx="10" fill="#203243"/><rect x="130" y="555" width="${640 * progress}" height="20" rx="10" fill="#00D9F5"/>
+    <text x="150" y="635" fill="#00D9F5" font-size="22" font-family="Arial" font-weight="700">COMPLETED EXERCISES</text>
+    ${rows || '<text x="150" y="690" fill="#A9B8C8" font-size="24" font-family="Arial">Keep building your strength.</text>'}
+    <rect x="130" y="1030" width="285" height="120" rx="18" fill="#101F2E" stroke="#273E50"/><text x="272" y="1070" text-anchor="middle" fill="#A9B8C8" font-size="18" font-family="Arial">PLAN DAYS</text><text x="272" y="1120" text-anchor="middle" fill="#00D9F5" font-size="34" font-family="Arial" font-weight="700">${completedDays}/${totalDays}</text>
+    <rect x="485" y="1030" width="285" height="120" rx="18" fill="#101F2E" stroke="#273E50"/><text x="627" y="1070" text-anchor="middle" fill="#A9B8C8" font-size="18" font-family="Arial">EXERCISES</text><text x="627" y="1120" text-anchor="middle" fill="#FF4B70" font-size="34" font-family="Arial" font-weight="700">${completedExerciseNames.length}/${totalExercises}</text>
+    <text x="450" y="1265" text-anchor="middle" fill="#A9B8C8" font-size="20" font-family="Arial">VICTORY-FITNESS.APP</text>
+  </svg>`;
+  return {
+    svg,
+    dataUri: `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`,
+    fileName: 'victory-fitness-strength-completion.svg',
+    shareMessage: `Victory Fitness - ${plan.summary || 'Custom Strength Plan'} completed by ${userName || 'Victory Member'} (${dayLabel}).`,
+  };
+}
 
 export default function StrengthPlanDashboard() {
   const checkingAccess = useModuleAccessGuard('/workoutplan');
@@ -35,6 +88,9 @@ export default function StrengthPlanDashboard() {
   const [deletingPlanId, setDeletingPlanId] = useState<string | null>(null);
   const [updatingProgressKey, setUpdatingProgressKey] = useState<string | null>(null);
   const [elapsedTime, setElapsedTime] = useState('00:00:00');
+  const [currentUserName, setCurrentUserName] = useState('Victory Member');
+  const [completionCard, setCompletionCard] = useState<CompletionCard | null>(null);
+  const [cardAction, setCardAction] = useState<'download' | 'share' | ''>('');
 
   // Accordion and Day selection states
   const [expandedPlanId, setExpandedPlanId] = useState<string | null>(null);
@@ -78,6 +134,7 @@ export default function StrengthPlanDashboard() {
     };
 
     void loadPlans();
+    void fetchCurrentUser().then((user) => setCurrentUserName(user.name || 'Victory Member')).catch(() => undefined);
 
     return () => {
       cancelled = true;
@@ -150,10 +207,66 @@ export default function StrengthPlanDashboard() {
         completed: true,
       });
       updatePlanProgressState(updatedPlan);
+      const updatedProgress = getDayProgress(updatedPlan, dayLabel);
+      const completedDays = updatedPlan.progress?.filter((item) => item.completed).length || 0;
+      const targetDay = updatedPlan.days?.find((item) => item.day === dayLabel);
+      const completedExerciseIds = new Set(updatedProgress?.completed_exercise_ids || []);
+      const completedExerciseNames = (targetDay?.sections || []).flatMap((section) => section.exercises).filter((exercise) => completedExerciseIds.has(exercise.id)).map((exercise) => exercise.name);
+      const totalExercises = (targetDay?.sections || []).reduce((total, section) => total + section.exercises.length, 0);
+      setCompletionCard(buildStrengthCompletionCard(updatedPlan, dayLabel, currentUserName, completedDays, updatedPlan.days?.length || 0, completedExerciseNames, totalExercises));
     } catch (error) {
       Alert.alert(t('Error'), formatAppError(error, t('Unable to complete workout right now.')).message);
     } finally {
       setUpdatingProgressKey(null);
+    }
+  };
+
+  const prepareCardFile = async (card: CompletionCard) => {
+    if (Platform.OS === 'web') return card.dataUri;
+    const directory = FileSystem.cacheDirectory || FileSystem.documentDirectory || '';
+    const fileUri = `${directory}${card.fileName}`;
+    await FileSystem.writeAsStringAsync(fileUri, card.svg, { encoding: FileSystem.EncodingType.UTF8 });
+    return fileUri;
+  };
+
+  const handleDownloadCard = async () => {
+    if (!completionCard) return;
+    setCardAction('download');
+    try {
+      if (Platform.OS === 'web') {
+        const anchor = document.createElement('a');
+        anchor.href = completionCard.dataUri;
+        anchor.download = completionCard.fileName;
+        document.body.appendChild(anchor);
+        anchor.click();
+        anchor.remove();
+      } else {
+        await Share.share({ url: await prepareCardFile(completionCard), message: completionCard.shareMessage });
+      }
+    } catch (error) {
+      Alert.alert(t('Error'), formatAppError(error, 'Unable to export your completion card.').message);
+    } finally {
+      setCardAction('');
+    }
+  };
+
+  const handleShareCard = async () => {
+    if (!completionCard) return;
+    setCardAction('share');
+    try {
+      if (Platform.OS === 'web' && navigator.share) {
+        await navigator.share({ title: 'Victory Fitness Strength Card', text: completionCard.shareMessage });
+      } else if (Platform.OS === 'web') {
+        await handleDownloadCard();
+      } else {
+        const fileUri = await prepareCardFile(completionCard);
+        const shareUrl = Platform.OS === 'android' ? await FileSystem.getContentUriAsync(fileUri) : fileUri;
+        await Share.share({ title: 'Victory Fitness Strength Card', url: shareUrl, message: completionCard.shareMessage });
+      }
+    } catch (error) {
+      Alert.alert(t('Error'), formatAppError(error, 'Unable to share your completion card.').message);
+    } finally {
+      setCardAction('');
     }
   };
 
@@ -272,6 +385,25 @@ export default function StrengthPlanDashboard() {
 
   return (
     <SafeAreaView style={styles.container}>
+      <Modal visible={Boolean(completionCard)} transparent animationType="fade" onRequestClose={() => setCompletionCard(null)}>
+        <View style={styles.cardModalOverlay}>
+          <View style={styles.cardModal}>
+            <Text style={styles.cardModalTitle}>Strength workout completed</Text>
+            {completionCard ? <Image source={{ uri: completionCard.dataUri }} style={styles.completionCardImage} resizeMode="contain" /> : null}
+            <View style={styles.cardModalActions}>
+              <TouchableOpacity style={styles.cardModalButton} onPress={() => void handleDownloadCard()} disabled={cardAction !== ''}>
+                {cardAction === 'download' ? <ActivityIndicator color="#000" /> : <Ionicons name="download-outline" size={18} color="#000" />}
+                <Text style={styles.cardModalButtonText}>Download</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.cardModalButton} onPress={() => void handleShareCard()} disabled={cardAction !== ''}>
+                {cardAction === 'share' ? <ActivityIndicator color="#000" /> : <Ionicons name="share-social-outline" size={18} color="#000" />}
+                <Text style={styles.cardModalButtonText}>Share</Text>
+              </TouchableOpacity>
+            </View>
+            <TouchableOpacity style={styles.cardModalClose} onPress={() => setCompletionCard(null)}><Text style={styles.cardModalCloseText}>Close</Text></TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
       <Stack.Screen
         options={{
           headerShown: true,
@@ -732,6 +864,15 @@ export default function StrengthPlanDashboard() {
 }
 
 const styles = StyleSheet.create({
+  cardModalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.82)', justifyContent: 'center', alignItems: 'center', padding: 18 },
+  cardModal: { width: '100%', maxWidth: 430, maxHeight: '92%', backgroundColor: '#0B1520', borderRadius: 24, padding: 16, alignItems: 'center', borderWidth: 1, borderColor: 'rgba(0,217,245,0.35)' },
+  cardModalTitle: { color: '#fff', fontSize: 18, fontFamily: 'Inter_700Bold', marginBottom: 10 },
+  completionCardImage: { width: '100%', height: 560, backgroundColor: '#03192A', borderRadius: 16 },
+  cardModalActions: { flexDirection: 'row', gap: 10, width: '100%', marginTop: 14 },
+  cardModalButton: { flex: 1, minHeight: 46, borderRadius: 12, backgroundColor: Colors.accentBlue, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
+  cardModalButtonText: { color: '#000', fontFamily: 'Inter_700Bold' },
+  cardModalClose: { padding: 12 },
+  cardModalCloseText: { color: 'rgba(255,255,255,0.65)', fontFamily: 'Inter_600SemiBold' },
   container: {
     flex: 1,
     backgroundColor: '#0F0F0F',
