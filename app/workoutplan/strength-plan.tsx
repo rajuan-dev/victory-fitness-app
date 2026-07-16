@@ -38,15 +38,16 @@ type CompletionCard = {
   mimeType: 'image/png';
   fileName: string;
   shareMessage: string;
+  isFullPlan: boolean;
 };
 
-async function fetchStrengthCompletionCard(planId: string, dayLabel: string): Promise<CompletionCard> {
+async function fetchStrengthCompletionCard(planId: string, dayLabel = '', isFullPlan = false): Promise<CompletionCard> {
   const response = await apiRequest<{
     file_name: string;
     mime_type: string;
     image_base64: string;
     share_message: string;
-  }>(`/ai/workout-plan/strength/${encodeURIComponent(planId)}/report?day=${encodeURIComponent(dayLabel)}`);
+  }>(`/ai/workout-plan/strength/${encodeURIComponent(planId)}/report?day=${encodeURIComponent(dayLabel)}&full_plan=${isFullPlan ? 'true' : 'false'}`);
   const imageBase64 = response.image_base64;
   return {
     imageBase64,
@@ -54,6 +55,7 @@ async function fetchStrengthCompletionCard(planId: string, dayLabel: string): Pr
     mimeType: 'image/png',
     fileName: 'victory-fitness-strength-completion.png',
     shareMessage: response.share_message,
+    isFullPlan,
   };
 }
 
@@ -68,7 +70,7 @@ export default function StrengthPlanDashboard() {
   const [elapsedTime, setElapsedTime] = useState('00:00:00');
   const [currentUserName, setCurrentUserName] = useState('Victory Member');
   const [completionCard, setCompletionCard] = useState<CompletionCard | null>(null);
-  const [cardAction, setCardAction] = useState<'download' | 'share' | ''>('');
+  const [cardAction, setCardAction] = useState<'download' | 'share' | 'preview' | ''>('');
 
   // Accordion and Day selection states
   const [expandedPlanId, setExpandedPlanId] = useState<string | null>(null);
@@ -185,11 +187,24 @@ export default function StrengthPlanDashboard() {
         completed: true,
       });
       updatePlanProgressState(updatedPlan);
-      setCompletionCard(await fetchStrengthCompletionCard(plan.plan_id, dayLabel));
+      const isFullPlan = updatedPlan.days.length > 0 && updatedPlan.days.every((day) => getDayProgress(updatedPlan, day.day)?.completed);
+      setCompletionCard(await fetchStrengthCompletionCard(plan.plan_id, dayLabel, isFullPlan));
     } catch (error) {
       Alert.alert(t('Error'), formatAppError(error, t('Unable to complete workout right now.')).message);
     } finally {
       setUpdatingProgressKey(null);
+    }
+  };
+
+  const handleShowFullPlanBadge = async (plan: StrengthPlanResponse) => {
+    if (!plan.plan_id) return;
+    setCardAction('preview');
+    try {
+      setCompletionCard(await fetchStrengthCompletionCard(plan.plan_id, '', true));
+    } catch (error) {
+      Alert.alert(t('Error'), formatAppError(error, 'Unable to prepare your completion badge.').message);
+    } finally {
+      setCardAction('');
     }
   };
 
@@ -366,7 +381,7 @@ export default function StrengthPlanDashboard() {
       <Modal visible={Boolean(completionCard)} transparent animationType="fade" onRequestClose={() => setCompletionCard(null)}>
         <View style={styles.cardModalOverlay}>
           <View style={styles.cardModal}>
-            <Text style={styles.cardModalTitle}>Strength workout completed</Text>
+            <Text style={styles.cardModalTitle}>{completionCard?.isFullPlan ? 'Custom strength plan completed' : 'Strength workout completed'}</Text>
             {completionCard ? <Image source={{ uri: completionCard.fileUri }} style={styles.completionCardImage} resizeMode="contain" /> : null}
             <View style={styles.cardModalActions}>
               <TouchableOpacity style={styles.cardModalButton} onPress={() => void handleDownloadCard()} disabled={cardAction !== ''}>
@@ -483,6 +498,17 @@ export default function StrengthPlanDashboard() {
                       />
                     </View>
                   </TouchableOpacity>
+
+                  {plan.days.length > 0 && plan.days.every((day) => getDayProgress(plan, day.day)?.completed) && (
+                    <TouchableOpacity
+                      style={styles.planBadgeButton}
+                      onPress={() => void handleShowFullPlanBadge(plan)}
+                      disabled={cardAction !== ''}
+                    >
+                      <Ionicons name="ribbon-outline" size={17} color="#001311" />
+                      <Text style={styles.planBadgeButtonText}>VIEW COMPLETION BADGE</Text>
+                    </TouchableOpacity>
+                  )}
 
                   {/* Expanded Portion showing details */}
                   {isExpanded && (
@@ -950,6 +976,23 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: 12,
+  },
+  planBadgeButton: {
+    marginHorizontal: 16,
+    marginBottom: 12,
+    minHeight: 44,
+    borderRadius: 12,
+    backgroundColor: Colors.accentBlue,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  planBadgeButtonText: {
+    color: '#001311',
+    fontSize: 11,
+    fontFamily: 'Inter_800ExtraBold',
+    letterSpacing: 0.8,
   },
   planMain: {
     flex: 1,
