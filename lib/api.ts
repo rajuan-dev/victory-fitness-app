@@ -849,6 +849,17 @@ export async function deleteAppNotification(notificationId: string) {
   });
 }
 
+export async function fetchDismissedActivityNotifications() {
+  const response = await apiRequest<{ ids: string[] }>('/me/activity-notifications/dismissed');
+  return response.ids || [];
+}
+
+export async function deleteActivityNotification(notificationId: string) {
+  return apiRequest<{ deleted: boolean }>(`/me/activity-notifications/${encodeURIComponent(notificationId)}`, {
+    method: 'DELETE',
+  });
+}
+
 export async function updateCurrentUserProfile(payload: {
   name?: string;
   email?: string;

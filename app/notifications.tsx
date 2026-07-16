@@ -5,7 +5,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 
 import { Colors } from '../constants/Colors';
-import { AppNotification, AuthUser, deleteAppNotification, fetchAppNotifications, fetchCurrentUser } from '../lib/api';
+import { AppNotification, AuthUser, deleteActivityNotification, deleteAppNotification, fetchAppNotifications, fetchCurrentUser, fetchDismissedActivityNotifications } from '../lib/api';
 import { registerForPushNotificationsAsync, requestNotificationPermissionAsync, subscribeToPushNotifications } from '../lib/pushNotifications';
 import { fetchChallengeOverviewData, fetchCommunityPostsData } from '../lib/screenData';
 
@@ -150,6 +150,7 @@ export default function NotificationsScreen() {
         fetchCommunityPostsData().catch(() => ({ posts: [] })),
         fetchAppNotifications().catch(() => []),
       ]);
+      const dismissedActivityIds = new Set(await fetchDismissedActivityNotifications().catch(() => []));
       const overviewData = overview as { active_challenges?: Array<Partial<ChallengeAlert> & { id?: string }> };
       const active = Array.isArray(overviewData?.active_challenges) ? overviewData.active_challenges[0] : null;
       setUser(nextUser);
@@ -192,7 +193,7 @@ export default function NotificationsScreen() {
           route: '/community',
         });
       });
-      setActivityNotifications(nextActivity);
+       setActivityNotifications(nextActivity.filter((item) => !dismissedActivityIds.has(item.id)));
     } catch (error) {
       setLoadError(error instanceof Error ? error.message : 'Unable to load notifications right now.');
     } finally {
@@ -243,6 +244,15 @@ export default function NotificationsScreen() {
       .catch(() => {
         setLoadError('Unable to delete this notification right now.');
       })
+      .finally(() => setDeletingNotificationId(null));
+  };
+
+  const removeActivityNotification = (item: ActivityNotification) => {
+    if (deletingNotificationId) return;
+    setDeletingNotificationId(item.id);
+    void deleteActivityNotification(item.id)
+      .then(() => setActivityNotifications((current) => current.filter((notification) => notification.id !== item.id)))
+      .catch(() => setLoadError('Unable to delete this notification right now.'))
       .finally(() => setDeletingNotificationId(null));
   };
 
@@ -319,11 +329,16 @@ export default function NotificationsScreen() {
           <View style={styles.activitySection}>
             <Text style={styles.activitySectionTitle}>CHALLENGES & COMMUNITY</Text>
             {activityNotifications.map((item) => (
-              <TouchableOpacity key={item.id} style={styles.activityItem} onPress={() => router.push(item.route as never)} activeOpacity={0.82}>
+              <View key={item.id} style={styles.activityItem}>
+                <TouchableOpacity style={styles.notificationContentButton} onPress={() => router.push(item.route as never)} activeOpacity={0.82}>
                 <View style={[styles.activityIcon, { backgroundColor: `${item.accent}20` }]}><Ionicons name={item.icon} size={21} color={item.accent} /></View>
                 <View style={styles.activityBody}><Text style={[styles.activityCategory, { color: item.accent }]}>{item.category}</Text><Text style={styles.activityTitle}>{item.title}</Text><Text style={styles.activityText}>{item.message}</Text></View>
                 <Ionicons name="chevron-forward" size={18} color={Colors.textMuted} />
-              </TouchableOpacity>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.deleteNotificationButton} onPress={() => removeActivityNotification(item)} disabled={deletingNotificationId === item.id} accessibilityLabel="Delete notification">
+                  <Ionicons name="trash-outline" size={20} color={deletingNotificationId === item.id ? Colors.textMuted : '#F87171'} />
+                </TouchableOpacity>
+              </View>
             ))}
           </View>
         ) : null}

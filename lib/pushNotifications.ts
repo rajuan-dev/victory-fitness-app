@@ -52,7 +52,13 @@ function getNativeNotifications(): NotificationsModule {
 
 export async function registerForPushNotificationsAsync(): Promise<string | null> {
   if (Platform.OS === 'web' || !Constants.isDevice) {
-    return Platform.OS === 'web' ? registerWebPushNotificationsAsync(emitPushNotification) : null;
+    if (Platform.OS !== 'web') return null;
+    // Browser permission must be requested by the explicit button on the
+    // Notifications screen, not by an app-start effect.
+    if (typeof Notification !== 'undefined' && Notification.permission !== 'granted') {
+      return null;
+    }
+    return registerWebPushNotificationsAsync(emitPushNotification);
   }
 
   const granted = await requestNotificationPermissionAsync();

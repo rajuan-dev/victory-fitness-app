@@ -14,7 +14,7 @@ import { getPostAuthRoute, isAdminRestrictedFromApp, isPublicRoute, isRouteAllow
 import { appendRunLog, formatRunLogMessage } from '../lib/runLog';
 import { LanguageProvider } from '../lib/i18n';
 import { blurActiveElementBeforeNavigation, replaceRoute } from '../lib/navigation';
-import { PushNotificationEvent, registerForPushNotificationsAsync, requestNotificationPermissionAsync, subscribeToPushNotifications } from '../lib/pushNotifications';
+import { PushNotificationEvent, registerForPushNotificationsAsync, subscribeToPushNotifications } from '../lib/pushNotifications';
 
 export function ErrorBoundary({ error, retry }: { error: Error; retry: () => void }) {
   return (
@@ -213,16 +213,6 @@ export default function RootLayout() {
   useEffect(() => {
     blurActiveElementBeforeNavigation();
   }, [pathname]);
-
-  useEffect(() => {
-    if (!fontsLoaded) {
-      return;
-    }
-
-    // Ask as soon as the app opens. Token registration still happens after
-    // authentication because the API requires a user.
-    void requestNotificationPermissionAsync();
-  }, [fontsLoaded]);
 
   useEffect(() => {
     if (!fontsLoaded || checkingAccess || isPublicRoute(pathname)) {
