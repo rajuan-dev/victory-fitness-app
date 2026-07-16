@@ -20,6 +20,7 @@ export type PushNotificationEvent = {
 const pushNotificationListeners = new Set<(event: PushNotificationEvent) => void>();
 let notificationsModule: NotificationsModule | null = null;
 let nativeListenerInstalled = false;
+let nativeResponseListenerInstalled = false;
 
 export function subscribeToPushNotifications(listener: (event: PushNotificationEvent) => void) {
   pushNotificationListeners.add(listener);
@@ -78,6 +79,18 @@ export async function registerForPushNotificationsAsync(): Promise<string | null
       });
     });
     nativeListenerInstalled = true;
+  }
+
+  if (!nativeResponseListenerInstalled) {
+    notifications.addNotificationResponseReceivedListener((response) => {
+      const content = response.notification.request.content as { title?: string; body?: string; data?: Record<string, unknown> };
+      emitPushNotification({
+        title: String(content.title || 'Victory Fitness'),
+        message: String(content.body || 'You have a new update from Victory Fitness.'),
+        data: content.data || {},
+      });
+    });
+    nativeResponseListenerInstalled = true;
   }
 
   if (Platform.OS === 'android') {
