@@ -1,5 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import {
+  Image,
+  Modal,
+  Platform,
+  Share,
   View,
   Text,
   StyleSheet,
@@ -8,6 +12,7 @@ import {
   ActivityIndicator,
   Alert,
 } from 'react-native';
+import * as FileSystem from 'expo-file-system/legacy';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Stack, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -21,10 +26,36 @@ import {
   StrengthPlanResponse,
   updateStrengthWorkoutPlanProgress,
 } from '../../lib/workout-plans';
+import { apiRequest, fetchCurrentUser } from '../../lib/api';
 import { goBackOrReplace } from '../../lib/navigation';
 import { useModuleAccessGuard } from '../../lib/useModuleAccessGuard';
 import { useLanguage } from '../../lib/i18n';
 import { formatAppError } from '../../lib/error';
+
+type CompletionCard = {
+  imageBase64: string;
+  fileUri: string;
+  mimeType: 'image/png';
+  fileName: string;
+  shareMessage: string;
+};
+
+async function fetchStrengthCompletionCard(planId: string, dayLabel: string): Promise<CompletionCard> {
+  const response = await apiRequest<{
+    file_name: string;
+    mime_type: string;
+    image_base64: string;
+    share_message: string;
+  }>(`/ai/workout-plan/strength/${encodeURIComponent(planId)}/report?day=${encodeURIComponent(dayLabel)}`);
+  const imageBase64 = response.image_base64;
+  return {
+    imageBase64,
+    fileUri: `data:image/png;base64,${imageBase64}`,
+    mimeType: 'image/png',
+    fileName: 'victory-fitness-strength-completion.png',
+    shareMessage: response.share_message,
+  };
+}
 
 export default function StrengthPlanDashboard() {
   const checkingAccess = useModuleAccessGuard('/workoutplan');
@@ -35,6 +66,9 @@ export default function StrengthPlanDashboard() {
   const [deletingPlanId, setDeletingPlanId] = useState<string | null>(null);
   const [updatingProgressKey, setUpdatingProgressKey] = useState<string | null>(null);
   const [elapsedTime, setElapsedTime] = useState('00:00:00');
+  const [currentUserName, setCurrentUserName] = useState('Victory Member');
+  const [completionCard, setCompletionCard] = useState<CompletionCard | null>(null);
+  const [cardAction, setCardAction] = useState<'download' | 'share' | ''>('');
 
   // Accordion and Day selection states
   const [expandedPlanId, setExpandedPlanId] = useState<string | null>(null);
@@ -78,6 +112,7 @@ export default function StrengthPlanDashboard() {
     };
 
     void loadPlans();
+    void fetchCurrentUser().then((user) => setCurrentUserName(user.name || 'Victory Member')).catch(() => undefined);
 
     return () => {
       cancelled = true;
@@ -150,10 +185,66 @@ export default function StrengthPlanDashboard() {
         completed: true,
       });
       updatePlanProgressState(updatedPlan);
+      setCompletionCard(await fetchStrengthCompletionCard(plan.plan_id, dayLabel));
     } catch (error) {
       Alert.alert(t('Error'), formatAppError(error, t('Unable to complete workout right now.')).message);
     } finally {
       setUpdatingProgressKey(null);
+    }
+  };
+
+  const prepareCardFile = async (card: CompletionCard) => {
+    if (Platform.OS === 'web') return card.fileUri;
+    const directory = FileSystem.cacheDirectory || FileSystem.documentDirectory || '';
+    const fileUri = `${directory}${card.fileName}`;
+    await FileSystem.writeAsStringAsync(fileUri, card.imageBase64, { encoding: FileSystem.EncodingType.Base64 });
+    return fileUri;
+  };
+
+  const handleDownloadCard = async () => {
+    if (!completionCard) return;
+    setCardAction('download');
+    try {
+      if (Platform.OS === 'web') {
+        const anchor = document.createElement('a');
+        anchor.href = completionCard.fileUri;
+        anchor.download = completionCard.fileName;
+        document.body.appendChild(anchor);
+        anchor.click();
+        anchor.remove();
+      } else {
+        await Share.share({ url: await prepareCardFile(completionCard), message: completionCard.shareMessage });
+      }
+    } catch (error) {
+      Alert.alert(t('Error'), formatAppError(error, 'Unable to export your completion card.').message);
+    } finally {
+      setCardAction('');
+    }
+  };
+
+  const handleShareCard = async () => {
+    if (!completionCard) return;
+    setCardAction('share');
+    try {
+      if (Platform.OS === 'web' && navigator.share) {
+        const blob = await (await fetch(completionCard.fileUri)).blob();
+        const file = new File([blob], completionCard.fileName, { type: completionCard.mimeType });
+        if (navigator.canShare?.({ files: [file] })) {
+          await navigator.share({ title: 'Victory Fitness Strength Card', text: completionCard.shareMessage, files: [file] });
+        } else {
+          await navigator.share({ title: 'Victory Fitness Strength Card', text: completionCard.shareMessage });
+        }
+      } else if (Platform.OS === 'web') {
+        await handleDownloadCard();
+      } else {
+        const fileUri = await prepareCardFile(completionCard);
+        const shareUrl = Platform.OS === 'android' ? await FileSystem.getContentUriAsync(fileUri) : fileUri;
+        await Share.share({ title: 'Victory Fitness Strength Card', url: shareUrl, message: completionCard.shareMessage });
+      }
+    } catch (error) {
+      Alert.alert(t('Error'), formatAppError(error, 'Unable to share your completion card.').message);
+    } finally {
+      setCardAction('');
     }
   };
 
@@ -272,6 +363,25 @@ export default function StrengthPlanDashboard() {
 
   return (
     <SafeAreaView style={styles.container}>
+      <Modal visible={Boolean(completionCard)} transparent animationType="fade" onRequestClose={() => setCompletionCard(null)}>
+        <View style={styles.cardModalOverlay}>
+          <View style={styles.cardModal}>
+            <Text style={styles.cardModalTitle}>Strength workout completed</Text>
+            {completionCard ? <Image source={{ uri: completionCard.fileUri }} style={styles.completionCardImage} resizeMode="contain" /> : null}
+            <View style={styles.cardModalActions}>
+              <TouchableOpacity style={styles.cardModalButton} onPress={() => void handleDownloadCard()} disabled={cardAction !== ''}>
+                {cardAction === 'download' ? <ActivityIndicator color="#000" /> : <Ionicons name="download-outline" size={18} color="#000" />}
+                <Text style={styles.cardModalButtonText}>Download</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.cardModalButton} onPress={() => void handleShareCard()} disabled={cardAction !== ''}>
+                {cardAction === 'share' ? <ActivityIndicator color="#000" /> : <Ionicons name="share-social-outline" size={18} color="#000" />}
+                <Text style={styles.cardModalButtonText}>Share</Text>
+              </TouchableOpacity>
+            </View>
+            <TouchableOpacity style={styles.cardModalClose} onPress={() => setCompletionCard(null)}><Text style={styles.cardModalCloseText}>Close</Text></TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
       <Stack.Screen
         options={{
           headerShown: true,
@@ -732,6 +842,15 @@ export default function StrengthPlanDashboard() {
 }
 
 const styles = StyleSheet.create({
+  cardModalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.82)', justifyContent: 'center', alignItems: 'center', padding: 18 },
+  cardModal: { width: '100%', maxWidth: 430, maxHeight: '92%', backgroundColor: '#0B1520', borderRadius: 24, padding: 16, alignItems: 'center', borderWidth: 1, borderColor: 'rgba(0,217,245,0.35)' },
+  cardModalTitle: { color: '#fff', fontSize: 18, fontFamily: 'Inter_700Bold', marginBottom: 10 },
+  completionCardImage: { width: '100%', height: 560, backgroundColor: '#03192A', borderRadius: 16 },
+  cardModalActions: { flexDirection: 'row', gap: 10, width: '100%', marginTop: 14 },
+  cardModalButton: { flex: 1, minHeight: 46, borderRadius: 12, backgroundColor: Colors.accentBlue, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
+  cardModalButtonText: { color: '#000', fontFamily: 'Inter_700Bold' },
+  cardModalClose: { padding: 12 },
+  cardModalCloseText: { color: 'rgba(255,255,255,0.65)', fontFamily: 'Inter_600SemiBold' },
   container: {
     flex: 1,
     backgroundColor: '#0F0F0F',

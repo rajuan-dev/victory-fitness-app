@@ -90,7 +90,7 @@ export const PLAN_CARDS: AppPlanCard[] = [
   },
 ];
 
-const ALLOWED_PUBLIC_PATHS = ['/login', '/register', '/verification', '/onboarding', '/splash'];
+const ALLOWED_PUBLIC_PATHS = ['/login', '/register', '/verification', '/forgot-password', '/onboarding', '/splash'];
 const ALLOWED_AUTHENTICATED_PATHS = ['/journal'] as const;
 const PLAN_PATH = '/plan';
 
@@ -180,7 +180,7 @@ export function getPostAuthRoute(user?: Pick<AuthUser, 'id' | 'is_admin' | 'subs
 
 export function isRouteAllowedForPlan(pathname: string, user?: Pick<AuthUser, 'id' | 'is_admin' | 'subscription_tier' | 'subscription_status' | 'subscription_is_purchased' | 'onboarding_completed'> | null): boolean {
   if (user && !hasCompletedSetup(user)) {
-    return pathname === '/onboarding' || pathname === '/login' || pathname === '/register' || pathname === '/verification';
+    return pathname === '/onboarding' || pathname === '/login' || pathname === '/register' || pathname === '/verification' || pathname === '/forgot-password';
   }
 
   if (isPublicRoute(pathname) || isPlanSelectionRoute(pathname)) {
