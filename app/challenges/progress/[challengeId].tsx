@@ -423,36 +423,25 @@ function buildChallengePostcardSvg(
 }
 
 async function buildChallengeProgressReportAsset(
-  thread: ChallengeProgressThread,
-  exercises: string[],
-  streakCount: number,
-  intensityLabel: string,
-  userName: string
+  challengeId: string,
+  dayNumber?: number | null,
 ) {
-  const fileName = 'victory-fitness-progress-card.svg';
-  const mimeType = 'image/svg+xml';
-  const svgString = buildChallengePostcardSvg(thread, exercises, streakCount, intensityLabel, userName);
-
-  if (Platform.OS === 'web' || typeof FileSystem.writeAsStringAsync !== 'function') {
-    const base64Data = typeof btoa !== 'undefined' ? btoa(unescape(encodeURIComponent(svgString))) : '';
-    return {
-      fileUri: `data:${mimeType};base64,${base64Data}`,
-      imageBase64: base64Data,
-      svgString,
-      shareMessage: `Victory Fitness - Challenge completed by ${userName}`,
-      mimeType,
-      fileName,
-    };
+  const response = await apiRequest<{ file_name: string; mime_type: string; image_base64: string; share_message: string }>(
+    `/challenges/${encodeURIComponent(challengeId)}/progress/report${dayNumber ? `?day=${dayNumber}` : ''}`,
+  );
+  const fileName = 'victory-fitness-progress-card.png';
+  const mimeType = 'image/png';
+  const fileUri = `data:${mimeType};base64,${response.image_base64}`;
+  if (Platform.OS !== 'web' && typeof FileSystem.writeAsStringAsync === 'function') {
+    const directory = FileSystem.cacheDirectory || FileSystem.documentDirectory || '';
+    const nativeFileUri = `${directory}${fileName}`;
+    await FileSystem.writeAsStringAsync(nativeFileUri, response.image_base64, { encoding: FileSystem.EncodingType.Base64 });
+    return { fileUri: nativeFileUri, imageBase64: response.image_base64, shareMessage: response.share_message, mimeType, fileName };
   }
-
-  const directory = FileSystem.cacheDirectory || FileSystem.documentDirectory || '';
-  const fileUri = `${directory}${fileName}`;
-  await FileSystem.writeAsStringAsync(fileUri, svgString, { encoding: FileSystem.EncodingType.UTF8 });
   return {
     fileUri,
-    imageBase64: '',
-    svgString,
-    shareMessage: `Victory Fitness - Challenge completed by ${userName}`,
+    imageBase64: response.image_base64,
+    shareMessage: response.share_message,
     mimeType,
     fileName,
   };
@@ -809,13 +798,7 @@ export default function ChallengeProgressScreen() {
     }
     setReportAction('download');
     try {
-      const asset = await buildChallengeProgressReportAsset(
-        thread,
-        exercisesToDisplay,
-        currentUser?.streak_days ?? 3,
-        thread?.difficulty ? t(thread.difficulty) : t('WORKOUT_CARD_GOOD'),
-        currentUser?.name || 'ADMIN TESTER'
-      );
+      const asset = await buildChallengeProgressReportAsset(thread.challenge_id, celebration?.dayNumber);
       if (Platform.OS === 'web' && typeof document !== 'undefined') {
         const blob = await getWebReportBlob(asset.fileUri);
         const objectUrl = URL.createObjectURL(blob);
@@ -851,13 +834,7 @@ export default function ChallengeProgressScreen() {
 
     setReportAction('share');
     try {
-      const asset = await buildChallengeProgressReportAsset(
-        thread,
-        exercisesToDisplay,
-        currentUser?.streak_days ?? 3,
-        thread?.difficulty ? t(thread.difficulty) : t('WORKOUT_CARD_GOOD'),
-        currentUser?.name || 'ADMIN TESTER'
-      );
+      const asset = await buildChallengeProgressReportAsset(thread.challenge_id, celebration?.dayNumber);
       const webNavigator = Platform.OS === 'web' && typeof navigator !== 'undefined'
         ? navigator as Navigator & {
             share?: (data: { title?: string; text?: string; url?: string; files?: File[] }) => Promise<void>;
@@ -896,13 +873,7 @@ export default function ChallengeProgressScreen() {
 
     setReportAction('community');
     try {
-      const asset = await buildChallengeProgressReportAsset(
-        thread,
-        exercisesToDisplay,
-        currentUser?.streak_days ?? 3,
-        thread?.difficulty ? t(thread.difficulty) : t('WORKOUT_CARD_GOOD'),
-        currentUser?.name || 'ADMIN TESTER'
-      );
+      const asset = await buildChallengeProgressReportAsset(thread.challenge_id, celebration?.dayNumber);
       router.push({
         pathname: '/challenge',
         params: {
@@ -910,8 +881,8 @@ export default function ChallengeProgressScreen() {
           prefillSource: 'challenge-report',
           prefillChallengeId: thread.challenge_id,
           prefillImageUri: asset.fileUri,
-          prefillImageMimeType: 'image/svg+xml',
-          prefillImageFileName: 'victory-fitness-progress-report.svg',
+          prefillImageMimeType: 'image/png',
+          prefillImageFileName: 'victory-fitness-progress-report.png',
         },
       });
     } catch (error) {

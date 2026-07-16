@@ -26,56 +26,34 @@ import {
   StrengthPlanResponse,
   updateStrengthWorkoutPlanProgress,
 } from '../../lib/workout-plans';
-import { fetchCurrentUser } from '../../lib/api';
+import { apiRequest, fetchCurrentUser } from '../../lib/api';
 import { goBackOrReplace } from '../../lib/navigation';
 import { useModuleAccessGuard } from '../../lib/useModuleAccessGuard';
 import { useLanguage } from '../../lib/i18n';
 import { formatAppError } from '../../lib/error';
 
 type CompletionCard = {
-  svg: string;
-  dataUri: string;
+  imageBase64: string;
+  fileUri: string;
+  mimeType: 'image/png';
   fileName: string;
   shareMessage: string;
 };
 
-function escapeSvg(value: string) {
-  return String(value || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-}
-
-function buildStrengthCompletionCard(
-  plan: StrengthPlanResponse,
-  dayLabel: string,
-  userName: string,
-  completedDays: number,
-  totalDays: number,
-  completedExerciseNames: string[],
-  totalExercises: number,
-): CompletionCard {
-  const title = escapeSvg(plan.summary || 'Custom Strength Plan');
-  const member = escapeSvg(userName || 'Victory Member');
-  const rows = completedExerciseNames.slice(0, 7).map((name, index) => `<text x="150" y="${690 + index * 42}" fill="#F7F7F7" font-size="24" font-family="Arial">✓ ${escapeSvg(name)}</text>`).join('');
-  const progress = totalDays > 0 ? Math.min(1, completedDays / totalDays) : 0;
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="900" height="1400" viewBox="0 0 900 1400">
-    <rect width="900" height="1400" fill="#03192A"/>
-    <rect x="36" y="80" width="828" height="1260" rx="34" fill="#06111D" stroke="#00D9F5" stroke-width="3"/>
-    <circle cx="450" cy="190" r="44" fill="#00D9F5"/><text x="450" y="205" text-anchor="middle" fill="#03192A" font-size="34" font-family="Arial" font-weight="700">VF</text>
-    <text x="450" y="300" text-anchor="middle" fill="#F7F7F7" font-size="42" font-family="Arial" font-weight="700">YOUR VICTORY</text>
-    <text x="450" y="355" text-anchor="middle" fill="#00D9F5" font-size="24" font-family="Arial" font-weight="700">STRENGTH WORKOUT COMPLETED</text>
-    <text x="450" y="450" text-anchor="middle" fill="#F7F7F7" font-size="34" font-family="Arial" font-weight="700">${title}</text>
-    <text x="450" y="505" text-anchor="middle" fill="#A9B8C8" font-size="24" font-family="Arial">${escapeSvg(dayLabel)} · ${member}</text>
-    <rect x="130" y="555" width="640" height="20" rx="10" fill="#203243"/><rect x="130" y="555" width="${640 * progress}" height="20" rx="10" fill="#00D9F5"/>
-    <text x="150" y="635" fill="#00D9F5" font-size="22" font-family="Arial" font-weight="700">COMPLETED EXERCISES</text>
-    ${rows || '<text x="150" y="690" fill="#A9B8C8" font-size="24" font-family="Arial">Keep building your strength.</text>'}
-    <rect x="130" y="1030" width="285" height="120" rx="18" fill="#101F2E" stroke="#273E50"/><text x="272" y="1070" text-anchor="middle" fill="#A9B8C8" font-size="18" font-family="Arial">PLAN DAYS</text><text x="272" y="1120" text-anchor="middle" fill="#00D9F5" font-size="34" font-family="Arial" font-weight="700">${completedDays}/${totalDays}</text>
-    <rect x="485" y="1030" width="285" height="120" rx="18" fill="#101F2E" stroke="#273E50"/><text x="627" y="1070" text-anchor="middle" fill="#A9B8C8" font-size="18" font-family="Arial">EXERCISES</text><text x="627" y="1120" text-anchor="middle" fill="#FF4B70" font-size="34" font-family="Arial" font-weight="700">${completedExerciseNames.length}/${totalExercises}</text>
-    <text x="450" y="1265" text-anchor="middle" fill="#A9B8C8" font-size="20" font-family="Arial">VICTORY-FITNESS.APP</text>
-  </svg>`;
+async function fetchStrengthCompletionCard(planId: string, dayLabel: string): Promise<CompletionCard> {
+  const response = await apiRequest<{
+    file_name: string;
+    mime_type: string;
+    image_base64: string;
+    share_message: string;
+  }>(`/ai/workout-plan/strength/${encodeURIComponent(planId)}/report?day=${encodeURIComponent(dayLabel)}`);
+  const imageBase64 = response.image_base64;
   return {
-    svg,
-    dataUri: `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`,
-    fileName: 'victory-fitness-strength-completion.svg',
-    shareMessage: `Victory Fitness - ${plan.summary || 'Custom Strength Plan'} completed by ${userName || 'Victory Member'} (${dayLabel}).`,
+    imageBase64,
+    fileUri: `data:image/png;base64,${imageBase64}`,
+    mimeType: 'image/png',
+    fileName: 'victory-fitness-strength-completion.png',
+    shareMessage: response.share_message,
   };
 }
 
@@ -207,13 +185,7 @@ export default function StrengthPlanDashboard() {
         completed: true,
       });
       updatePlanProgressState(updatedPlan);
-      const updatedProgress = getDayProgress(updatedPlan, dayLabel);
-      const completedDays = updatedPlan.progress?.filter((item) => item.completed).length || 0;
-      const targetDay = updatedPlan.days?.find((item) => item.day === dayLabel);
-      const completedExerciseIds = new Set(updatedProgress?.completed_exercise_ids || []);
-      const completedExerciseNames = (targetDay?.sections || []).flatMap((section) => section.exercises).filter((exercise) => completedExerciseIds.has(exercise.id)).map((exercise) => exercise.name);
-      const totalExercises = (targetDay?.sections || []).reduce((total, section) => total + section.exercises.length, 0);
-      setCompletionCard(buildStrengthCompletionCard(updatedPlan, dayLabel, currentUserName, completedDays, updatedPlan.days?.length || 0, completedExerciseNames, totalExercises));
+      setCompletionCard(await fetchStrengthCompletionCard(plan.plan_id, dayLabel));
     } catch (error) {
       Alert.alert(t('Error'), formatAppError(error, t('Unable to complete workout right now.')).message);
     } finally {
@@ -222,10 +194,10 @@ export default function StrengthPlanDashboard() {
   };
 
   const prepareCardFile = async (card: CompletionCard) => {
-    if (Platform.OS === 'web') return card.dataUri;
+    if (Platform.OS === 'web') return card.fileUri;
     const directory = FileSystem.cacheDirectory || FileSystem.documentDirectory || '';
     const fileUri = `${directory}${card.fileName}`;
-    await FileSystem.writeAsStringAsync(fileUri, card.svg, { encoding: FileSystem.EncodingType.UTF8 });
+    await FileSystem.writeAsStringAsync(fileUri, card.imageBase64, { encoding: FileSystem.EncodingType.Base64 });
     return fileUri;
   };
 
@@ -235,7 +207,7 @@ export default function StrengthPlanDashboard() {
     try {
       if (Platform.OS === 'web') {
         const anchor = document.createElement('a');
-        anchor.href = completionCard.dataUri;
+        anchor.href = completionCard.fileUri;
         anchor.download = completionCard.fileName;
         document.body.appendChild(anchor);
         anchor.click();
@@ -255,7 +227,13 @@ export default function StrengthPlanDashboard() {
     setCardAction('share');
     try {
       if (Platform.OS === 'web' && navigator.share) {
-        await navigator.share({ title: 'Victory Fitness Strength Card', text: completionCard.shareMessage });
+        const blob = await (await fetch(completionCard.fileUri)).blob();
+        const file = new File([blob], completionCard.fileName, { type: completionCard.mimeType });
+        if (navigator.canShare?.({ files: [file] })) {
+          await navigator.share({ title: 'Victory Fitness Strength Card', text: completionCard.shareMessage, files: [file] });
+        } else {
+          await navigator.share({ title: 'Victory Fitness Strength Card', text: completionCard.shareMessage });
+        }
       } else if (Platform.OS === 'web') {
         await handleDownloadCard();
       } else {
@@ -389,7 +367,7 @@ export default function StrengthPlanDashboard() {
         <View style={styles.cardModalOverlay}>
           <View style={styles.cardModal}>
             <Text style={styles.cardModalTitle}>Strength workout completed</Text>
-            {completionCard ? <Image source={{ uri: completionCard.dataUri }} style={styles.completionCardImage} resizeMode="contain" /> : null}
+            {completionCard ? <Image source={{ uri: completionCard.fileUri }} style={styles.completionCardImage} resizeMode="contain" /> : null}
             <View style={styles.cardModalActions}>
               <TouchableOpacity style={styles.cardModalButton} onPress={() => void handleDownloadCard()} disabled={cardAction !== ''}>
                 {cardAction === 'download' ? <ActivityIndicator color="#000" /> : <Ionicons name="download-outline" size={18} color="#000" />}
