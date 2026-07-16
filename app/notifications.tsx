@@ -162,7 +162,7 @@ export default function NotificationsScreen() {
       const overviewData = overview as { active_challenges?: Array<Partial<ChallengeAlert> & { id?: string }> };
       const active = Array.isArray(overviewData?.active_challenges) ? overviewData.active_challenges[0] : null;
       setUser(nextUser);
-      setPushNotifications(storedNotifications);
+       setPushNotifications([...storedNotifications].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()));
       setChallengeAlert(active ? {
         challenge_id: String(active.challenge_id || active.id || ''),
         title: String(active.title || 'Today\'s challenge'),
@@ -204,7 +204,7 @@ export default function NotificationsScreen() {
           created_at: String(post.created_at || ''),
         });
       });
-       setActivityNotifications(nextActivity.filter((item) => !dismissedActivityIds.has(item.id)));
+       setActivityNotifications(nextActivity.filter((item) => !dismissedActivityIds.has(item.id)).sort((a, b) => new Date(String(b.created_at || '')).getTime() - new Date(String(a.created_at || '')).getTime()));
     } catch (error) {
       setLoadError(error instanceof Error ? error.message : 'Unable to load notifications right now.');
     } finally {
@@ -319,7 +319,8 @@ export default function NotificationsScreen() {
               <View key={item.id} style={styles.activityItem}>
                 <TouchableOpacity style={styles.notificationContentButton} onPress={() => openAppNotification(item)} activeOpacity={0.82}>
                 <View style={[styles.activityIcon, { backgroundColor: `${Colors.primary}20` }]}><Ionicons name="sparkles-outline" size={21} color={Colors.primary} /></View>
-                <View style={styles.activityBody}><Text style={[styles.activityCategory, { color: Colors.primary }]}>{item.type.replaceAll('_', ' ').toUpperCase()}</Text><Text style={styles.activityTitle}>{item.title}</Text><Text style={styles.activityText}>{item.message}</Text><Text style={styles.permissionStatus}>{formatDate(item.created_at)}</Text></View>
+                <View style={styles.activityBody}><Text style={[styles.activityCategory, { color: Colors.primary }]}>{item.type.replaceAll('_', ' ').toUpperCase()}</Text><Text style={styles.activityTitle}>{item.title}</Text><Text style={styles.activityText}>{item.message}</Text></View>
+                <Text style={styles.notificationTime}>{formatDate(item.created_at)}</Text>
                 </TouchableOpacity>
                 <TouchableOpacity style={styles.deleteNotificationButton} onPress={() => removeNotification(item)} disabled={deletingNotificationId === item.id} accessibilityLabel="Delete notification">
                   <Ionicons name="trash-outline" size={20} color={deletingNotificationId === item.id ? Colors.textMuted : '#F87171'} />
@@ -351,6 +352,7 @@ export default function NotificationsScreen() {
                 <TouchableOpacity style={styles.notificationContentButton} onPress={() => setSelectedNotification({ title: item.title, message: item.message, category: item.category, created_at: item.created_at, route: item.route })} activeOpacity={0.82}>
                 <View style={[styles.activityIcon, { backgroundColor: `${item.accent}20` }]}><Ionicons name={item.icon} size={21} color={item.accent} /></View>
                 <View style={styles.activityBody}><Text style={[styles.activityCategory, { color: item.accent }]}>{item.category}</Text><Text style={styles.activityTitle}>{item.title}</Text><Text style={styles.activityText}>{item.message}</Text></View>
+                <Text style={styles.notificationTime}>{formatDate(item.created_at)}</Text>
                 <Ionicons name="chevron-forward" size={18} color={Colors.textMuted} />
                 </TouchableOpacity>
                 <TouchableOpacity style={styles.deleteNotificationButton} onPress={() => removeActivityNotification(item)} disabled={deletingNotificationId === item.id} accessibilityLabel="Delete notification">
@@ -468,6 +470,7 @@ const styles = StyleSheet.create({
   deleteNotificationButton: { marginLeft: 10, padding: 8, borderRadius: 10, backgroundColor: 'rgba(248,113,113,0.12)' },
   activityIcon: { width: 42, height: 42, borderRadius: 12, alignItems: 'center', justifyContent: 'center', marginRight: 11 },
   activityBody: { flex: 1, minWidth: 0 },
+  notificationTime: { color: Colors.textMuted, fontSize: 10, marginLeft: 8, alignSelf: 'flex-start', textAlign: 'right', minWidth: 58, fontFamily: 'Inter_400Regular' },
   activityCategory: { fontSize: 10, letterSpacing: 1, fontFamily: 'Inter_700Bold' },
   activityTitle: { color: Colors.text, fontSize: 15, fontFamily: 'Inter_700Bold', marginTop: 4 },
   activityText: { color: Colors.textSecondary, fontSize: 12, lineHeight: 17, marginTop: 4, fontFamily: 'Inter_400Regular' },
