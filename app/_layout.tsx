@@ -9,7 +9,7 @@ import {
   Inter_700Bold,
 } from '@expo-google-fonts/inter';
 import { Colors } from '../constants/Colors';
-import { clearAuthTokens, fetchCurrentUser, getAuthUser, getValidAuthTokens, setAuthFailureHandler } from '../lib/api';
+import { clearAuthTokens, fetchAppNotifications, fetchCurrentUser, getAuthUser, getValidAuthTokens, setAuthFailureHandler } from '../lib/api';
 import { getPostAuthRoute, isAdminRestrictedFromApp, isPublicRoute, isRouteAllowedForPlan } from '../lib/access';
 import { appendRunLog, formatRunLogMessage } from '../lib/runLog';
 import { LanguageProvider } from '../lib/i18n';
@@ -35,6 +35,7 @@ export default function RootLayout() {
   const pathname = usePathname();
   const pathnameRef = useRef(pathname);
   const lastLoggedRouteRef = useRef<string | null>(null);
+  const knownNotificationIdsRef = useRef<Set<string> | null>(null);
   const [fontsLoaded] = useFonts({
     Inter_400Regular,
     Inter_600SemiBold,
@@ -45,11 +46,45 @@ export default function RootLayout() {
 
   useEffect(() => {
     const unsubscribe = subscribeToPushNotifications((notification) => {
+      const notificationId = typeof notification.data?.notificationId === 'string' ? notification.data.notificationId : null;
+      if (notificationId) {
+        if (!knownNotificationIdsRef.current) knownNotificationIdsRef.current = new Set();
+        if (knownNotificationIdsRef.current.has(notificationId)) return;
+        knownNotificationIdsRef.current.add(notificationId);
+      }
       setToastNotification(notification);
       setTimeout(() => setToastNotification(null), 5000);
     });
     return () => { unsubscribe(); };
   }, []);
+
+  useEffect(() => {
+    if (!fontsLoaded || checkingAccess || isPublicRoute(pathname)) return;
+    let cancelled = false;
+    const pollInbox = async () => {
+      try {
+        const notifications = await fetchAppNotifications();
+        if (cancelled) return;
+        const knownIds = knownNotificationIdsRef.current;
+        const nextIds = new Set(notifications.map((item) => item.id));
+        if (!knownIds) {
+          knownNotificationIdsRef.current = nextIds;
+          return;
+        }
+        const fresh = notifications.filter((item) => !knownIds.has(item.id));
+        knownNotificationIdsRef.current = nextIds;
+        const newest = fresh[0];
+        if (newest) {
+          setToastNotification({ title: newest.title, message: newest.message, data: newest.data || {} });
+        }
+      } catch {
+        // Notification polling is best-effort; push delivery remains active.
+      }
+    };
+    void pollInbox();
+    const interval = setInterval(() => { void pollInbox(); }, 15000);
+    return () => { cancelled = true; clearInterval(interval); };
+  }, [checkingAccess, fontsLoaded, pathname]);
 
   useEffect(() => {
     setAuthFailureHandler(() => {
