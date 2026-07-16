@@ -36,6 +36,7 @@ type ActivityNotification = {
   icon: keyof typeof Ionicons.glyphMap;
   accent: string;
   route: string;
+  created_at?: string | null;
 };
 
 const CAMPAIGN: CampaignItem[] = [
@@ -151,6 +152,12 @@ export default function NotificationsScreen() {
         fetchAppNotifications().catch(() => []),
       ]);
       const dismissedActivityIds = new Set(await fetchDismissedActivityNotifications().catch(() => []));
+      const registeredAt = new Date(String(nextUser.created_at || '')).getTime();
+      const isAfterRegistration = (value: unknown) => {
+        if (!Number.isFinite(registeredAt)) return true;
+        const timestamp = new Date(String(value || '')).getTime();
+        return Number.isFinite(timestamp) && timestamp >= registeredAt;
+      };
       const overviewData = overview as { active_challenges?: Array<Partial<ChallengeAlert> & { id?: string }> };
       const active = Array.isArray(overviewData?.active_challenges) ? overviewData.active_challenges[0] : null;
       setUser(nextUser);
@@ -172,7 +179,8 @@ export default function NotificationsScreen() {
       const addChallengeItems = (items: Array<Record<string, unknown>> | undefined, category: string, icon: keyof typeof Ionicons.glyphMap, accent: string, message: (item: Record<string, unknown>) => string, routeFor: (item: Record<string, unknown>) => string) => {
         (Array.isArray(items) ? items : []).forEach((item, index) => {
           const id = String(item.challenge_id || item.id || `${category}-${index}`);
-          nextActivity.push({ id: `${category}-${id}`, category, title: String(item.title || 'Challenge'), message: message(item), icon, accent, route: routeFor(item) });
+          if (!isAfterRegistration(item.created_at || item.last_message_at || item.completed_at)) return;
+          nextActivity.push({ id: `${category}-${id}`, category, title: String(item.title || 'Challenge'), message: message(item), icon, accent, route: routeFor(item), created_at: String(item.created_at || item.last_message_at || item.completed_at || '') });
         });
       };
       addChallengeItems(fullOverview.ready_to_start, 'CHALLENGE READY', 'flag-outline', '#38BDF8', (item) => `${String(item.description || 'This challenge is ready to start.')} ${Number(item.points || 0)} points available.`, (item) => `/challenges/${String(item.id || item.challenge_id || '')}`);
@@ -181,6 +189,7 @@ export default function NotificationsScreen() {
       addChallengeItems(fullOverview.active_chats, 'CHALLENGE CHAT', 'chatbubbles-outline', '#A855F7', (item) => `${Number(item.unread_count || item.unreadCount || 0)} unread messages in this challenge discussion.`, (item) => `/challenges/${String(item.challenge_id || item.id || '')}`);
       const posts = (community as { posts?: Array<Record<string, unknown>> })?.posts;
       (Array.isArray(posts) ? posts : []).slice(0, 30).forEach((post, index) => {
+        if (!isAfterRegistration(post.created_at)) return;
         const content = String(post.content || '').trim();
         const author = String(post.author_name || 'Community member');
         nextActivity.push({
@@ -191,6 +200,7 @@ export default function NotificationsScreen() {
           icon: 'people-outline',
           accent: '#22D3EE',
           route: '/community',
+          created_at: String(post.created_at || ''),
         });
       });
        setActivityNotifications(nextActivity.filter((item) => !dismissedActivityIds.has(item.id)));
