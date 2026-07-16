@@ -11,7 +11,24 @@ export const FIREBASE_VAPID_KEY = String(process.env?.EXPO_PUBLIC_FIREBASE_VAPID
 const REGISTERED_TOKEN_KEY = 'victory_push_token';
 
 type NotificationsModule = typeof import('expo-notifications');
+export type PushNotificationEvent = {
+  title: string;
+  message: string;
+  data: Record<string, unknown>;
+};
+
+const pushNotificationListeners = new Set<(event: PushNotificationEvent) => void>();
 let notificationsModule: NotificationsModule | null = null;
+let nativeListenerInstalled = false;
+
+export function subscribeToPushNotifications(listener: (event: PushNotificationEvent) => void) {
+  pushNotificationListeners.add(listener);
+  return () => pushNotificationListeners.delete(listener);
+}
+
+function emitPushNotification(event: PushNotificationEvent) {
+  pushNotificationListeners.forEach((listener) => listener(event));
+}
 
 function getNativeNotifications(): NotificationsModule {
   if (Platform.OS === 'web') {
@@ -35,7 +52,7 @@ function getNativeNotifications(): NotificationsModule {
 
 export async function registerForPushNotificationsAsync(): Promise<string | null> {
   if (Platform.OS === 'web' || !Constants.isDevice) {
-    return Platform.OS === 'web' ? registerWebPushNotificationsAsync() : null;
+    return Platform.OS === 'web' ? registerWebPushNotificationsAsync(emitPushNotification) : null;
   }
 
   const granted = await requestNotificationPermissionAsync();
@@ -44,6 +61,18 @@ export async function registerForPushNotificationsAsync(): Promise<string | null
   }
 
   const notifications = getNativeNotifications();
+
+  if (!nativeListenerInstalled) {
+    notifications.addNotificationReceivedListener((notification) => {
+      const content = notification.request.content as { title?: string; body?: string; data?: Record<string, unknown> };
+      emitPushNotification({
+        title: String(content.title || 'Victory Fitness'),
+        message: String(content.body || 'You have a new update from Victory Fitness.'),
+        data: content.data || {},
+      });
+    });
+    nativeListenerInstalled = true;
+  }
 
   if (Platform.OS === 'android') {
     await notifications.setNotificationChannelAsync('default', {
@@ -56,11 +85,11 @@ export async function registerForPushNotificationsAsync(): Promise<string | null
 
   const projectId = Constants.expoConfig?.extra?.eas?.projectId;
   const token = (await notifications.getExpoPushTokenAsync(projectId ? { projectId } : undefined)).data;
-  const previousToken = await AsyncStorage.getItem(REGISTERED_TOKEN_KEY);
-  if (previousToken !== token) {
-    await apiRequest('/me/push-token', { method: 'POST', body: { token, platform: Platform.OS } });
-    await AsyncStorage.setItem(REGISTERED_TOKEN_KEY, token);
-  }
+  // Register on every authenticated app session. The same device token can
+  // belong to a different account after logout, so a global local-storage
+  // cache can otherwise prevent the new account from receiving pushes.
+  await apiRequest('/me/push-token', { method: 'POST', body: { token, platform: Platform.OS } });
+  await AsyncStorage.setItem(REGISTERED_TOKEN_KEY, token);
   return token;
 }
 

@@ -1,12 +1,12 @@
 import React from 'react';
-import { RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Alert, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 
 import { Colors } from '../constants/Colors';
-import { AppNotification, AuthUser, fetchAppNotifications, fetchCurrentUser } from '../lib/api';
-import { registerForPushNotificationsAsync, requestNotificationPermissionAsync } from '../lib/pushNotifications';
+import { AppNotification, AuthUser, deleteAppNotification, fetchAppNotifications, fetchCurrentUser } from '../lib/api';
+import { registerForPushNotificationsAsync, requestNotificationPermissionAsync, subscribeToPushNotifications } from '../lib/pushNotifications';
 import { fetchChallengeOverviewData, fetchCommunityPostsData } from '../lib/screenData';
 
 type CampaignItem = {
@@ -206,6 +206,13 @@ export default function NotificationsScreen() {
     return () => { cancelled = true; };
   }, [loadNotifications, user]));
 
+  React.useEffect(() => {
+    const unsubscribe = subscribeToPushNotifications(() => {
+      void fetchAppNotifications().then(setPushNotifications).catch(() => undefined);
+    });
+    return () => { unsubscribe(); };
+  }, []);
+
   const startedAt = user?.subscription_started_at ?? user?.subscription?.started_at;
   const trialDay = getTrialDay(startedAt);
   const activeDay = trialDay === null ? 0 : Math.min(trialDay, 5);
@@ -223,6 +230,26 @@ export default function NotificationsScreen() {
     } catch {
       setPermissionMessage('Unable to enable notifications. Check browser or device settings.');
     }
+  };
+
+  const removeNotification = (item: AppNotification) => {
+    Alert.alert('Delete notification?', 'This notification will be removed from your inbox.', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: () => {
+          void (async () => {
+            try {
+              await deleteAppNotification(item.id);
+              setPushNotifications((current) => current.filter((notification) => notification.id !== item.id));
+            } catch {
+              setLoadError('Unable to delete this notification right now.');
+            }
+          })();
+        },
+      },
+    ]);
   };
 
   if (loading) return <View style={styles.loading}><Text style={styles.muted}>Loading notifications...</Text></View>;
@@ -270,7 +297,9 @@ export default function NotificationsScreen() {
               }} activeOpacity={0.82}>
                 <View style={[styles.activityIcon, { backgroundColor: `${Colors.primary}20` }]}><Ionicons name="sparkles-outline" size={21} color={Colors.primary} /></View>
                 <View style={styles.activityBody}><Text style={[styles.activityCategory, { color: Colors.primary }]}>{item.type.replaceAll('_', ' ').toUpperCase()}</Text><Text style={styles.activityTitle}>{item.title}</Text><Text style={styles.activityText}>{item.message}</Text><Text style={styles.permissionStatus}>{formatDate(item.created_at)}</Text></View>
-                {typeof item.data?.videoRoute === 'string' ? <Ionicons name="chevron-forward" size={18} color={Colors.textMuted} /> : null}
+                <TouchableOpacity onPress={() => removeNotification(item)} hitSlop={10} accessibilityLabel="Delete notification">
+                  <Ionicons name="trash-outline" size={19} color={Colors.textMuted} />
+                </TouchableOpacity>
               </TouchableOpacity>
             ))}
           </View>

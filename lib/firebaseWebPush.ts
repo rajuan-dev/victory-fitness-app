@@ -74,7 +74,9 @@ export function setupWebPushNotificationsAsync(): Promise<boolean> {
   return webPushSetupPromise;
 }
 
-export async function registerWebPushNotificationsAsync(): Promise<string | null> {
+export async function registerWebPushNotificationsAsync(
+  onNotification?: (event: { title: string; message: string; data: Record<string, unknown> }) => void,
+): Promise<string | null> {
   if (typeof window === 'undefined' || !('Notification' in window) || !('serviceWorker' in navigator) || !('PushManager' in window)) {
     return null;
   }
@@ -107,6 +109,7 @@ export async function registerWebPushNotificationsAsync(): Promise<string | null
       firebase.messaging().onMessage((payload) => {
         const title = payload.notification?.title || 'Victory Fitness';
         const body = payload.notification?.body || 'You have a new update from Victory Fitness.';
+        onNotification?.({ title, message: body, data: {} });
         if (Notification.permission === 'granted') {
           new Notification(title, { body, icon: '/icon-192.png' });
         }
@@ -117,9 +120,9 @@ export async function registerWebPushNotificationsAsync(): Promise<string | null
     }
   }
 
-  if ((await AsyncStorage.getItem(REGISTERED_TOKEN_KEY)) !== token) {
-    await apiRequest('/me/push-token', { method: 'POST', body: { token, platform: 'web' } });
-    await AsyncStorage.setItem(REGISTERED_TOKEN_KEY, token);
-  }
+  // Do not rely on a device-wide cache: after logout/login the same browser
+  // token must also be registered for the newly authenticated account.
+  await apiRequest('/me/push-token', { method: 'POST', body: { token, platform: 'web' } });
+  await AsyncStorage.setItem(REGISTERED_TOKEN_KEY, token);
   return token;
 }

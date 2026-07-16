@@ -843,6 +843,12 @@ export async function fetchAppNotifications() {
   return response.items || [];
 }
 
+export async function deleteAppNotification(notificationId: string) {
+  return apiRequest<{ deleted: boolean }>(`/me/notifications/${encodeURIComponent(notificationId)}`, {
+    method: 'DELETE',
+  });
+}
+
 export async function updateCurrentUserProfile(payload: {
   name?: string;
   email?: string;
