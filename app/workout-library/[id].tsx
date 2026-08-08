@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo } from 'react';
 import {
   ActivityIndicator,
   Image,
@@ -14,6 +14,7 @@ import CrossPlatformWebView from '../../components/CrossPlatformWebView';
 import { Colors } from '../../constants/Colors';
 import { useLanguage } from '../../lib/i18n';
 import { goBackOrReplace } from '../../lib/navigation';
+import { recordAnalyticsEvent } from '../../lib/api';
 
 const DEFAULT_THUMBNAIL =
   'https://images.unsplash.com/photo-1517836357463-d25dfeac3438?q=80&w=300&auto=format&fit=crop';
@@ -141,6 +142,16 @@ export default function WorkoutPlayerScreen() {
     return `https://player.vimeo.com/video/${encodeURIComponent(vimeoId)}?autoplay=1&title=0&byline=0&portrait=0&playsinline=1&dnt=1`;
   }, [videoUrl, vimeoId]);
   const playerHtml = useMemo(() => (embedUrl ? buildWorkoutPlayerHtml(embedUrl) : ''), [embedUrl]);
+
+  useEffect(() => {
+    if (typeof params.id !== 'string' || !params.id) {
+      return;
+    }
+    void recordAnalyticsEvent('workout_library_item_viewed', {
+      workout_id: params.id,
+      title,
+    }).catch(() => undefined);
+  }, [params.id, title]);
 
   return (
     <SafeAreaView style={styles.container}>

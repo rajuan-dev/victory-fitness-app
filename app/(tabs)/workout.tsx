@@ -16,7 +16,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Colors } from '../../constants/Colors';
-import { fetchCurrentUser } from '../../lib/api';
+import { fetchCurrentUser, recordAnalyticsEvent } from '../../lib/api';
 import { canAccessFeature } from '../../lib/access';
 import VictoryHeader from '../../components/VictoryHeader';
 import { fetchWorkoutLibrary, getCachedWorkoutLibrary, WorkoutLibraryCategory, WorkoutLibraryItem } from '../../lib/workouts';
@@ -155,6 +155,12 @@ export default function WorkoutScreen() {
   const [videoPlan, setVideoPlan] = useState<VideoPlanResponse | null>(null);
   const [canAccessWorkoutPlans, setCanAccessWorkoutPlans] = useState(true);
   const [selectedCategoryName, setSelectedCategoryName] = useState<string | null>(null);
+
+  useFocusEffect(
+    React.useCallback(() => {
+      void recordAnalyticsEvent('workout_library_visited').catch(() => undefined);
+    }, [])
+  );
 
   useEffect(() => {
     hasLoadedLibraryRef.current =
