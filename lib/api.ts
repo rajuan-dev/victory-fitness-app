@@ -1475,6 +1475,16 @@ export async function apiRequest<T>(
   return data as T;
 }
 
+export async function recordAnalyticsEvent(
+  eventType: 'workout_library_visited' | 'workout_library_item_viewed',
+  details: Record<string, unknown> = {}
+) {
+  return apiRequest<{ status: string }>('/analytics-events', {
+    method: 'POST',
+    body: { event_type: eventType, details },
+  });
+}
+
 function extractErrorDetail(data: unknown): string {
   if (typeof data === 'string') {
     return data;
