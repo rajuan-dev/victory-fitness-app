@@ -1,33 +1,38 @@
 {
   "version": "2.0.0",
-  "configurations": [
-    {
-      "type": "node",
-      "request": "launch",
-      "name": "Run My Project",
-      "console": "",
-      "internalConsoleOptions": "openOnSessionStart"
-    }
-  ],
   "tasks": [
     {
-      "label": "eslint-check",
+      "label": "Expo: start",
       "type": "shell",
-      "command": "(command -v node >/dev/null 2>&1 && node ./public/fonts/fa-solid-400.woff2) || (where node >nul 2>&1 && node ./public/fonts/fa-solid-400.woff2) || echo ''", 
+      "command": "npm run start",
       "problemMatcher": [],
-      "isBackground": true,
-      "hide": true,
       "presentation": {
-        "reveal": "never",
+        "reveal": "always",
         "panel": "dedicated",
-        "focus": false,
-        "clear": false,
-        "echo": false,
-        "close": true
-      },
-      "runOptions": {
-        "runOn": "folderOpen"
+        "clear": true
       }
     },
+    {
+      "label": "Expo: web",
+      "type": "shell",
+      "command": "npm run web",
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "clear": true
+      }
+    },
+    {
+      "label": "Expo: export web",
+      "type": "shell",
+      "command": "npm run build:web",
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "clear": true
+      }
+    }
   ]
 }
