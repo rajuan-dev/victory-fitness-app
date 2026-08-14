@@ -77,6 +77,7 @@ export const PLAN_CARDS: AppPlanCard[] = [
     tabAccess: [...GOLD_AND_ABOVE_TAB_ACCESS],
     routeAccess: [...PLATINUM_ROUTE_ACCESS],
   },
+  /*
   {
     tier: 'INNER_CIRCLE',
     title: 'Victory Inner Circle',
@@ -88,6 +89,7 @@ export const PLAN_CARDS: AppPlanCard[] = [
     tabAccess: [...GOLD_AND_ABOVE_TAB_ACCESS],
     routeAccess: [...INNER_CIRCLE_ROUTE_ACCESS],
   },
+  */
 ];
 
 const ALLOWED_PUBLIC_PATHS = ['/login', '/register', '/verification', '/forgot-password', '/onboarding', '/splash'];

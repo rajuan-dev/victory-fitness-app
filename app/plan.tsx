@@ -1,10 +1,12 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
   Dimensions,
   FlatList,
   Modal,
+  NativeScrollEvent,
+  NativeSyntheticEvent,
   ScrollView,
   StyleSheet,
   Text,
@@ -17,10 +19,12 @@ import { Ionicons } from '@expo/vector-icons';
 import { ApiError, fetchCurrentUser, fetchSubscriptionPlans, SubscriptionPlan, updateCurrentUserSubscription } from '../lib/api';
 import { AppPlanCard, BillingCycle, getSubscriptionCard, PLAN_CARDS, SubscriptionTier } from '../lib/access';
 import { useLanguage } from '../lib/i18n';
-import { replaceRoute } from '../lib/navigation';
+import { goBackOrReplace, replaceRoute } from '../lib/navigation';
 
-const { width } = Dimensions.get('window');
-const CARD_WIDTH = Math.min(width - 92, 320);
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const CARD_WIDTH = Math.min(SCREEN_WIDTH * 0.84, 340);
+const CARD_GAP = 14;
+const HORIZONTAL_PADDING = Math.max((SCREEN_WIDTH - CARD_WIDTH) / 2, 16);
 
 type AppPlanViewModel = AppPlanCard & {
   planId: string;
@@ -83,25 +87,81 @@ function getPlanPricing(plan: AppPlanViewModel, cycle: BillingCycle) {
   };
 }
 
-function getPlanTierAccentStyle(tier: SubscriptionTier) {
+function getTierDesign(tier: SubscriptionTier) {
   switch (tier) {
     case 'SILVER':
-      return { backgroundColor: 'rgba(148,163,184,0.16)', borderColor: 'rgba(148,163,184,0.34)' };
+      return {
+        bg: '#0F172A',
+        accentColor: '#94A3B8',
+        badgeBg: 'rgba(148, 163, 184, 0.16)',
+        borderColor: '#334155',
+        activeBorderColor: '#94A3B8',
+        glowColor: 'rgba(148, 163, 184, 0.25)',
+        iconName: 'medal-outline' as const,
+        tag: 'ESSENTIALS',
+        pillBg: 'rgba(148, 163, 184, 0.15)',
+        pillText: '#CBD5E1',
+      };
     case 'GOLD':
-      return { backgroundColor: 'rgba(245,158,11,0.16)', borderColor: 'rgba(245,158,11,0.34)' };
+      return {
+        bg: '#1C1917',
+        accentColor: '#F59E0B',
+        badgeBg: 'rgba(245, 158, 11, 0.18)',
+        borderColor: '#44403C',
+        activeBorderColor: '#F59E0B',
+        glowColor: 'rgba(245, 158, 11, 0.35)',
+        iconName: 'ribbon-outline' as const,
+        tag: 'MOST POPULAR',
+        pillBg: '#F59E0B',
+        pillText: '#000000',
+      };
     case 'PLATINUM':
-      return { backgroundColor: 'rgba(168,85,247,0.16)', borderColor: 'rgba(168,85,247,0.34)' };
+      return {
+        bg: '#0B132B',
+        accentColor: '#38BDF8',
+        badgeBg: 'rgba(56, 189, 248, 0.18)',
+        borderColor: '#1E293B',
+        activeBorderColor: '#38BDF8',
+        glowColor: 'rgba(56, 189, 248, 0.4)',
+        iconName: 'diamond-outline' as const,
+        tag: 'RECOMMENDED',
+        pillBg: '#38BDF8',
+        pillText: '#021417',
+      };
     case 'INNER_CIRCLE':
-      return { backgroundColor: 'rgba(14,165,233,0.16)', borderColor: 'rgba(14,165,233,0.34)' };
-    case 'NONE':
+      return {
+        bg: '#1F1122',
+        accentColor: '#FB7185',
+        badgeBg: 'rgba(251, 113, 133, 0.18)',
+        borderColor: '#4C1D24',
+        activeBorderColor: '#FB7185',
+        glowColor: 'rgba(251, 113, 133, 0.35)',
+        iconName: 'sparkles-outline' as const,
+        tag: 'EXCLUSIVE',
+        pillBg: '#FB7185',
+        pillText: '#1F1122',
+      };
     default:
-      return { backgroundColor: 'rgba(15,23,42,0.06)', borderColor: 'rgba(15,23,42,0.12)' };
+      return {
+        bg: '#0F172A',
+        accentColor: '#64748B',
+        badgeBg: 'rgba(100, 116, 139, 0.16)',
+        borderColor: '#334155',
+        activeBorderColor: '#64748B',
+        glowColor: 'rgba(100, 116, 139, 0.2)',
+        iconName: 'key-outline' as const,
+        tag: 'BASIC',
+        pillBg: 'rgba(100, 116, 139, 0.15)',
+        pillText: '#94A3B8',
+      };
   }
 }
 
 export default function PlanSelectionScreen() {
   const router = useRouter();
   const { t } = useLanguage();
+  const flatListRef = useRef<FlatList>(null);
+
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [confirmVisible, setConfirmVisible] = useState(false);
@@ -110,6 +170,7 @@ export default function PlanSelectionScreen() {
   const [userName, setUserName] = useState('Member');
   const [billingCycle, setBillingCycle] = useState<BillingCycle>('yearly');
   const [planItems, setPlanItems] = useState<SubscriptionPlan[]>([]);
+  const [activeIndex, setActiveIndex] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -171,9 +232,30 @@ export default function PlanSelectionScreen() {
       };
     });
   }, [planItems]);
-  const selectedPlan = useMemo(() => plans.find((plan) => plan.tier === selectedTier) ?? plans[0] ?? { ...getSubscriptionCard('SILVER'), planId: 'SILVER', priceMonthly: null, priceYearly: null, discountedPriceMonthly: null, discountedPriceYearly: null, discountPercentage: null, discountStartDate: null, discountEndDate: null, isDiscountActive: false, isApplicationOnly: false, isMostPopular: false, iconType: '', isDashboardConfigured: false }, [plans, selectedTier]);
-  const selectedPlanAccentStyle = useMemo(() => getPlanTierAccentStyle(selectedTier), [selectedTier]);
+
+  const selectedPlan = useMemo(
+    () => plans.find((plan) => plan.tier === selectedTier) ?? plans[0] ?? { ...getSubscriptionCard('SILVER'), planId: 'SILVER', priceMonthly: null, priceYearly: null, discountedPriceMonthly: null, discountedPriceYearly: null, discountPercentage: null, discountStartDate: null, discountEndDate: null, isDiscountActive: false, isApplicationOnly: false, isMostPopular: false, iconType: '', isDashboardConfigured: false },
+    [plans, selectedTier]
+  );
   const selectedPlanPricing = useMemo(() => getPlanPricing(selectedPlan, billingCycle), [selectedPlan, billingCycle]);
+  const selectedTierDesign = useMemo(() => getTierDesign(selectedTier), [selectedTier]);
+
+  const scrollToPlanIndex = (index: number) => {
+    if (index >= 0 && index < plans.length) {
+      setActiveIndex(index);
+      setSelectedTier(plans[index].tier);
+      flatListRef.current?.scrollToIndex({ index, animated: true });
+    }
+  };
+
+  const handleScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const offsetX = event.nativeEvent.contentOffset.x;
+    const index = Math.round(offsetX / (CARD_WIDTH + CARD_GAP));
+    if (index >= 0 && index < plans.length && index !== activeIndex) {
+      setActiveIndex(index);
+      setSelectedTier(plans[index].tier);
+    }
+  };
 
   const handleConfirm = async () => {
     if (saving) {
@@ -218,179 +300,302 @@ export default function PlanSelectionScreen() {
     <SafeAreaView style={styles.screen}>
       <View style={styles.page}>
         <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+          {/* Top Navigation Bar with Back & Close buttons */}
+          <View style={styles.topNavBar}>
+            <TouchableOpacity
+              activeOpacity={0.7}
+              style={styles.topNavBtn}
+              onPress={() => goBackOrReplace(router, '/(tabs)')}
+            >
+              <Ionicons name="chevron-back" size={22} color="#FFFFFF" />
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              activeOpacity={0.7}
+              style={styles.topNavBtn}
+              onPress={() => goBackOrReplace(router, '/(tabs)')}
+            >
+              <Ionicons name="close" size={22} color="#FFFFFF" />
+            </TouchableOpacity>
+          </View>
+
+          {/* Header / Hero */}
           <View style={styles.hero}>
-            <Text style={styles.kicker}>VICTORY FITNESS</Text>
+            <View style={styles.kickerBadge}>
+              <Ionicons name="sparkles" size={12} color="#18D2EF" />
+              <Text style={styles.kicker}>{t('VICTORY FITNESS MEMBERSHIP')}</Text>
+            </View>
             <Text style={styles.title}>{t('Choose the plan that fits your goal')}</Text>
             <Text style={styles.subtitle}>
               {`${userName}, ${t('review your access level and update it when you want to unlock more sections. Changes apply immediately after confirmation.')}`}
             </Text>
           </View>
 
-          <View style={styles.billingRow}>
-            <View style={styles.billingSwitch}>
-              <Text style={[styles.billingSideText, billingCycle === 'monthly' && styles.billingSideTextActive]}>{t('MONTHLY')}</Text>
-              <View style={styles.billingTrack}>
-                <TouchableOpacity
-                  activeOpacity={0.9}
-                  style={[styles.billingThumb, billingCycle === 'yearly' && styles.billingThumbYearly]}
-                  onPress={() => setBillingCycle('monthly')}
-                />
-                <TouchableOpacity style={styles.billingTouchLeft} activeOpacity={1} onPress={() => setBillingCycle('monthly')} />
-                <TouchableOpacity style={styles.billingTouchRight} activeOpacity={1} onPress={() => setBillingCycle('yearly')} />
-              </View>
-              <Text style={[styles.billingSideText, billingCycle === 'yearly' && styles.billingSideTextActive]}>{t('YEARLY')}</Text>
-            </View>
-            <View style={styles.savePill}>
-              <Text style={styles.savePillText}>{t('SAVE UP TO 33%')}</Text>
+          {/* Master Segmented Billing Toggle */}
+          <View style={styles.billingContainer}>
+            <View style={styles.billingSegmentTrack}>
+              <TouchableOpacity
+                activeOpacity={0.8}
+                style={[styles.billingSegmentBtn, billingCycle === 'monthly' && styles.billingSegmentBtnActive]}
+                onPress={() => setBillingCycle('monthly')}
+              >
+                <Text style={[styles.billingSegmentText, billingCycle === 'monthly' && styles.billingSegmentTextActive]}>
+                  {t('MONTHLY')}
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                activeOpacity={0.8}
+                style={[styles.billingSegmentBtn, billingCycle === 'yearly' && styles.billingSegmentBtnActive]}
+                onPress={() => setBillingCycle('yearly')}
+              >
+                <Text style={[styles.billingSegmentText, billingCycle === 'yearly' && styles.billingSegmentTextActive]}>
+                  {t('YEARLY')}
+                </Text>
+                <View style={styles.yearlySaveBadge}>
+                  <Text style={styles.yearlySaveBadgeText}>{t('SAVE UP TO 33%')}</Text>
+                </View>
+              </TouchableOpacity>
             </View>
           </View>
 
-          <FlatList
-            data={plans}
-            keyExtractor={(item) => item.tier}
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            snapToInterval={CARD_WIDTH + 18}
-            decelerationRate="fast"
-            contentContainerStyle={styles.cardsRow}
-            renderItem={({ item: card }) => {
-              const active = selectedTier === card.tier;
-              const current = currentTier === card.tier;
-              const tierAccentStyle = getPlanTierAccentStyle(card.tier);
-              const actionLabel = current
-                ? t('Current Plan').toUpperCase()
-                : card.isApplicationOnly
-                  ? t('Apply now').toUpperCase()
-                  : t('Choose Plan').toUpperCase();
+          {/* Cards Carousel */}
+          <View style={styles.carouselSection}>
+            <FlatList
+              ref={flatListRef}
+              data={plans}
+              keyExtractor={(item) => item.tier}
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              snapToInterval={CARD_WIDTH + CARD_GAP}
+              snapToAlignment="center"
+              decelerationRate="fast"
+              onScroll={handleScroll}
+              scrollEventThrottle={16}
+              contentContainerStyle={[styles.cardsRow, { paddingHorizontal: HORIZONTAL_PADDING }]}
+              renderItem={({ item: card, index }) => {
+                const active = selectedTier === card.tier;
+                const current = currentTier === card.tier;
+                const design = getTierDesign(card.tier);
+                const pricing = getPlanPricing(card, billingCycle);
 
-              return (
-                <TouchableOpacity
-                  activeOpacity={0.95}
-                  style={[
-                    styles.card,
-                    { width: CARD_WIDTH },
-                    active && styles.cardActive,
-                    active && tierAccentStyle,
-                    active && { shadowColor: card.accent },
-                  ]}
-                  onPress={() => setSelectedTier(card.tier)}
-                >
-                  {card.isMostPopular ? (
-                    <View style={styles.popularPill}>
-                      <Text style={styles.popularText}>{t('Most Popular')}</Text>
-                    </View>
-                  ) : null}
+                const actionLabel = current
+                  ? t('CURRENT PLAN')
+                  : card.isApplicationOnly
+                    ? t('APPLY NOW')
+                    : active
+                      ? t('CHOOSE PLAN')
+                      : t('SELECT PLAN');
 
-                  <View style={styles.cardTopRow}>
-                    <View style={[styles.badge, tierAccentStyle, current && { borderColor: card.accent, shadowColor: card.accent }]}>
-                      <Ionicons
-                        name={card.tier === 'PLATINUM' ? 'diamond-outline' : card.tier === 'INNER_CIRCLE' ? 'ellipse-outline' : 'medal-outline'}
-                        color={card.tier === 'NONE' ? '#111827' : '#fff'}
-                        size={18}
-                      />
-                    </View>
-                    <View style={[styles.stepBubble, tierAccentStyle, current && { borderColor: card.accent, shadowColor: card.accent }]}>
-                      <Text style={styles.stepBubbleText}>{plans.findIndex((item) => item.tier === card.tier) + 1}</Text>
-                    </View>
-                  </View>
+                return (
+                  <TouchableOpacity
+                    activeOpacity={0.92}
+                    style={[
+                      styles.card,
+                      {
+                        width: CARD_WIDTH,
+                        backgroundColor: design.bg,
+                        borderColor: active ? design.activeBorderColor : design.borderColor,
+                        borderWidth: active ? 2 : 1,
+                        shadowColor: active ? design.accentColor : '#000000',
+                        shadowOpacity: active ? 0.35 : 0.15,
+                        shadowRadius: active ? 18 : 8,
+                        transform: [{ scale: active ? 1 : 0.98 }],
+                      },
+                    ]}
+                    onPress={() => scrollToPlanIndex(index)}
+                  >
+                    {/* Top Tag / Pill */}
+                    {card.isMostPopular ? (
+                      <View style={[styles.topTagPill, { backgroundColor: design.pillBg }]}>
+                        <Ionicons name="flame" size={12} color={design.pillText} />
+                        <Text style={[styles.topTagText, { color: design.pillText }]}>{t('MOST POPULAR')}</Text>
+                      </View>
+                    ) : card.tier === 'PLATINUM' ? (
+                      <View style={[styles.topTagPill, { backgroundColor: design.pillBg }]}>
+                        <Ionicons name="star" size={12} color={design.pillText} />
+                        <Text style={[styles.topTagText, { color: design.pillText }]}>{t('RECOMMENDED')}</Text>
+                      </View>
+                    ) : null}
 
-                  <Text style={styles.cardTitle}>{card.title.toUpperCase()}</Text>
-                  <Text style={styles.cardDescription}>{t(card.description)}</Text>
-                  {(() => {
-                    const pricing = getPlanPricing(card, billingCycle);
-                    if (card.isApplicationOnly) {
-                      return (
-                        <View style={styles.priceRow}>
-                          <Text style={styles.price}>{t('Application Only')}</Text>
-                        </View>
-                      );
-                    }
-                    return (
-                      <View style={styles.priceBlock}>
+                    {/* Card Header Row */}
+                    <View style={styles.cardHeader}>
+                      <View style={[styles.iconCircle, { backgroundColor: design.badgeBg, borderColor: design.accentColor }]}>
+                        <Ionicons name={design.iconName} size={22} color={design.accentColor} />
+                      </View>
+                      <View style={styles.stepBadge}>
+                        <Text style={styles.stepBadgeText}>{`${index + 1} / ${plans.length}`}</Text>
+                      </View>
+                    </View>
+
+                    {/* Title & Description */}
+                    <Text style={styles.cardTitle}>{card.title.toUpperCase()}</Text>
+                    <Text style={styles.cardDescription}>{t(card.description)}</Text>
+
+                    {/* Pricing Block */}
+                    {card.isApplicationOnly ? (
+                      <View style={styles.priceContainer}>
+                        <Text style={styles.priceMainText}>{t('Application Only')}</Text>
+                        <Text style={styles.priceSubText}>{t('Direct VIP coaching evaluation')}</Text>
+                      </View>
+                    ) : (
+                      <View style={styles.priceContainer}>
                         {pricing.hasActiveDiscount ? (
-                          <>
-                            <View style={styles.discountRow}>
-                              <Text style={styles.discountPill}>{`Offer -${card.discountPercentage}%`}</Text>
-                              <Text style={styles.originalPrice}>{formatEuroAmount(pricing.originalPrice)}</Text>
+                          <View style={styles.discountRow}>
+                            <View style={styles.discountBadge}>
+                              <Text style={styles.discountBadgeText}>{`OFFER -${card.discountPercentage}%`}</Text>
                             </View>
-                            <Text style={styles.savingsText}>{`Save ${formatEuroAmount(pricing.savings)}`}</Text>
-                          </>
+                            <Text style={styles.originalPriceText}>{formatEuroAmount(pricing.originalPrice)}</Text>
+                          </View>
                         ) : null}
-                        <View style={styles.priceRow}>
-                          <Text style={styles.price}>{formatEuroAmount(pricing.finalPrice)}</Text>
-                          <Text style={styles.priceSuffix}>{billingCycle === 'monthly' ? t('per month') : t('per year')}</Text>
+
+                        <View style={styles.priceMainRow}>
+                          <Text style={styles.priceNumber}>{formatEuroAmount(pricing.finalPrice)}</Text>
+                          <Text style={styles.pricePeriod}>
+                            {billingCycle === 'monthly' ? t('/ month') : t('/ year')}
+                          </Text>
                         </View>
+
+                        {pricing.hasActiveDiscount ? (
+                          <Text style={styles.savingsText}>
+                            {`${t('Save')} ${formatEuroAmount(pricing.savings)} ${t('per')} ${pricing.cycleLabel}`}
+                          </Text>
+                        ) : card.tier !== 'INNER_CIRCLE' && billingCycle === 'yearly' ? (
+                          <Text style={styles.bestValueText}>{t('BEST VALUE BUNDLE')}</Text>
+                        ) : null}
                       </View>
-                    );
-                  })()}
-                  {card.tier !== 'INNER_CIRCLE' && billingCycle === 'yearly' ? (
-                    <Text style={styles.valueText}>BEST VALUE</Text>
-                  ) : null}
-                  {card.isDashboardConfigured ? (
-                    <Text style={styles.dashboardSyncText}>{t('Updated from dashboard pricing')}</Text>
-                  ) : null}
+                    )}
 
-                  <View style={styles.featureList}>
-                    {card.features.map((feature) => (
-                      <View key={feature} style={styles.featureRow}>
-                        <Ionicons name="checkmark-circle" size={16} color="#19D6F3" />
-                        <Text style={styles.featureText}>{t(feature)}</Text>
-                      </View>
-                    ))}
-                  </View>
+                    {/* Features List */}
+                    <View style={styles.divider} />
+                    <View style={styles.featuresList}>
+                      {card.features.map((feature) => (
+                        <View key={feature} style={styles.featureRow}>
+                          <View style={[styles.checkCircle, { backgroundColor: design.badgeBg }]}>
+                            <Ionicons name="checkmark-sharp" size={12} color={design.accentColor} />
+                          </View>
+                          <Text style={styles.featureText}>{t(feature)}</Text>
+                        </View>
+                      ))}
+                    </View>
 
-                  {current ? <Text style={styles.currentPlanText}>{t('Active on your profile')}</Text> : null}
+                    {/* Active Status & Card Action CTA */}
+                    <View style={styles.cardFooter}>
+                      {current ? (
+                        <View style={styles.currentActivePill}>
+                          <Ionicons name="checkmark-circle-sharp" size={14} color="#38BDF8" />
+                          <Text style={styles.currentActiveText}>{t('Active on your profile')}</Text>
+                        </View>
+                      ) : null}
 
-                  <View style={[styles.selectPill, active && !current && styles.selectPillActive, current && styles.selectPillCurrent]}>
-                    <Text style={[styles.selectText, (active || current) && styles.selectTextActive]}>
-                      {actionLabel}
-                    </Text>
-                  </View>
-                </TouchableOpacity>
-              );
-            }}
-          />
+                      <TouchableOpacity
+                        activeOpacity={0.85}
+                        style={[
+                          styles.cardBtn,
+                          active && !current && { backgroundColor: '#18D2EF' },
+                          current && { backgroundColor: 'rgba(56, 189, 248, 0.15)', borderWidth: 1, borderColor: '#38BDF8' },
+                          !active && !current && { backgroundColor: '#1E293B', borderWidth: 1, borderColor: '#334155' },
+                        ]}
+                        onPress={() => scrollToPlanIndex(index)}
+                      >
+                        <Text
+                          style={[
+                            styles.cardBtnText,
+                            active && !current && { color: '#021417', fontFamily: 'Inter_700Bold' },
+                            current && { color: '#38BDF8', fontFamily: 'Inter_700Bold' },
+                            !active && !current && { color: '#E2E8F0', fontFamily: 'Inter_600SemiBold' },
+                          ]}
+                        >
+                          {actionLabel}
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                  </TouchableOpacity>
+                );
+              }}
+            />
 
-          <View style={[styles.summaryCard, selectedPlanAccentStyle]}>
-            <Text style={styles.summaryLabel}>{t('Selected plan')}</Text>
-            <Text style={styles.summaryTitle}>{selectedPlan.title}</Text>
-            {selectedPlanPricing.hasActiveDiscount ? (
-              <View style={styles.summaryOfferRow}>
-                <Text style={styles.summaryOfferPill}>{`Offer -${selectedPlan.discountPercentage}%`}</Text>
-                <Text style={styles.summaryOriginalPrice}>{formatEuroAmount(selectedPlanPricing.originalPrice)}</Text>
-              </View>
-            ) : null}
-            <Text style={styles.summaryText}>
-              {t(formatPrice(selectedPlanPricing.finalPrice, billingCycle))}. {t('Access:')} {selectedPlan.tabAccess.join(', ')}.
-            </Text>
-            {selectedPlanPricing.hasActiveDiscount ? (
-              <Text style={styles.summarySavingsText}>
-                {`Dashboard offer live: save ${formatEuroAmount(selectedPlanPricing.savings)} per ${selectedPlanPricing.cycleLabel}.`}
-              </Text>
-            ) : null}
+            {/* Pagination Dots */}
+            <View style={styles.paginationRow}>
+              {plans.map((p, idx) => (
+                <TouchableOpacity
+                  key={p.tier}
+                  activeOpacity={0.7}
+                  onPress={() => scrollToPlanIndex(idx)}
+                  style={[
+                    styles.paginationDot,
+                    activeIndex === idx && styles.paginationDotActive,
+                  ]}
+                />
+              ))}
+            </View>
+
+            <View style={styles.swipeHintRow}>
+              <Ionicons name="swap-horizontal" size={14} color="#64748B" />
+              <Text style={styles.swipeHintText}>{t('Swipe to compare all access plans')}</Text>
+            </View>
           </View>
 
-          <TouchableOpacity style={styles.confirmButton} onPress={() => setConfirmVisible(true)} activeOpacity={0.9}>
+          {/* Selected Plan Summary Card */}
+          <View style={[styles.summaryCard, { borderColor: selectedTierDesign.activeBorderColor }]}>
+            <View style={styles.summaryTopRow}>
+              <View style={styles.summaryBadgeRow}>
+                <Ionicons name={selectedTierDesign.iconName} size={18} color={selectedTierDesign.accentColor} />
+                <Text style={styles.summaryLabel}>{t('SELECTED PLAN')}</Text>
+              </View>
+              <Text style={[styles.summaryTierTitle, { color: selectedTierDesign.accentColor }]}>
+                {selectedPlan.title}
+              </Text>
+            </View>
+
+            {selectedPlanPricing.hasActiveDiscount ? (
+              <View style={styles.summaryOfferBanner}>
+                <Ionicons name="pricetag" size={14} color="#047857" />
+                <Text style={styles.summaryOfferText}>
+                  {`Special Offer Applied: Save ${formatEuroAmount(selectedPlanPricing.savings)} ${t('per')} ${selectedPlanPricing.cycleLabel}`}
+                </Text>
+              </View>
+            ) : null}
+
+            <Text style={styles.summaryPriceText}>
+              {formatPrice(selectedPlanPricing.finalPrice, billingCycle)}
+            </Text>
+            <Text style={styles.summaryAccessText}>
+              <Text style={styles.summaryBold}>{t('Access Included: ')}</Text>
+              {selectedPlan.features.join(' • ')}
+            </Text>
+          </View>
+
+          {/* Bottom Action Confirm Button */}
+          <TouchableOpacity style={styles.confirmButton} onPress={() => setConfirmVisible(true)} activeOpacity={0.88}>
             <Text style={styles.confirmButtonText}>
               {currentTier === selectedTier
                 ? currentTier === 'NONE'
-                  ? t('Confirm payment')
-                  : t('Current Plan')
+                  ? t('CONFIRM PAYMENT')
+                  : t('CURRENT ACTIVE PLAN')
                 : currentTier === 'NONE'
-                  ? t('Confirm payment')
-                  : t('Update Plan')}
+                  ? t('CONFIRM PAYMENT')
+                  : `${t('UPGRADE TO')} ${selectedPlan.title.toUpperCase()}`}
             </Text>
+            <Ionicons name="arrow-forward-sharp" size={18} color="#021417" />
           </TouchableOpacity>
         </ScrollView>
 
+        {/* Confirmation Modal */}
         <Modal visible={confirmVisible} transparent animationType="fade" onRequestClose={() => setConfirmVisible(false)}>
           <View style={styles.modalBackdrop}>
-            <View style={[styles.modalCard, selectedPlanAccentStyle]}>
-              <Text style={styles.modalTitle}>{t('Confirm payment')}</Text>
+            <View style={[styles.modalCard, { borderColor: selectedTierDesign.activeBorderColor }]}>
+              <View style={styles.modalHeaderRow}>
+                <View style={[styles.iconCircle, { backgroundColor: selectedTierDesign.badgeBg, borderColor: selectedTierDesign.accentColor }]}>
+                  <Ionicons name={selectedTierDesign.iconName} size={24} color={selectedTierDesign.accentColor} />
+                </View>
+                <Text style={styles.modalTitle}>{t('Confirm Membership')}</Text>
+              </View>
+
               <Text style={styles.modalText}>
                 {selectedPlanPricing.hasActiveDiscount
-                  ? `Activate ${selectedPlan.title} now at ${formatPrice(selectedPlanPricing.finalPrice, billingCycle)} instead of ${formatPrice(selectedPlanPricing.originalPrice, billingCycle)}. This dashboard offer is applied immediately after confirmation and unlocks the allowed sections.`
-                  : `Activate ${selectedPlan.title} now at ${formatPrice(selectedPlanPricing.finalPrice, billingCycle)}. This will update the user profile subscription immediately and unlock the allowed sections.`}
+                  ? `Activate ${selectedPlan.title} now at ${formatPrice(selectedPlanPricing.finalPrice, billingCycle)} instead of ${formatPrice(selectedPlanPricing.originalPrice, billingCycle)}. This dashboard offer is applied immediately after confirmation and unlocks all allowed features.`
+                  : `Activate ${selectedPlan.title} now at ${formatPrice(selectedPlanPricing.finalPrice, billingCycle)}. Your membership will be updated immediately upon confirmation.`}
               </Text>
 
               <View style={styles.modalActions}>
@@ -402,7 +607,7 @@ export default function PlanSelectionScreen() {
                   <Text style={styles.modalSecondaryText}>{t('Cancel')}</Text>
                 </TouchableOpacity>
                 <TouchableOpacity style={styles.modalPrimary} onPress={handleConfirm} disabled={saving}>
-                  {saving ? <ActivityIndicator color="#021417" /> : <Text style={styles.modalPrimaryText}>{t('Confirm')}</Text>}
+                  {saving ? <ActivityIndicator color="#021417" /> : <Text style={styles.modalPrimaryText}>{t('Confirm Now')}</Text>}
                 </TouchableOpacity>
               </View>
             </View>
@@ -414,133 +619,191 @@ export default function PlanSelectionScreen() {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: '#F6F7FB' },
-  page: { flex: 1, backgroundColor: '#F6F7FB' },
-  content: { paddingTop: 18, paddingBottom: 32 },
-  hero: { paddingHorizontal: 22, alignItems: 'center', marginBottom: 18 },
-  kicker: { color: '#6B7280', fontSize: 11, fontFamily: 'Inter_700Bold', letterSpacing: 2.6 },
-  title: { color: '#0F172A', fontSize: 30, fontFamily: 'Inter_700Bold', marginTop: 10, textAlign: 'center' },
-  subtitle: { color: '#64748B', fontSize: 14, lineHeight: 21, fontFamily: 'Inter_400Regular', marginTop: 10, textAlign: 'center', maxWidth: 720 },
-  billingRow: {
+  screen: { flex: 1, backgroundColor: '#090D16' },
+  page: { flex: 1, backgroundColor: '#090D16' },
+  content: { paddingTop: 16, paddingBottom: 40 },
+  loadingWrap: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 14, backgroundColor: '#090D16' },
+  loadingText: { color: '#94A3B8', fontSize: 14, fontFamily: 'Inter_400Regular' },
+
+  /* Top Navigation Bar */
+  topNavBar: {
     flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingVertical: 8,
+    marginBottom: 4,
+  },
+  topNavBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.12)',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 10,
-    marginBottom: 18,
-    paddingHorizontal: 20,
   },
-  billingSwitch: {
+
+  /* Hero Section */
+  hero: { paddingHorizontal: 22, alignItems: 'center', marginBottom: 20 },
+  kickerBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    gap: 6,
+    backgroundColor: 'rgba(24, 210, 239, 0.1)',
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: 'rgba(24, 210, 239, 0.25)',
   },
-  billingSideText: {
+  kicker: { color: '#18D2EF', fontSize: 10, fontFamily: 'Inter_700Bold', letterSpacing: 2 },
+  title: { color: '#FFFFFF', fontSize: 26, fontFamily: 'Inter_700Bold', marginTop: 12, textAlign: 'center', letterSpacing: -0.5 },
+  subtitle: { color: '#94A3B8', fontSize: 13, lineHeight: 20, fontFamily: 'Inter_400Regular', marginTop: 8, textAlign: 'center', maxWidth: 640 },
+
+  /* Master Billing Segment Switch */
+  billingContainer: {
+    alignItems: 'center',
+    marginBottom: 24,
+    paddingHorizontal: 20,
+  },
+  billingSegmentTrack: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#0F172A',
+    borderRadius: 999,
+    padding: 4,
+    borderWidth: 1,
+    borderColor: '#1E293B',
+    width: '100%',
+    maxWidth: 360,
+  },
+  billingSegmentBtn: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 999,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    gap: 6,
+  },
+  billingSegmentBtnActive: {
+    backgroundColor: '#18D2EF',
+    shadowColor: '#18D2EF',
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+  },
+  billingSegmentText: {
     color: '#94A3B8',
     fontSize: 12,
     fontFamily: 'Inter_700Bold',
-    letterSpacing: 1.2,
+    letterSpacing: 1,
   },
-  billingSideTextActive: {
-    color: '#0F172A',
+  billingSegmentTextActive: {
+    color: '#021417',
   },
-  billingTrack: {
-    width: 46,
-    height: 24,
+  yearlySaveBadge: {
+    backgroundColor: '#10B981',
+    paddingHorizontal: 7,
+    paddingVertical: 3,
     borderRadius: 999,
-    backgroundColor: '#1E293B',
-    padding: 3,
+  },
+  yearlySaveBadgeText: {
+    color: '#022C22',
+    fontSize: 9,
+    fontFamily: 'Inter_700Bold',
+    letterSpacing: 0.5,
+  },
+
+  /* Carousel Section */
+  carouselSection: {
+    marginBottom: 10,
+  },
+  cardsRow: {
+    paddingVertical: 10,
+  },
+  card: {
+    borderRadius: 24,
+    padding: 22,
+    marginRight: CARD_GAP,
+    minHeight: 520,
+    justifyContent: 'space-between',
     position: 'relative',
   },
-  billingThumb: {
-    width: 18,
-    height: 18,
-    borderRadius: 9,
-    backgroundColor: '#18D2EF',
-  },
-  billingThumbYearly: {
-    alignSelf: 'flex-end',
-  },
-  billingTouchLeft: {
-    position: 'absolute',
-    left: 0,
-    top: 0,
-    bottom: 0,
-    width: '50%',
-  },
-  billingTouchRight: {
-    position: 'absolute',
-    right: 0,
-    top: 0,
-    bottom: 0,
-    width: '50%',
-  },
-  savePill: {
-    backgroundColor: '#16D7F3',
-    borderRadius: 4,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-  },
-  savePillText: {
-    color: '#08212B',
-    fontSize: 10,
-    fontFamily: 'Inter_700Bold',
-    letterSpacing: 0.6,
-  },
-  cardsRow: { paddingLeft: 22, paddingRight: 4 },
-  card: {
-    backgroundColor: '#141C33',
-    borderWidth: 2,
-    borderColor: '#141C33',
-    borderRadius: 18,
-    padding: 22,
-    marginRight: 18,
-    minHeight: 460,
-    shadowColor: '#0EA5E9',
-    shadowOpacity: 0.12,
-    shadowRadius: 16,
-    shadowOffset: { width: 0, height: 8 },
-  },
-  cardActive: {
-    shadowOpacity: 0.24,
-  },
-  cardTopRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  badge: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-  },
-  stepBubble: {
-    minWidth: 18,
-    height: 18,
-    borderRadius: 9,
-    backgroundColor: '#24314F',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    paddingHorizontal: 5,
-  },
-  stepBubbleText: {
-    color: '#FFFFFF',
-    fontSize: 10,
-    fontFamily: 'Inter_700Bold',
-  },
-  popularPill: {
+
+  /* Top Tag Pill */
+  topTagPill: {
     position: 'absolute',
     top: -12,
     alignSelf: 'center',
-    backgroundColor: '#16D7F3',
-    paddingHorizontal: 16,
-    paddingVertical: 6,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 14,
+    paddingVertical: 5,
     borderRadius: 999,
+    shadowColor: '#000',
+    shadowOpacity: 0.25,
+    shadowRadius: 6,
+    zIndex: 10,
   },
-  popularText: { color: '#07222B', fontSize: 10, fontFamily: 'Inter_700Bold', letterSpacing: 0.8 },
-  cardTitle: { color: '#FFFFFF', fontSize: 18, fontFamily: 'Inter_700Bold', marginTop: 18 },
-  cardDescription: { color: '#7F8BA6', fontSize: 13, lineHeight: 20, marginTop: 10, fontFamily: 'Inter_400Regular', minHeight: 56 },
-  priceBlock: {
-    marginTop: 18,
+  topTagText: {
+    fontSize: 10,
+    fontFamily: 'Inter_700Bold',
+    letterSpacing: 0.8,
+  },
+
+  /* Card Header */
+  cardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 16,
+  },
+  iconCircle: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1.5,
+  },
+  stepBadge: {
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.12)',
+  },
+  stepBadgeText: {
+    color: '#94A3B8',
+    fontSize: 11,
+    fontFamily: 'Inter_700Bold',
+  },
+
+  /* Title & Subtitle */
+  cardTitle: {
+    color: '#FFFFFF',
+    fontSize: 20,
+    fontFamily: 'Inter_700Bold',
+    letterSpacing: -0.3,
+  },
+  cardDescription: {
+    color: '#94A3B8',
+    fontSize: 13,
+    lineHeight: 19,
+    fontFamily: 'Inter_400Regular',
+    marginTop: 8,
+    minHeight: 56,
+  },
+
+  /* Price Block */
+  priceContainer: {
+    marginTop: 14,
+    minHeight: 70,
+    justifyContent: 'center',
   },
   discountRow: {
     flexDirection: 'row',
@@ -548,132 +811,281 @@ const styles = StyleSheet.create({
     gap: 8,
     marginBottom: 4,
   },
-  discountPill: {
-    color: '#7BF1A8',
-    fontSize: 11,
-    fontFamily: 'Inter_700Bold',
-    textTransform: 'uppercase',
+  discountBadge: {
+    backgroundColor: 'rgba(52, 211, 153, 0.2)',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: 'rgba(52, 211, 153, 0.35)',
   },
-  originalPrice: {
-    color: '#94A3B8',
-    fontSize: 12,
+  discountBadgeText: {
+    color: '#34D399',
+    fontSize: 10,
+    fontFamily: 'Inter_700Bold',
+  },
+  originalPriceText: {
+    color: '#64748B',
+    fontSize: 13,
     fontFamily: 'Inter_400Regular',
     textDecorationLine: 'line-through',
   },
-  savingsText: {
-    color: '#A7F3D0',
-    fontSize: 11,
-    fontFamily: 'Inter_600SemiBold',
-    marginBottom: 6,
-  },
-  priceRow: {
+  priceMainRow: {
     flexDirection: 'row',
-    alignItems: 'flex-end',
+    alignItems: 'baseline',
     gap: 6,
   },
-  price: { color: '#FFFFFF', fontSize: 22, fontFamily: 'Inter_700Bold' },
-  priceSuffix: { color: '#A3B1C7', fontSize: 13, fontFamily: 'Inter_400Regular', marginBottom: 2 },
-  valueText: { color: '#16D7F3', fontSize: 11, fontFamily: 'Inter_700Bold', marginTop: 8, letterSpacing: 0.7 },
-  dashboardSyncText: { color: '#94A3B8', fontSize: 10, fontFamily: 'Inter_600SemiBold', marginTop: 8, letterSpacing: 0.5 },
-  featureList: { gap: 10, marginTop: 14 },
-  featureRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  featureText: { color: '#F8FAFC', fontSize: 13, fontFamily: 'Inter_600SemiBold', flex: 1, lineHeight: 20 },
-  currentPlanText: {
-    color: '#16D7F3',
-    fontSize: 11,
+  priceNumber: {
+    color: '#FFFFFF',
+    fontSize: 28,
     fontFamily: 'Inter_700Bold',
-    marginTop: 'auto',
-    marginBottom: 12,
-    letterSpacing: 0.6,
+    letterSpacing: -0.5,
   },
-  selectPill: {
-    marginTop: 'auto',
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 14,
-    backgroundColor: '#FFFFFF',
+  pricePeriod: {
+    color: '#94A3B8',
+    fontSize: 13,
+    fontFamily: 'Inter_500Medium',
   },
-  selectPillActive: {
-    backgroundColor: '#18D2EF',
-  },
-  selectPillCurrent: {
-    backgroundColor: '#E2E8F0',
-  },
-  selectText: { color: '#0F172A', fontSize: 13, fontFamily: 'Inter_700Bold', letterSpacing: 0.6 },
-  selectTextActive: { color: '#031417' },
-  summaryCard: {
-    marginTop: 20,
-    marginHorizontal: 22,
-    borderRadius: 18,
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    padding: 16,
-  },
-  summaryLabel: { color: '#64748B', fontSize: 12, fontFamily: 'Inter_600SemiBold', textTransform: 'uppercase', letterSpacing: 1.2 },
-  summaryTitle: { color: '#0F172A', fontSize: 18, fontFamily: 'Inter_700Bold', marginTop: 6 },
-  summaryText: { color: '#475569', fontSize: 13, lineHeight: 20, fontFamily: 'Inter_400Regular', marginTop: 6 },
-  summaryOfferRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 10, flexWrap: 'wrap' },
-  summaryOfferPill: {
-    color: '#047857',
-    backgroundColor: '#D1FAE5',
-    fontSize: 11,
+  priceMainText: {
+    color: '#FFFFFF',
+    fontSize: 22,
     fontFamily: 'Inter_700Bold',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 999,
-    overflow: 'hidden',
   },
-  summaryOriginalPrice: {
+  priceSubText: {
     color: '#64748B',
     fontSize: 12,
-    fontFamily: 'Inter_500Medium',
-    textDecorationLine: 'line-through',
+    fontFamily: 'Inter_400Regular',
+    marginTop: 4,
   },
-  summarySavingsText: { color: '#047857', fontSize: 12, lineHeight: 18, fontFamily: 'Inter_600SemiBold', marginTop: 6 },
-  confirmButton: {
+  savingsText: {
+    color: '#34D399',
+    fontSize: 11,
+    fontFamily: 'Inter_600SemiBold',
+    marginTop: 4,
+  },
+  bestValueText: {
+    color: '#18D2EF',
+    fontSize: 10,
+    fontFamily: 'Inter_700Bold',
+    marginTop: 4,
+    letterSpacing: 1,
+  },
+
+  divider: {
+    height: 1,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    marginVertical: 14,
+  },
+
+  /* Feature List */
+  featuresList: {
+    gap: 10,
+    flex: 1,
+  },
+  featureRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  checkCircle: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  featureText: {
+    color: '#F1F5F9',
+    fontSize: 13,
+    fontFamily: 'Inter_500Medium',
+    flex: 1,
+    lineHeight: 19,
+  },
+
+  /* Card Footer & Action Button */
+  cardFooter: {
     marginTop: 18,
-    marginHorizontal: 22,
+    gap: 10,
+  },
+  currentActivePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: 'rgba(56, 189, 248, 0.1)',
+    paddingVertical: 6,
+    borderRadius: 999,
+  },
+  currentActiveText: {
+    color: '#38BDF8',
+    fontSize: 11,
+    fontFamily: 'Inter_700Bold',
+  },
+  cardBtn: {
+    borderRadius: 14,
+    paddingVertical: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cardBtnText: {
+    fontSize: 13,
+    letterSpacing: 0.8,
+  },
+
+  /* Pagination Dots */
+  paginationRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    marginTop: 14,
+  },
+  paginationDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#334155',
+  },
+  paginationDotActive: {
+    width: 24,
+    backgroundColor: '#18D2EF',
+  },
+
+  /* Swipe Hint */
+  swipeHintRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    marginTop: 10,
+  },
+  swipeHintText: {
+    color: '#64748B',
+    fontSize: 11,
+    fontFamily: 'Inter_500Medium',
+  },
+
+  /* Summary Card */
+  summaryCard: {
+    marginHorizontal: 20,
+    marginTop: 16,
+    borderRadius: 20,
+    backgroundColor: '#0F172A',
+    borderWidth: 1.5,
+    padding: 18,
+    gap: 8,
+  },
+  summaryTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  summaryBadgeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  summaryLabel: {
+    color: '#94A3B8',
+    fontSize: 11,
+    fontFamily: 'Inter_700Bold',
+    letterSpacing: 1.2,
+  },
+  summaryTierTitle: {
+    fontSize: 16,
+    fontFamily: 'Inter_700Bold',
+  },
+  summaryOfferBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: 'rgba(52, 211, 153, 0.15)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+    marginTop: 4,
+  },
+  summaryOfferText: {
+    color: '#34D399',
+    fontSize: 12,
+    fontFamily: 'Inter_600SemiBold',
+  },
+  summaryPriceText: {
+    color: '#FFFFFF',
+    fontSize: 18,
+    fontFamily: 'Inter_700Bold',
+    marginTop: 4,
+  },
+  summaryAccessText: {
+    color: '#94A3B8',
+    fontSize: 12,
+    lineHeight: 18,
+    fontFamily: 'Inter_400Regular',
+  },
+  summaryBold: {
+    color: '#E2E8F0',
+    fontFamily: 'Inter_600SemiBold',
+  },
+
+  /* Bottom Confirm Button */
+  confirmButton: {
+    marginTop: 20,
+    marginHorizontal: 20,
     backgroundColor: '#18D2EF',
     borderRadius: 18,
-    paddingVertical: 16,
+    paddingVertical: 18,
+    flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    shadowColor: '#18D2EF',
+    shadowOpacity: 0.35,
+    shadowRadius: 12,
   },
-  confirmButtonText: { color: '#031417', fontSize: 15, fontFamily: 'Inter_700Bold' },
-  loadingWrap: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 14 },
-  loadingText: { color: '#64748B', fontSize: 14, fontFamily: 'Inter_400Regular' },
+  confirmButtonText: {
+    color: '#021417',
+    fontSize: 15,
+    fontFamily: 'Inter_700Bold',
+    letterSpacing: 0.8,
+  },
+
+  /* Modal */
   modalBackdrop: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.75)',
+    backgroundColor: 'rgba(0, 0, 0, 0.85)',
     justifyContent: 'center',
     padding: 20,
   },
   modalCard: {
-    backgroundColor: '#0C1322',
+    backgroundColor: '#0F172A',
     borderRadius: 24,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
-    padding: 20,
+    borderWidth: 1.5,
+    padding: 22,
   },
-  modalTitle: { color: '#fff', fontSize: 22, fontFamily: 'Inter_700Bold' },
-  modalText: { color: '#94A3B8', fontSize: 14, lineHeight: 21, fontFamily: 'Inter_400Regular', marginTop: 10 },
-  modalActions: { flexDirection: 'row', gap: 12, marginTop: 22 },
+  modalHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  modalTitle: { color: '#FFFFFF', fontSize: 20, fontFamily: 'Inter_700Bold' },
+  modalText: { color: '#94A3B8', fontSize: 14, lineHeight: 22, fontFamily: 'Inter_400Regular', marginTop: 14 },
+  modalActions: { flexDirection: 'row', gap: 12, marginTop: 24 },
   modalSecondary: {
     flex: 1,
-    borderRadius: 16,
+    borderRadius: 14,
     paddingVertical: 14,
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.14)',
+    borderColor: '#334155',
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
   },
-  modalSecondaryText: { color: '#fff', fontSize: 14, fontFamily: 'Inter_600SemiBold' },
+  modalSecondaryText: { color: '#E2E8F0', fontSize: 14, fontFamily: 'Inter_600SemiBold' },
   modalPrimary: {
     flex: 1,
-    borderRadius: 16,
+    borderRadius: 14,
     paddingVertical: 14,
     alignItems: 'center',
     backgroundColor: '#18D2EF',
   },
-  modalPrimaryText: { color: '#031417', fontSize: 14, fontFamily: 'Inter_700Bold' },
+  modalPrimaryText: { color: '#021417', fontSize: 14, fontFamily: 'Inter_700Bold' },
 });
