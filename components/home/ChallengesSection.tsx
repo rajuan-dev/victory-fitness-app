@@ -218,6 +218,7 @@ export default function ChallengesSection({ refreshToken = 0 }: { refreshToken?:
   const [joiningId, setJoiningId] = React.useState('');
   const [sectionWidth, setSectionWidth] = React.useState(0);
   const hasMountedRef = React.useRef(false);
+  const joiningIdRef = React.useRef('');
   const cardWidth = Math.max(sectionWidth || windowWidth - 32, 0);
 
   React.useEffect(() => {
@@ -227,6 +228,10 @@ export default function ChallengesSection({ refreshToken = 0 }: { refreshToken?:
   React.useEffect(() => {
     routerRef.current = router;
   }, [router]);
+
+  React.useEffect(() => {
+    joiningIdRef.current = joiningId;
+  }, [joiningId]);
 
   const hasCardsRef = React.useRef(hasCachedCards);
   const loadChallenges = React.useCallback(async (showLoader = true, forceRefresh = false) => {
@@ -272,9 +277,9 @@ export default function ChallengesSection({ refreshToken = 0 }: { refreshToken?:
         state: challenge.can_start ? 'READY' : 'UPCOMING',
         progress: 0,
         daysLeftLabel: challenge.can_start ? 'Ready' : 'Locked',
-        isJoining: joiningId === challenge.id,
+        isJoining: joiningIdRef.current === challenge.id,
         onPrimaryPress: async () => {
-          if (!challenge.can_start || joiningId === challenge.id) {
+          if (!challenge.can_start || joiningIdRef.current === challenge.id) {
             return;
           }
           setJoiningId(challenge.id);
@@ -323,7 +328,7 @@ export default function ChallengesSection({ refreshToken = 0 }: { refreshToken?:
         setLoading(false);
       }
     }
-  }, [cachedOverview, joiningId]);
+  }, [cachedOverview]);
 
   React.useEffect(() => {
     hasCardsRef.current = cards.length > 0 || hasCachedCards;
