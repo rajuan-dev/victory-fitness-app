@@ -24,10 +24,10 @@ export default function HomeScreen() {
   const { t } = useLanguage();
   const [refreshing, setRefreshing] = React.useState(false);
   const [refreshToken, setRefreshToken] = React.useState(0);
-  const [canAccessNutrition, setCanAccessNutrition] = React.useState(true);
-  const [canAccessChallenges, setCanAccessChallenges] = React.useState(true);
-  const [canAccessCoachVictor, setCanAccessCoachVictor] = React.useState(true);
-  const [canAccessWorkoutPlans, setCanAccessWorkoutPlans] = React.useState(true);
+  const [canAccessNutrition, setCanAccessNutrition] = React.useState(false);
+  const [canAccessChallenges, setCanAccessChallenges] = React.useState(false);
+  const [canAccessCoachVictor, setCanAccessCoachVictor] = React.useState(false);
+  const [canAccessWorkoutPlans, setCanAccessWorkoutPlans] = React.useState(false);
   const [restrictedSection, setRestrictedSection] = React.useState('');
   const [weightPromptVisible, setWeightPromptVisible] = React.useState(false);
   const [weightPromptEditing, setWeightPromptEditing] = React.useState(false);

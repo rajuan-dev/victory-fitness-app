@@ -51,7 +51,7 @@ function getPlanDisplayData(summary: string, defaultTitle: string) {
 }
 
 export default function WorkoutSection({
-  canAccessWorkoutPlans = true,
+  canAccessWorkoutPlans = false,
   onRestrictedPress,
 }: WorkoutSectionProps) {
   const router = useRouter();
@@ -64,6 +64,13 @@ export default function WorkoutSection({
     let cancelled = false;
 
     const loadPlans = async () => {
+      if (!canAccessWorkoutPlans) {
+        setStrengthPlan(null);
+        setVideoPlan(null);
+        setLoading(false);
+        return;
+      }
+
       try {
         const [latestStrength, latestVideo] = await Promise.all([
           fetchLatestStrengthWorkoutPlan().catch(() => loadLatestStrengthWorkoutPlan()),
@@ -86,7 +93,7 @@ export default function WorkoutSection({
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [canAccessWorkoutPlans]);
 
   if (loading) {
     return (

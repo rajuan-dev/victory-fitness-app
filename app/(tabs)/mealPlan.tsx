@@ -470,6 +470,13 @@ function MealPlanResult({
   useEffect(() => {
     let cancelled = false;
 
+    if (!canAccessMealAnalysis) {
+      setAnalysisHistory([]);
+      return () => {
+        cancelled = true;
+      };
+    }
+
     const loadMealAnalysisHistory = async () => {
       try {
         const response = await getMealAnalysisHistory();
@@ -488,7 +495,7 @@ function MealPlanResult({
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [canAccessMealAnalysis]);
 
   const toggleCheck = (key: string) => {
     setCheckedItems(prev => {
@@ -3108,6 +3115,5 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
 });
-
 
 

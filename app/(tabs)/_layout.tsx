@@ -13,12 +13,17 @@ import { replaceRoute } from '../../lib/navigation';
 
 export default function TabsLayout() {
   const router = useRouter();
+  const routerRef = React.useRef(router);
   const { t } = useLanguage();
   const [checkingAuth, setCheckingAuth] = useState(true);
   const [profileImage, setProfileImage] = useState('');
   const [allowedTabs, setAllowedTabs] = useState<string[] | null>(null);
   const [restrictedSection, setRestrictedSection] = useState('');
   const hasStartedPreloadRef = React.useRef(false);
+
+  useEffect(() => {
+    routerRef.current = router;
+  }, [router]);
 
   useEffect(() => {
     let cancelled = false;
@@ -31,7 +36,7 @@ export default function TabsLayout() {
         }
 
         if (!tokens) {
-          replaceRoute(router, '/login');
+          replaceRoute(routerRef.current, '/login');
           return;
         }
 
@@ -44,7 +49,7 @@ export default function TabsLayout() {
           setProfileImage(String(cachedUser.profileImage || '').trim());
 
           if (!isSubscriptionActive(cachedUser)) {
-            replaceRoute(router, '/plan');
+            replaceRoute(routerRef.current, '/plan');
             return;
           }
 
@@ -65,7 +70,7 @@ export default function TabsLayout() {
         setProfileImage(String(authUser?.profileImage || '').trim());
 
         if (!isSubscriptionActive(authUser)) {
-          replaceRoute(router, '/plan');
+          replaceRoute(routerRef.current, '/plan');
           return;
         }
 
@@ -78,7 +83,7 @@ export default function TabsLayout() {
         }
       } catch {
         if (!cancelled) {
-          replaceRoute(router, '/login');
+          replaceRoute(routerRef.current, '/login');
           setCheckingAuth(false);
         }
       }
@@ -89,7 +94,7 @@ export default function TabsLayout() {
     return () => {
       cancelled = true;
     };
-  }, [router]);
+  }, []);
 
   if (checkingAuth || allowedTabs === null) {
     return null;

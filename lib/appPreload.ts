@@ -9,10 +9,7 @@ import {
 import { canAccessFeature } from './access';
 import { fetchAdminChallenges } from './api';
 import {
-  fetchChallengeChatData,
-  fetchChallengeDetailData,
   fetchChallengeOverviewData,
-  fetchChallengeProgressData,
   fetchCoachVictorHistoryData,
   fetchLatestNutritionPlanData,
   fetchCommunityPostsData,
@@ -24,89 +21,73 @@ import { fetchLatestStrengthWorkoutPlan, loadLatestVideoWorkoutPlan } from './wo
 import { getMealAnalysisHistory } from './nutrition';
 
 let preloadPromise: Promise<void> | null = null;
+let hasCompletedPreload = false;
 
 export async function preloadAppData() {
+  if (hasCompletedPreload) {
+    return;
+  }
+
   if (!preloadPromise) {
     preloadPromise = (async () => {
-      const [
-        userResult,
-        _bodyMetricsResult,
-        _strengthPlanResult,
-        _videoPlanResult,
-        _workoutLibraryResult,
-        _journalEntriesResult,
-        _privacyPolicyResult,
-        _nutritionPlanResult,
-        challengeOverviewResult,
-      ] = await Promise.allSettled([
-        fetchCurrentUser(),
+      const user = await fetchCurrentUser().catch(() => null);
+      if (!user) {
+        return;
+      }
+
+      const primaryPreloads: Promise<unknown>[] = [
         fetchCurrentUserBodyMetrics(),
-        fetchLatestStrengthWorkoutPlan(),
-        loadLatestVideoWorkoutPlan(),
         fetchWorkoutLibrary(),
         fetchJournalEntries(),
         fetchPrivacyPolicy(),
-        fetchLatestNutritionPlanData(),
-        fetchChallengeOverviewData(),
-        fetchCommunityPostsData(),
-        getMealAnalysisHistory(),
-      ]);
+      ];
 
-      const user = userResult.status === 'fulfilled' ? userResult.value : null;
-      const overview = challengeOverviewResult.status === 'fulfilled' ? challengeOverviewResult.value : null;
+      if (canAccessFeature('challenge', user)) {
+        primaryPreloads.push(fetchChallengeOverviewData());
+      }
+
+      if (canAccessFeature('community', user)) {
+        primaryPreloads.push(fetchCommunityPostsData());
+      }
+
+      if (canAccessFeature('mealPlan', user)) {
+        primaryPreloads.push(fetchLatestNutritionPlanData());
+      }
+
+      if (canAccessFeature('meal_analysis', user)) {
+        primaryPreloads.push(getMealAnalysisHistory());
+      }
+
+      if (canAccessFeature('workoutplan', user)) {
+        primaryPreloads.push(
+          fetchLatestStrengthWorkoutPlan(),
+          loadLatestVideoWorkoutPlan()
+        );
+      }
+
+      await Promise.allSettled(primaryPreloads);
 
       const secondaryPreloads: Promise<unknown>[] = [];
 
-      if (user) {
-        if (canAccessFeature('longevity', user)) {
-          secondaryPreloads.push(
-            fetchLongevityDashboard(),
-            fetchIntegrationConnections(),
-            fetchLongevityHealthSummary(),
-            fetchLongevityHealthRecords({}).catch(() => null)
-          );
-        }
-
-        if (canAccessFeature('coach_victor', user)) {
-          secondaryPreloads.push(fetchCoachVictorHistoryData());
-        }
-
-        if (user.is_admin) {
-          secondaryPreloads.push(fetchAdminChallenges());
-        }
+      if (canAccessFeature('longevity', user)) {
+        secondaryPreloads.push(
+          fetchLongevityDashboard(),
+          fetchIntegrationConnections(),
+          fetchLongevityHealthSummary(),
+          fetchLongevityHealthRecords({}).catch(() => null)
+        );
       }
 
-      const challengeIds = new Set<string>();
-      const activeChallengeIds = new Set<string>();
-      if (overview && typeof overview === 'object') {
-        const typedOverview = overview as {
-          active_challenges?: Array<{ challenge_id?: string }>;
-          ready_to_start?: Array<{ id?: string }>;
-        };
-        for (const challenge of typedOverview.active_challenges || []) {
-          if (challenge?.challenge_id) {
-            challengeIds.add(challenge.challenge_id);
-            activeChallengeIds.add(challenge.challenge_id);
-          }
-        }
-        for (const challenge of typedOverview.ready_to_start || []) {
-          if (challenge?.id) {
-            challengeIds.add(challenge.id);
-          }
-        }
+      if (canAccessFeature('coach_victor', user)) {
+        secondaryPreloads.push(fetchCoachVictorHistoryData());
       }
 
-      for (const challengeId of challengeIds) {
-        secondaryPreloads.push(fetchChallengeDetailData(challengeId));
-        if (activeChallengeIds.has(challengeId)) {
-          secondaryPreloads.push(
-            fetchChallengeChatData(challengeId),
-            fetchChallengeProgressData(challengeId)
-          );
-        }
+      if (user.is_admin) {
+        secondaryPreloads.push(fetchAdminChallenges());
       }
 
       await Promise.allSettled(secondaryPreloads);
+      hasCompletedPreload = true;
     })().finally(() => {
       preloadPromise = null;
     });

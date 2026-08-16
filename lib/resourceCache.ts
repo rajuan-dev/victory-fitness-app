@@ -14,6 +14,19 @@ function getStorageKey(key: string) {
   return `${STORAGE_PREFIX}${key}`;
 }
 
+function isCacheFresh(key: string, maxAgeMs?: number) {
+  if (maxAgeMs == null) {
+    return false;
+  }
+
+  const entry = memoryCache.get(key);
+  if (!entry) {
+    return false;
+  }
+
+  return Date.now() - entry.updatedAt <= maxAgeMs;
+}
+
 export function getCachedResourceSnapshot<T>(key: string): T | undefined {
   const entry = memoryCache.get(key);
   return entry ? (entry.data as T) : undefined;
@@ -89,8 +102,12 @@ export async function clearAllCachedResources() {
 export async function fetchCachedResource<T>(
   key: string,
   load: () => Promise<T>,
-  options?: { persist?: boolean }
+  options?: { persist?: boolean; maxAgeMs?: number; forceRefresh?: boolean }
 ): Promise<T> {
+  if (!options?.forceRefresh && isCacheFresh(key, options?.maxAgeMs)) {
+    return memoryCache.get(key)!.data as T;
+  }
+
   const existingPromise = requestPromises.get(key);
   if (existingPromise) {
     return (await existingPromise) as T;

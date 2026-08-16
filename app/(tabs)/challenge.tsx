@@ -15,7 +15,6 @@ import {
   RefreshControl,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useFocusEffect } from '@react-navigation/native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import CrossPlatformWebView from '../../components/CrossPlatformWebView';
@@ -523,6 +522,7 @@ export default function ChallengesScreen() {
   const checkingAccess = useModuleAccessGuard('/challenge');
   const router = useRouter();
   const { t } = useLanguage();
+  const tRef = useRef(t);
   const params = useLocalSearchParams<{
     tab?: string | string[];
     prefillSource?: string | string[];
@@ -541,8 +541,10 @@ export default function ChallengesScreen() {
       })),
     [t]
   );
-  const cachedChallengeOverview = getCachedResourceSnapshot<ChallengeOverview>(CHALLENGE_OVERVIEW_CACHE_KEY);
-  const cachedCommunityPosts = getCachedResourceSnapshot<{ posts: CommunityPost[] }>(COMMUNITY_POSTS_CACHE_KEY);
+  const initialCachedChallengeOverview = useRef(getCachedResourceSnapshot<ChallengeOverview>(CHALLENGE_OVERVIEW_CACHE_KEY));
+  const initialCachedCommunityPosts = useRef(getCachedResourceSnapshot<{ posts: CommunityPost[] }>(COMMUNITY_POSTS_CACHE_KEY));
+  const cachedChallengeOverview = initialCachedChallengeOverview.current;
+  const cachedCommunityPosts = initialCachedCommunityPosts.current;
   const hasCachedChallengeOverview = Boolean(
     cachedChallengeOverview &&
       ((Array.isArray(cachedChallengeOverview.active_challenges) && cachedChallengeOverview.active_challenges.length > 0) ||
@@ -594,6 +596,8 @@ export default function ChallengesScreen() {
   const [restrictedSection, setRestrictedSection] = useState('');
   const [selectedDurationDays, setSelectedDurationDays] = useState<number | typeof CHALLENGE_FILTER_ALL>(CHALLENGE_FILTER_ALL);
   const consumedCommunityPrefillKeyRef = useRef('');
+  const hasVisibleChallengesRef = useRef(hasCachedChallengeOverview);
+  const hasCommunityPostsRef = useRef(hasCachedCommunityPosts);
   const readyToStartChallenges = challengeOverview.ready_to_start.filter((challenge) => challenge.can_start);
   const upcomingChallenges = challengeOverview.ready_to_start.filter((challenge) => !challenge.can_start);
   const durationTabOptions = useMemo<(number | typeof CHALLENGE_FILTER_ALL)[]>(() => {
@@ -670,6 +674,11 @@ export default function ChallengesScreen() {
     }
     return roleVisiblePosts.filter((post) => selectedCommunityFilters.includes(String(post.audience || '').toUpperCase() as (typeof COMMUNITY_AUDIENCE_FILTERS)[number]));
   }, [accessibleCommunityAudiences, communityPosts, optimisticDeletedPostIds, selectedCommunityFilters]);
+
+  useEffect(() => {
+    tRef.current = t;
+  }, [t]);
+
   useEffect(() => {
     let isMounted = true;
 
@@ -715,7 +724,7 @@ export default function ChallengesScreen() {
     }
   }, [durationTabOptions, selectedDurationDays]);
 
-  const loadChallengeOverview = useCallback(async (showLoading = true) => {
+  const loadChallengeOverview = useCallback(async (showLoading = true, forceRefresh = false) => {
     if (!canAccessChallenges) {
       setChallengeLoading(false);
       setChallengeError('');
@@ -732,7 +741,7 @@ export default function ChallengesScreen() {
     }
     setChallengeError('');
     try {
-      const response = await fetchChallengeOverviewData() as ChallengeOverview;
+      const response = await fetchChallengeOverviewData({ forceRefresh }) as ChallengeOverview;
       setChallengeOverview({
         active_chats: Array.isArray(response.active_chats) ? response.active_chats : [],
         active_challenges: Array.isArray(response.active_challenges) ? response.active_challenges : [],
@@ -740,11 +749,7 @@ export default function ChallengesScreen() {
         ready_to_start: Array.isArray(response.ready_to_start) ? response.ready_to_start : [],
       });
     } catch (error) {
-      const hasVisibleChallenges =
-        challengeOverview.active_challenges.length > 0 ||
-        challengeOverview.ready_to_start.length > 0 ||
-        challengeOverview.completed_challenges.length > 0;
-      if (hasVisibleChallenges || hasCachedChallengeOverview) {
+      if (hasVisibleChallengesRef.current) {
         setChallengeError('');
         return;
       }
@@ -752,15 +757,15 @@ export default function ChallengesScreen() {
       const normalizedMessage = message.toLowerCase();
       setChallengeError(
         normalizedMessage.includes('timed out') || normalizedMessage.includes('timeout')
-          ? t('Unable to load challenges right now.')
-          : message || t('Failed to load challenges.'),
+          ? tRef.current('Unable to load challenges right now.')
+          : message || tRef.current('Failed to load challenges.'),
       );
     } finally {
       if (showLoading) {
         setChallengeLoading(false);
       }
     }
-  }, [canAccessChallenges, challengeOverview.active_challenges.length, challengeOverview.completed_challenges.length, challengeOverview.ready_to_start.length, hasCachedChallengeOverview, t]);
+  }, [canAccessChallenges, cachedChallengeOverview]);
 
   const loadCommunityPosts = useCallback(async (showLoading = true) => {
     if (!canAccessCommunity) {
@@ -777,7 +782,7 @@ export default function ChallengesScreen() {
       const response = await fetchCommunityPostsData() as { posts: CommunityPost[] };
       setCommunityPosts(Array.isArray(response.posts) ? response.posts : []);
     } catch (error) {
-      if (communityPosts.length > 0 || hasCachedCommunityPosts) {
+      if (hasCommunityPostsRef.current) {
         setCommunityError('');
         return;
       }
@@ -785,15 +790,32 @@ export default function ChallengesScreen() {
       const normalizedMessage = message.toLowerCase();
       setCommunityError(
         normalizedMessage.includes('timed out') || normalizedMessage.includes('timeout')
-          ? t('Unable to load community posts right now.')
-          : message || t('Failed to load community posts.'),
+          ? tRef.current('Unable to load community posts right now.')
+          : message || tRef.current('Failed to load community posts.'),
       );
     } finally {
       if (showLoading) {
         setCommunityLoading(false);
       }
     }
-  }, [canAccessCommunity, communityPosts.length, hasCachedCommunityPosts, t]);
+  }, [cachedCommunityPosts, canAccessCommunity]);
+
+  useEffect(() => {
+    hasVisibleChallengesRef.current =
+      challengeOverview.active_challenges.length > 0 ||
+      challengeOverview.ready_to_start.length > 0 ||
+      challengeOverview.completed_challenges.length > 0 ||
+      hasCachedChallengeOverview;
+  }, [
+    challengeOverview.active_challenges.length,
+    challengeOverview.completed_challenges.length,
+    challengeOverview.ready_to_start.length,
+    hasCachedChallengeOverview,
+  ]);
+
+  useEffect(() => {
+    hasCommunityPostsRef.current = communityPosts.length > 0 || hasCachedCommunityPosts;
+  }, [communityPosts.length, hasCachedCommunityPosts]);
 
   useEffect(() => {
     if (activeTab !== 'CHALLENGES') {
@@ -801,17 +823,6 @@ export default function ChallengesScreen() {
     }
     void loadChallengeOverview(true);
   }, [activeTab, loadChallengeOverview]);
-
-  useFocusEffect(
-    useCallback(() => {
-      if (activeTab === 'CHALLENGES') {
-        void loadChallengeOverview(false);
-      }
-      if (activeTab === 'COMMUNITY') {
-        void loadCommunityPosts(false);
-      }
-    }, [activeTab, loadChallengeOverview, loadCommunityPosts])
-  );
 
   useEffect(() => {
     if (activeTab !== 'COMMUNITY') {
@@ -905,7 +916,7 @@ export default function ChallengesScreen() {
         await loadCommunityPosts(false);
         return;
       }
-      await loadChallengeOverview(false);
+      await loadChallengeOverview(false, true);
     } finally {
       setScreenRefreshing(false);
     }
@@ -1247,7 +1258,7 @@ export default function ChallengesScreen() {
       await apiRequest(`/challenges/${encodeURIComponent(challenge.id)}/start`, {
         method: 'POST',
       });
-      await loadChallengeOverview(false);
+      await loadChallengeOverview(false, true);
     } catch (error) {
       setChallengeError(error instanceof Error ? error.message : t('Failed to start challenge'));
     } finally {
@@ -1273,7 +1284,7 @@ export default function ChallengesScreen() {
         method: 'POST',
         body: { completed: true },
       });
-      await loadChallengeOverview(false);
+      await loadChallengeOverview(false, true);
     } catch (error) {
       setChallengeError(error instanceof Error ? error.message : t('Failed to complete the current day.'));
     } finally {

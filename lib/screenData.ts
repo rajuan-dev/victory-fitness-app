@@ -1,5 +1,31 @@
 import { ApiError, apiRequest } from './api';
 import { fetchCachedResource } from './resourceCache';
+export {
+  JOURNAL_ENTRIES_CACHE_KEY,
+  PRIVACY_POLICY_CACHE_KEY,
+  CHALLENGE_OVERVIEW_CACHE_KEY,
+  COMMUNITY_POSTS_CACHE_KEY,
+  NUTRITION_PLAN_LATEST_CACHE_KEY,
+  COACH_VICTOR_HISTORY_CACHE_KEY,
+  INTEGRATIONS_CACHE_KEY,
+  getLongevityDashboardCacheKey,
+  getLongevityHealthSummaryCacheKey,
+  getLongevityHealthRecordsCacheKey,
+  getChallengeDetailCacheKey,
+  getChallengeChatCacheKey,
+  getChallengeProgressCacheKey,
+} from './cacheKeys';
+import {
+  JOURNAL_ENTRIES_CACHE_KEY,
+  PRIVACY_POLICY_CACHE_KEY,
+  CHALLENGE_OVERVIEW_CACHE_KEY,
+  COMMUNITY_POSTS_CACHE_KEY,
+  NUTRITION_PLAN_LATEST_CACHE_KEY,
+  COACH_VICTOR_HISTORY_CACHE_KEY,
+  getChallengeDetailCacheKey,
+  getChallengeChatCacheKey,
+  getChallengeProgressCacheKey,
+} from './cacheKeys';
 
 export type JournalEntry = {
   id: string;
@@ -38,40 +64,7 @@ export type CoachVictorHistoryPayload = {
   }>;
 };
 
-export const JOURNAL_ENTRIES_CACHE_KEY = 'journal-entries';
-export const PRIVACY_POLICY_CACHE_KEY = 'content-privacy-policy';
-export const CHALLENGE_OVERVIEW_CACHE_KEY = 'challenge-overview';
-export const COMMUNITY_POSTS_CACHE_KEY = 'community-posts';
-export const NUTRITION_PLAN_LATEST_CACHE_KEY = 'nutrition-plan-latest';
-export const COACH_VICTOR_HISTORY_CACHE_KEY = 'coach-victor-history';
-export const INTEGRATIONS_CACHE_KEY = 'integrations';
-
-export function getLongevityDashboardCacheKey(language = '') {
-  return `longevity-dashboard:${language || 'default'}`;
-}
-
-export function getLongevityHealthSummaryCacheKey(language = '') {
-  return `longevity-health-summary:${language || 'default'}`;
-}
-
-export function getLongevityHealthRecordsCacheKey(
-  params?: { provider?: string; metric_type?: string; start_date?: string; end_date?: string },
-  language = ''
-) {
-  return `longevity-health-records:${language || 'default'}:${JSON.stringify(params || {})}`;
-}
-
-export function getChallengeDetailCacheKey(challengeId: string) {
-  return `challenge-detail:${challengeId}`;
-}
-
-export function getChallengeChatCacheKey(challengeId: string) {
-  return `challenge-chat:${challengeId}`;
-}
-
-export function getChallengeProgressCacheKey(challengeId: string) {
-  return `challenge-progress:${challengeId}`;
-}
+const CHALLENGE_OVERVIEW_CACHE_MAX_AGE_MS = 30_000;
 
 export async function fetchJournalEntries() {
   return fetchCachedResource(JOURNAL_ENTRIES_CACHE_KEY, async () => {
@@ -88,10 +81,12 @@ export async function fetchPrivacyPolicy() {
   });
 }
 
-export async function fetchChallengeOverviewData() {
+export async function fetchChallengeOverviewData(options?: { forceRefresh?: boolean }) {
   return fetchCachedResource(CHALLENGE_OVERVIEW_CACHE_KEY, async () => {
-    return apiRequest<ChallengeOverview>('/challenges/overview');
-  });
+    return apiRequest<ChallengeOverview>('/challenges/overview', {
+      skipResponseCache: options?.forceRefresh,
+    });
+  }, { maxAgeMs: CHALLENGE_OVERVIEW_CACHE_MAX_AGE_MS, forceRefresh: options?.forceRefresh });
 }
 
 export async function fetchCommunityPostsData() {

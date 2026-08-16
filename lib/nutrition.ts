@@ -1,6 +1,6 @@
 import { apiRequest } from './api';
 import { fetchCachedResource, getCachedResourceSnapshot, primeCachedResource } from './resourceCache';
-import { NUTRITION_PLAN_LATEST_CACHE_KEY } from './screenData';
+import { NUTRITION_PLAN_LATEST_CACHE_KEY } from './cacheKeys';
 
 export type NutritionMealEntry = {
   name: string;

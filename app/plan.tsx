@@ -469,7 +469,7 @@ export default function PlanSelectionScreen() {
                     {/* Features List */}
                     <View style={styles.divider} />
                     <View style={styles.featuresList}>
-                      {card.features.map((feature) => (
+                      {card.features.map((feature: string) => (
                         <View key={feature} style={styles.featureRow}>
                           <View style={[styles.checkCircle, { backgroundColor: design.badgeBg }]}>
                             <Ionicons name="checkmark-sharp" size={12} color={design.accentColor} />

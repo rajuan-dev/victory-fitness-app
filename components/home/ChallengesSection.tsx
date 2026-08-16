@@ -2,7 +2,6 @@ import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Image, Alert, ActivityIndicator, useWindowDimensions } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import { useFocusEffect } from '@react-navigation/native';
 import { Colors } from '../../constants/Colors';
 import { apiRequest } from '../../lib/api';
 import { fetchChallengeOverviewData, CHALLENGE_OVERVIEW_CACHE_KEY } from '../../lib/screenData';
@@ -202,9 +201,12 @@ function ChallengeSkeletonCard({ cardWidth }: { cardWidth: number }) {
 
 export default function ChallengesSection({ refreshToken = 0 }: { refreshToken?: number }) {
   const router = useRouter();
+  const routerRef = React.useRef(router);
   const { t } = useLanguage();
+  const tRef = React.useRef(t);
   const { width: windowWidth } = useWindowDimensions();
-  const cachedOverview = getCachedResourceSnapshot<ChallengeOverview>(CHALLENGE_OVERVIEW_CACHE_KEY);
+  const initialCachedOverview = React.useRef(getCachedResourceSnapshot<ChallengeOverview>(CHALLENGE_OVERVIEW_CACHE_KEY));
+  const cachedOverview = initialCachedOverview.current;
   const hasCachedCards = Boolean(
     cachedOverview &&
       ((Array.isArray(cachedOverview.active_challenges) && cachedOverview.active_challenges.length > 0) ||
@@ -218,7 +220,16 @@ export default function ChallengesSection({ refreshToken = 0 }: { refreshToken?:
   const hasMountedRef = React.useRef(false);
   const cardWidth = Math.max(sectionWidth || windowWidth - 32, 0);
 
-  const loadChallenges = React.useCallback(async (showLoader = true) => {
+  React.useEffect(() => {
+    tRef.current = t;
+  }, [t]);
+
+  React.useEffect(() => {
+    routerRef.current = router;
+  }, [router]);
+
+  const hasCardsRef = React.useRef(hasCachedCards);
+  const loadChallenges = React.useCallback(async (showLoader = true, forceRefresh = false) => {
 
     if (showLoader && !cachedOverview) {
       setLoading(true);
@@ -226,7 +237,7 @@ export default function ChallengesSection({ refreshToken = 0 }: { refreshToken?:
 
     try {
       setLoadError('');
-      const response = await fetchChallengeOverviewData() as ChallengeOverview;
+      const response = await fetchChallengeOverviewData({ forceRefresh }) as ChallengeOverview;
       const activeChallenges = Array.isArray(response.active_challenges) ? response.active_challenges : [];
       const readyChallenges = Array.isArray(response.ready_to_start) ? response.ready_to_start : [];
 
@@ -244,8 +255,8 @@ export default function ChallengesSection({ refreshToken = 0 }: { refreshToken?:
         progress: challenge.progress,
         daysLeftLabel: `${challenge.days_left} days left`,
         isJoining: false,
-        onPrimaryPress: () => pushRoute(router, `/challenges/${challenge.challenge_id}` as any),
-        onSecondaryPress: () => pushRoute(router, `/challenges/chat/${challenge.challenge_id}` as any),
+        onPrimaryPress: () => pushRoute(routerRef.current, `/challenges/${challenge.challenge_id}` as any),
+        onSecondaryPress: () => pushRoute(routerRef.current, `/challenges/chat/${challenge.challenge_id}` as any),
       }));
 
       const readyCards: HomeChallengeCard[] = readyChallenges.map((challenge) => ({
@@ -271,7 +282,7 @@ export default function ChallengesSection({ refreshToken = 0 }: { refreshToken?:
             await apiRequest(`/challenges/${encodeURIComponent(challenge.id)}/start`, {
               method: 'POST',
             });
-            await loadChallenges(false);
+            await loadChallenges(false, true);
           } catch (error) {
             Alert.alert('Join failed', error instanceof Error ? error.message : 'Failed to join challenge');
           } finally {
@@ -279,7 +290,7 @@ export default function ChallengesSection({ refreshToken = 0 }: { refreshToken?:
           }
         },
         onSecondaryPress: () =>
-          pushRoute(router, {
+          pushRoute(routerRef.current, {
             pathname: '/challenge',
             params: {
               tab: 'COMMUNITY',
@@ -298,17 +309,25 @@ export default function ChallengesSection({ refreshToken = 0 }: { refreshToken?:
       }
       const message = error instanceof Error ? error.message : '';
       const normalizedMessage = message.toLowerCase();
+      if (hasCardsRef.current) {
+        setLoadError('');
+        return;
+      }
       setLoadError(
         normalizedMessage.includes('timed out') || normalizedMessage.includes('timeout')
-          ? t('Challenge request timed out. Please try again.')
-          : t('Unable to load challenges right now.'),
+          ? tRef.current('Challenge request timed out. Please try again.')
+          : tRef.current('Unable to load challenges right now.'),
       );
     } finally {
       if (showLoader) {
         setLoading(false);
       }
     }
-  }, [cards.length, hasCachedCards, cachedOverview, joiningId, router, t]);
+  }, [cachedOverview, joiningId]);
+
+  React.useEffect(() => {
+    hasCardsRef.current = cards.length > 0 || hasCachedCards;
+  }, [cards.length, hasCachedCards]);
 
   React.useEffect(() => {
     if (!cachedOverview) {
@@ -332,8 +351,8 @@ export default function ChallengesSection({ refreshToken = 0 }: { refreshToken?:
       progress: challenge.progress,
       daysLeftLabel: `${challenge.days_left} days left`,
       isJoining: false,
-      onPrimaryPress: () => pushRoute(router, `/challenges/${challenge.challenge_id}` as any),
-      onSecondaryPress: () => pushRoute(router, `/challenges/chat/${challenge.challenge_id}` as any),
+      onPrimaryPress: () => pushRoute(routerRef.current, `/challenges/${challenge.challenge_id}` as any),
+      onSecondaryPress: () => pushRoute(routerRef.current, `/challenges/chat/${challenge.challenge_id}` as any),
     }));
 
     const readyCards: HomeChallengeCard[] = readyChallenges.map((challenge) => ({
@@ -359,7 +378,7 @@ export default function ChallengesSection({ refreshToken = 0 }: { refreshToken?:
           await apiRequest(`/challenges/${encodeURIComponent(challenge.id)}/start`, {
             method: 'POST',
           });
-          await loadChallenges(false);
+          await loadChallenges(false, true);
         } catch (error) {
           Alert.alert('Join failed', error instanceof Error ? error.message : 'Failed to join challenge');
         } finally {
@@ -367,7 +386,7 @@ export default function ChallengesSection({ refreshToken = 0 }: { refreshToken?:
         }
       },
       onSecondaryPress: () =>
-        pushRoute(router, {
+        pushRoute(routerRef.current, {
           pathname: '/challenge',
           params: {
             tab: 'COMMUNITY',
@@ -379,17 +398,12 @@ export default function ChallengesSection({ refreshToken = 0 }: { refreshToken?:
     }));
 
     setCards([...activeCards, ...readyCards]);
-  }, [cachedOverview, joiningId, loadChallenges, router]);
-
-  useFocusEffect(
-    React.useCallback(() => {
-      void loadChallenges(true);
-    }, [loadChallenges]),
-  );
+  }, [cachedOverview, joiningId, loadChallenges]);
 
   React.useEffect(() => {
     if (!hasMountedRef.current) {
       hasMountedRef.current = true;
+      void loadChallenges(true);
       return;
     }
     void loadChallenges(false);

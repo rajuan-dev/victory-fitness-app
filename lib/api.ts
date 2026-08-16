@@ -7,7 +7,7 @@ import {
   getLongevityHealthRecordsCacheKey,
   getLongevityHealthSummaryCacheKey,
   INTEGRATIONS_CACHE_KEY,
-} from './screenData';
+} from './cacheKeys';
 
 declare const process: {
   env?: Record<string, string | undefined>;
@@ -50,7 +50,21 @@ const APP_REQUEST_CREDENTIALS: RequestCredentials = IS_BROWSER_AUTH ? 'include' 
 const APP_CLIENT_HEADER_NAME = 'X-Victory-Client';
 const APP_CLIENT_HEADER_VALUE = 'app';
 const AUTH_API_URL_STORAGE_KEY = 'victory_api_url';
+const GET_RESPONSE_CACHE_TTL_MS: Record<string, number> = {
+  '/challenges/overview': 60_000,
+  '/me/notifications': 15_000,
+};
 let apiLanguage: string | undefined;
+const getResponseCache = new Map<string, { expiresAt: number; data: unknown }>();
+const getResponsePromises = new Map<string, Promise<unknown>>();
+
+export function buildApiWebSocketUrl(path: string, params?: Record<string, string>) {
+  const normalizedPath = path.startsWith('/') ? path : `/${path}`;
+  const apiUrl = API_URL.replace(/^http/, 'ws').replace(/\/$/, '');
+  const searchParams = new URLSearchParams(params || {});
+  const query = searchParams.toString();
+  return `${apiUrl}${normalizedPath}${query ? `?${query}` : ''}`;
+}
 
 function getClientHeaders(): Record<string, string> {
   if (IS_BROWSER_AUTH) {
@@ -88,6 +102,7 @@ type RequestOptions = {
   body?: unknown;
   timeoutMs?: number;
   language?: string;
+  skipResponseCache?: boolean;
 };
 
 export class ApiError extends Error {
@@ -1418,11 +1433,24 @@ function isPublicAuthPath(path: string): boolean {
   );
 }
 
+function getCacheableRequestTtl(path: string, method: string) {
+  if (method.toUpperCase() !== 'GET') {
+    return 0;
+  }
+
+  return GET_RESPONSE_CACHE_TTL_MS[path] ?? 0;
+}
+
+function getRequestCacheKey(path: string, language?: string) {
+  return `${path}:language=${language || 'default'}`;
+}
+
 export async function apiRequest<T>(
   path: string,
   options: RequestOptions = {},
   retryOnUnauthorized = true
 ): Promise<T> {
+  const method = options.method ?? 'GET';
   const isPublicAuthRequest = isPublicAuthPath(path);
   const requestTokens = path === '/auth/refresh' || isPublicAuthRequest
     ? await getAuthTokens()
@@ -1443,48 +1471,83 @@ export async function apiRequest<T>(
     headers['Accept-Language'] = requestLanguage;
   }
 
+  const responseCacheTtlMs = options.skipResponseCache ? 0 : getCacheableRequestTtl(path, method);
+  const responseCacheKey = getRequestCacheKey(path, requestLanguage);
+  if (responseCacheTtlMs > 0) {
+    const cachedResponse = getResponseCache.get(responseCacheKey);
+    if (cachedResponse && cachedResponse.expiresAt > Date.now()) {
+      return cachedResponse.data as T;
+    }
+
+    const pendingResponse = getResponsePromises.get(responseCacheKey);
+    if (pendingResponse) {
+      return (await pendingResponse) as T;
+    }
+  }
+
   const isFormDataBody = typeof FormData !== 'undefined' && options.body instanceof FormData;
   if (isFormDataBody) {
     delete headers['Content-Type'];
   }
 
-  const response = await fetchWithTimeout(`${API_URL}${path}`, {
-    method: options.method ?? 'GET',
-    headers,
-    credentials: APP_REQUEST_CREDENTIALS,
-    body: isFormDataBody
-      ? options.body as BodyInit
-      : options.body
-        ? JSON.stringify(options.body)
-        : undefined,
-  }, options.timeoutMs);
+  const requestPromise = (async () => {
+    const response = await fetchWithTimeout(`${API_URL}${path}`, {
+      method,
+      headers,
+      credentials: APP_REQUEST_CREDENTIALS,
+      body: isFormDataBody
+        ? options.body as BodyInit
+        : options.body
+          ? JSON.stringify(options.body)
+          : undefined,
+    }, options.timeoutMs);
 
-  const data = await response.json().catch(() => ({}));
+    const data = await response.json().catch(() => ({}));
 
-  if (response.status === 401 && retryOnUnauthorized && path !== '/auth/refresh' && !isPublicAuthRequest) {
-    try {
-      const refreshed = await refreshAuthTokens();
-      if (!refreshed) {
-        throw new ApiError(401, 'Invalid session token');
+    if (response.status === 401 && retryOnUnauthorized && path !== '/auth/refresh' && !isPublicAuthRequest) {
+      try {
+        const refreshed = await refreshAuthTokens();
+        if (!refreshed) {
+          throw new ApiError(401, 'Invalid session token');
+        }
+        return apiRequest<T>(path, options, false);
+      } catch (refreshError) {
+        if (refreshError instanceof ApiError && isInvalidSessionError(refreshError.detail, refreshError.status)) {
+          await handleInvalidSession();
+        }
+        throw refreshError;
       }
-      return apiRequest<T>(path, options, false);
-    } catch (refreshError) {
-      if (refreshError instanceof ApiError && isInvalidSessionError(refreshError.detail, refreshError.status)) {
+    }
+
+    if (!response.ok) {
+      const detail = extractErrorDetail(data) || 'Request failed';
+      if (isInvalidSessionError(detail, response.status)) {
         await handleInvalidSession();
       }
-      throw refreshError;
+      throw new ApiError(response.status, detail);
     }
+
+    if (responseCacheTtlMs > 0) {
+      getResponseCache.set(responseCacheKey, {
+        data,
+        expiresAt: Date.now() + responseCacheTtlMs,
+      });
+    }
+
+    return data as T;
+  })();
+
+  if (responseCacheTtlMs > 0) {
+    getResponsePromises.set(responseCacheKey, requestPromise);
   }
 
-  if (!response.ok) {
-    const detail = extractErrorDetail(data) || 'Request failed';
-    if (isInvalidSessionError(detail, response.status)) {
-      await handleInvalidSession();
+  try {
+    return await requestPromise;
+  } finally {
+    if (responseCacheTtlMs > 0) {
+      getResponsePromises.delete(responseCacheKey);
     }
-    throw new ApiError(response.status, detail);
   }
-
-  return data as T;
 }
 
 export async function recordAnalyticsEvent(

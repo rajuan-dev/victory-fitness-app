@@ -18,7 +18,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { Colors } from '../../../constants/Colors';
-import { apiRequest, fetchCurrentUser, getValidAuthTokens } from '../../../lib/api';
+import { apiRequest, buildApiWebSocketUrl, fetchCurrentUser, getValidAuthTokens } from '../../../lib/api';
 import { ErrorPopupModal } from '../../../components/ErrorPopupModal';
 import { formatAppError } from '../../../lib/error';
 import { useLanguage } from '../../../lib/i18n';
@@ -138,37 +138,8 @@ declare const process: {
   env?: Record<string, string | undefined>;
 };
 
-const PRODUCTION_WEB_API_URL = 'https://victory-fitness-backend.onrender.com';
-
-function getDefaultApiUrl(): string {
-  if (Platform.OS === 'android') {
-    return 'http://10.0.2.2:8000';
-  }
-
-  if (Platform.OS === 'web') {
-    return PRODUCTION_WEB_API_URL;
-  }
-
-  return 'http://localhost:8000';
-}
-
-const RAW_API_URL = String(process.env?.EXPO_PUBLIC_API_URL ?? '').trim() || getDefaultApiUrl();
-
-function resolveApiUrl(url: string): string {
-  if (Platform.OS !== 'android') {
-    return url;
-  }
-
-  if (url.includes('://127.0.0.1') || url.includes('://localhost')) {
-    return url.replace('://127.0.0.1', '://10.0.2.2').replace('://localhost', '://10.0.2.2');
-  }
-
-  return url;
-}
-
 function buildChallengeChatSocketUrl(challengeId: string, token: string) {
-  const apiUrl = resolveApiUrl(RAW_API_URL).replace(/^http/, 'ws').replace(/\/$/, '');
-  return `${apiUrl}/ws/challenges/${encodeURIComponent(challengeId)}/chat?token=${encodeURIComponent(token)}`;
+  return buildApiWebSocketUrl(`/ws/challenges/${encodeURIComponent(challengeId)}/chat`, { token });
 }
 
 function formatMessageTime(value: string) {

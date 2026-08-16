@@ -20,11 +20,9 @@ export default function VictoryHeader() {
       }
     };
     void refreshUnreadCount();
-    const interval = setInterval(() => { void refreshUnreadCount(); }, 15000);
     const unsubscribe = subscribeToPushNotifications(() => { void refreshUnreadCount(); });
     return () => {
       cancelled = true;
-      clearInterval(interval);
       unsubscribe();
     };
   }, []);

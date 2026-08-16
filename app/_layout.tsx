@@ -9,12 +9,12 @@ import {
   Inter_700Bold,
 } from '@expo-google-fonts/inter';
 import { Colors } from '../constants/Colors';
-import { clearAuthTokens, fetchAppNotifications, fetchCurrentUser, getAuthUser, getValidAuthTokens, setAuthFailureHandler } from '../lib/api';
+import { clearAuthTokens, fetchCurrentUser, getAuthUser, getValidAuthTokens, setAuthFailureHandler } from '../lib/api';
 import { getPostAuthRoute, isAdminRestrictedFromApp, isPublicRoute, isRouteAllowedForPlan } from '../lib/access';
 import { appendRunLog, formatRunLogMessage } from '../lib/runLog';
 import { LanguageProvider } from '../lib/i18n';
 import { blurActiveElementBeforeNavigation, replaceRoute } from '../lib/navigation';
-import { PushNotificationEvent, registerForPushNotificationsAsync, subscribeToPushNotifications } from '../lib/pushNotifications';
+import { PushNotificationEvent, registerForPushNotificationsAsync, startForegroundNotificationStream, stopForegroundNotificationStream, subscribeToPushNotifications } from '../lib/pushNotifications';
 
 export function ErrorBoundary({ error, retry }: { error: Error; retry: () => void }) {
   return (
@@ -60,30 +60,10 @@ export default function RootLayout() {
 
   useEffect(() => {
     if (!fontsLoaded || checkingAccess || isPublicRoute(pathname)) return;
-    let cancelled = false;
-    const pollInbox = async () => {
-      try {
-        const notifications = await fetchAppNotifications();
-        if (cancelled) return;
-        const knownIds = knownNotificationIdsRef.current;
-        const nextIds = new Set(notifications.map((item) => item.id));
-        if (!knownIds) {
-          knownNotificationIdsRef.current = nextIds;
-          return;
-        }
-        const fresh = notifications.filter((item) => !knownIds.has(item.id));
-        knownNotificationIdsRef.current = nextIds;
-        const newest = fresh[0];
-        if (newest) {
-          setToastNotification({ title: newest.title, message: newest.message, data: newest.data || {} });
-        }
-      } catch {
-        // Notification polling is best-effort; push delivery remains active.
-      }
+    startForegroundNotificationStream();
+    return () => {
+      stopForegroundNotificationStream();
     };
-    void pollInbox();
-    const interval = setInterval(() => { void pollInbox(); }, 15000);
-    return () => { cancelled = true; clearInterval(interval); };
   }, [checkingAccess, fontsLoaded, pathname]);
 
   useEffect(() => {
