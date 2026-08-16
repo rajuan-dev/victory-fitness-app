@@ -88,6 +88,9 @@ export default function RootLayout() {
 
   useEffect(() => {
     setAuthFailureHandler(() => {
+        if (isPublicRoute(pathnameRef.current)) {
+          return;
+        }
         void appendRunLog({
           level: 'warning',
           title: 'Authentication redirect',
@@ -111,6 +114,11 @@ export default function RootLayout() {
     let cancelled = false;
 
     const guard = async () => {
+      if (isPublicRoute(pathname)) {
+        setCheckingAccess(false);
+        return;
+      }
+
       const applyAccess = async (user: Awaited<ReturnType<typeof getAuthUser>>) => {
         if (!user) {
           return false;

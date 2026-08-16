@@ -17,7 +17,7 @@ import { Colors } from '../../constants/Colors';
 import { AuthInput } from '../../components/AuthInput';
 import { AuthButton } from '../../components/AuthButton';
 import { ErrorPopupModal } from '../../components/ErrorPopupModal';
-import { apiRequest, AuthResponse, clearAuthTokens, fetchCurrentUser, getValidAuthTokens, setAuthTokens } from '../../lib/api';
+import { apiRequest, AuthResponse, clearAuthTokens, getAuthTokens, getAuthUser, setAuthTokens } from '../../lib/api';
 import { getPostAuthRoute, isAdminRestrictedFromApp } from '../../lib/access';
 import { formatAppError } from '../../lib/error';
 import { useLanguage } from '../../lib/i18n';
@@ -38,29 +38,25 @@ export default function LoginScreen() {
     let cancelled = false;
 
     const redirectIfAuthenticated = async () => {
-      const tokens = await getValidAuthTokens();
+      const [tokens, user] = await Promise.all([getAuthTokens(), getAuthUser()]);
       if (cancelled) {
         return;
       }
 
-      if (tokens) {
-        try {
-          const user = await fetchCurrentUser();
-          if (isAdminRestrictedFromApp(user)) {
-            await clearAuthTokens();
-            if (!cancelled) {
-              setErrorDialog({
-                title: t('App access restricted'),
-                message: t('Admin accounts can only sign in to the Victory Fitness dashboard.'),
-              });
-              setCheckingAuth(false);
-            }
-            return;
+      if (tokens?.access_token && user) {
+        if (isAdminRestrictedFromApp(user)) {
+          await clearAuthTokens();
+          if (!cancelled) {
+            setErrorDialog({
+              title: t('App access restricted'),
+              message: t('Admin accounts can only sign in to the Victory Fitness dashboard.'),
+            });
+            setCheckingAuth(false);
           }
-          replaceRoute(router, getPostAuthRoute(user));
-        } catch {
-          setCheckingAuth(false);
+          return;
         }
+
+        replaceRoute(router, getPostAuthRoute(user));
         return;
       }
 

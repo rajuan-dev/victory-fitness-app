@@ -24,7 +24,7 @@ import {
   clearAuthTokens,
   fetchCurrentUser,
   fetchOnboardingContent,
-  getValidAuthTokens,
+  getAuthTokens,
   updateCurrentUserProfile,
 } from '../lib/api';
 import { getPostAuthRoute } from '../lib/access';
@@ -119,7 +119,7 @@ export default function OnboardingScreen() {
     let cancelled = false;
 
     const redirectIfAuthenticated = async () => {
-      const tokens = await getValidAuthTokens();
+      const tokens = await getAuthTokens();
       if (cancelled) {
         return;
       }

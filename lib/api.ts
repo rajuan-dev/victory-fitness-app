@@ -1407,12 +1407,24 @@ export async function getValidAuthTokens() {
   return refreshAuthTokens();
 }
 
+function isPublicAuthPath(path: string): boolean {
+  return (
+    path === '/auth/login' ||
+    path === '/auth/register' ||
+    path === '/auth/verify-email' ||
+    path === '/auth/resend-verification' ||
+    path === '/auth/forgot-password' ||
+    path === '/auth/reset-password'
+  );
+}
+
 export async function apiRequest<T>(
   path: string,
   options: RequestOptions = {},
   retryOnUnauthorized = true
 ): Promise<T> {
-  const requestTokens = path === '/auth/refresh'
+  const isPublicAuthRequest = isPublicAuthPath(path);
+  const requestTokens = path === '/auth/refresh' || isPublicAuthRequest
     ? await getAuthTokens()
     : await getValidAuthTokens();
 
@@ -1449,7 +1461,7 @@ export async function apiRequest<T>(
 
   const data = await response.json().catch(() => ({}));
 
-  if (response.status === 401 && retryOnUnauthorized && path !== '/auth/refresh') {
+  if (response.status === 401 && retryOnUnauthorized && path !== '/auth/refresh' && !isPublicAuthRequest) {
     try {
       const refreshed = await refreshAuthTokens();
       if (!refreshed) {
