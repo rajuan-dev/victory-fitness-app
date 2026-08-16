@@ -1,9 +1,10 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
   Dimensions,
   FlatList,
+  Linking,
   Modal,
   NativeScrollEvent,
   NativeSyntheticEvent,
@@ -13,10 +14,10 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { ApiError, fetchCurrentUser, fetchSubscriptionPlans, SubscriptionPlan, updateCurrentUserSubscription } from '../lib/api';
+import { ApiError, createStripeCheckoutSession, fetchCurrentUser, fetchSubscriptionPlans, SubscriptionPlan } from '../lib/api';
 import { AppPlanCard, BillingCycle, getSubscriptionCard, PLAN_CARDS, SubscriptionTier } from '../lib/access';
 import { useLanguage } from '../lib/i18n';
 import { goBackOrReplace, replaceRoute } from '../lib/navigation';
@@ -159,6 +160,7 @@ function getTierDesign(tier: SubscriptionTier) {
 
 export default function PlanSelectionScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams<{ checkout?: string }>();
   const { t } = useLanguage();
   const flatListRef = useRef<FlatList>(null);
 
@@ -172,41 +174,82 @@ export default function PlanSelectionScreen() {
   const [planItems, setPlanItems] = useState<SubscriptionPlan[]>([]);
   const [activeIndex, setActiveIndex] = useState(0);
 
+  const loadSubscriptionState = useCallback(async (showLoading = true) => {
+    if (showLoading) {
+      setLoading(true);
+    }
+
+    try {
+      const [user, plansResponse] = await Promise.all([
+        fetchCurrentUser(),
+        fetchSubscriptionPlans(),
+      ]);
+      const tier = String(user.subscription_tier ?? 'NONE').toUpperCase().replace(/\s+/g, '_') as SubscriptionTier;
+      const normalizedTier = tier === 'NONE' ? 'NONE' : tier;
+      setCurrentTier(normalizedTier);
+      setSelectedTier(normalizedTier === 'NONE' ? 'SILVER' : normalizedTier);
+      setUserName(String(user.name || 'Member'));
+      setPlanItems(Array.isArray(plansResponse?.items) ? plansResponse.items : []);
+      return user;
+    } catch {
+      Alert.alert(t('Access error'), t('Unable to load your subscription state right now.'));
+      return null;
+    } finally {
+      if (showLoading) {
+        setLoading(false);
+      }
+    }
+  }, [t]);
+
+  useEffect(() => {
+    void loadSubscriptionState(true);
+  }, [loadSubscriptionState]);
+
   useEffect(() => {
     let cancelled = false;
+    const checkoutStatus = String(params.checkout ?? '').toLowerCase();
 
-    const load = async () => {
-      try {
-        const [user, plansResponse] = await Promise.all([
-          fetchCurrentUser(),
-          fetchSubscriptionPlans(),
-        ]);
+    if (checkoutStatus === 'cancelled' || checkoutStatus === 'canceled') {
+      Alert.alert('Checkout cancelled', 'Your subscription was not changed.');
+      replaceRoute(router, '/plan');
+      return;
+    }
+
+    if (checkoutStatus !== 'success') {
+      return;
+    }
+
+    const waitForActivation = async () => {
+      for (let attempt = 0; attempt < 8; attempt += 1) {
+        const user = await loadSubscriptionState(false);
         if (cancelled) {
           return;
         }
+        const tier = String(user?.subscription_tier ?? 'NONE').toUpperCase().replace(/\s+/g, '_');
+        const status = String(user?.subscription_status ?? '').toUpperCase();
+        if (tier !== 'NONE' && status === 'ACTIVE') {
+          Alert.alert('Subscription active', 'Your plan is active and your included features are unlocked.');
+          replaceRoute(router, '/(tabs)');
+          return;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+      }
 
-        const tier = String(user.subscription_tier ?? 'NONE').toUpperCase().replace(/\s+/g, '_') as SubscriptionTier;
-        setCurrentTier(tier === 'NONE' ? 'NONE' : tier);
-        setSelectedTier(tier === 'NONE' ? 'SILVER' : tier);
-        setUserName(String(user.name || 'Member'));
-        setPlanItems(Array.isArray(plansResponse?.items) ? plansResponse.items : []);
-      } catch {
-        if (!cancelled) {
-          Alert.alert(t('Access error'), t('Unable to load your subscription state right now.'));
-        }
-      } finally {
-        if (!cancelled) {
-          setLoading(false);
-        }
+      if (!cancelled) {
+        Alert.alert(
+          'Payment received',
+          'Stripe completed checkout. We are still waiting for the webhook to activate your plan. Refresh this page in a moment.',
+        );
+        replaceRoute(router, '/plan');
       }
     };
 
-    void load();
+    void waitForActivation();
 
     return () => {
       cancelled = true;
     };
-  }, [router]);
+  }, [loadSubscriptionState, params.checkout, router]);
 
   const plans = useMemo<AppPlanViewModel[]>(() => {
     return PLAN_CARDS.map((card) => {
@@ -217,6 +260,7 @@ export default function PlanSelectionScreen() {
         title: apiPlan?.title ?? card.title,
         description: apiPlan?.description ?? card.description,
         features: Array.isArray(apiPlan?.features) && apiPlan.features.length > 0 ? apiPlan.features : card.features,
+        featureAccess: Array.isArray(apiPlan?.featureAccess) && apiPlan.featureAccess.length > 0 ? apiPlan.featureAccess : card.featureAccess,
         priceMonthly: apiPlan?.priceMonthly ?? null,
         priceYearly: apiPlan?.priceYearly ?? null,
         discountedPriceMonthly: apiPlan?.discountedPriceMonthly ?? apiPlan?.priceMonthly ?? null,
@@ -262,23 +306,36 @@ export default function PlanSelectionScreen() {
       return;
     }
 
+    if (currentTier === selectedTier && currentTier !== 'NONE') {
+      Alert.alert('Subscription active', 'This is already your active plan.');
+      setConfirmVisible(false);
+      return;
+    }
+
+    if (selectedPlan.isApplicationOnly || selectedPlanPricing.finalPrice == null) {
+      Alert.alert(
+        'Application required',
+        'This plan is application-only. Please submit an application or contact the Victory Fitness team.',
+      );
+      setConfirmVisible(false);
+      return;
+    }
+
     setSaving(true);
     try {
-      await updateCurrentUserSubscription({
+      const checkout = await createStripeCheckoutSession({
         subscription_tier: selectedTier,
         billing_cycle: billingCycle,
-        confirm_payment: true,
         plan_id: selectedPlan.planId,
       });
-      setCurrentTier(selectedTier);
-      replaceRoute(router, '/(tabs)');
+      await Linking.openURL(checkout.checkout_url);
     } catch (error) {
       const message = error instanceof ApiError && error.status === 404
-        ? 'The backend route for subscription purchase was not found. Restart or redeploy the backend that serves this app, then try again.'
+        ? 'The backend route for Stripe checkout was not found. Restart or redeploy the backend that serves this app, then try again.'
         : error instanceof Error
           ? error.message
-          : 'Unable to activate the selected plan.';
-      Alert.alert('Payment confirmation failed', message);
+          : 'Unable to start Stripe checkout.';
+      Alert.alert('Checkout failed', message);
     } finally {
       setSaving(false);
       setConfirmVisible(false);
@@ -567,7 +624,17 @@ export default function PlanSelectionScreen() {
           </View>
 
           {/* Bottom Action Confirm Button */}
-          <TouchableOpacity style={styles.confirmButton} onPress={() => setConfirmVisible(true)} activeOpacity={0.88}>
+          <TouchableOpacity
+            style={[styles.confirmButton, currentTier === selectedTier && currentTier !== 'NONE' && styles.confirmButtonDisabled]}
+            onPress={() => {
+              if (currentTier === selectedTier && currentTier !== 'NONE') {
+                Alert.alert('Subscription active', 'This is already your active plan.');
+                return;
+              }
+              setConfirmVisible(true);
+            }}
+            activeOpacity={0.88}
+          >
             <Text style={styles.confirmButtonText}>
               {currentTier === selectedTier
                 ? currentTier === 'NONE'
@@ -1041,6 +1108,12 @@ const styles = StyleSheet.create({
     shadowColor: '#18D2EF',
     shadowOpacity: 0.35,
     shadowRadius: 12,
+  },
+  confirmButtonDisabled: {
+    backgroundColor: 'rgba(56, 189, 248, 0.18)',
+    borderWidth: 1,
+    borderColor: '#38BDF8',
+    shadowOpacity: 0,
   },
   confirmButtonText: {
     color: '#021417',

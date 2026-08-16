@@ -167,6 +167,11 @@ export default function ProfileScreen() {
     rank_progress_fraction?: number;
     subscription_tier?: string;
     subscription_role?: string;
+    subscription_status?: string;
+    subscription_access?: string[];
+    subscription?: {
+      access?: string[];
+    };
   } | null>(null);
   const [loadingMe, setLoadingMe] = React.useState(true);
   const [bodyMetrics, setBodyMetrics] = React.useState<BodyMetrics>({

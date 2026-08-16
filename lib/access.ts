@@ -38,6 +38,39 @@ const GOLD_ROUTE_ACCESS = [...SILVER_ROUTE_ACCESS, '/mealPlan'] as const;
 const PLATINUM_ROUTE_ACCESS = [...GOLD_ROUTE_ACCESS, '/workoutplan', '/profile/longevity-os'] as const;
 const INNER_CIRCLE_ROUTE_ACCESS = [...PLATINUM_ROUTE_ACCESS, '/profile/application', '/community', '/chat'] as const;
 const NOTIFICATION_ROUTE = '/notifications';
+const ALL_TAB_ACCESS = ['index', 'workout', 'challenge', 'mealPlan', 'profile'] as const;
+
+const FEATURE_TAB_ACCESS: Record<string, readonly string[]> = {
+  home: ['index'],
+  workout: ['workout'],
+  challenge: ['challenge'],
+  community: ['challenge'],
+  mealPlan: ['mealPlan'],
+  nutrition_tracker: ['mealPlan'],
+  meal_analysis: ['mealPlan'],
+  profile: ['profile'],
+  workoutplan: ['profile'],
+  longevity: ['profile'],
+  application: ['profile'],
+  coach_victor: ['profile'],
+  longevity_plan: ['profile'],
+};
+
+const FEATURE_ROUTE_ACCESS: Record<string, readonly string[]> = {
+  home: ['/'],
+  workout: ['/workout', '/workout-library'],
+  challenge: ['/challenge', '/challenges'],
+  community: ['/challenge', '/challenges', '/community'],
+  mealPlan: ['/mealPlan'],
+  nutrition_tracker: ['/mealPlan'],
+  meal_analysis: ['/mealPlan'],
+  profile: ['/profile'],
+  workoutplan: ['/workoutplan'],
+  longevity: ['/profile/longevity-os'],
+  application: ['/profile/application'],
+  coach_victor: ['/chat'],
+  longevity_plan: ['/profile/longevity-os'],
+};
 
 export const PLAN_CARDS: AppPlanCard[] = [
   {
@@ -120,6 +153,42 @@ export function getSubscriptionCard(tier: SubscriptionTier) {
   return PLAN_CARDS.find((card) => card.tier === tier) ?? PLAN_CARDS[0];
 }
 
+function getConfiguredFeatureAccess(
+  user?: Pick<AuthUser, 'subscription_access' | 'subscription'> | null,
+): string[] {
+  const topLevelAccess = Array.isArray(user?.subscription_access) ? user.subscription_access : [];
+  const nestedAccess = Array.isArray(user?.subscription?.access) ? user.subscription.access : [];
+  const access = topLevelAccess.length > 0 ? topLevelAccess : nestedAccess;
+  return Array.from(new Set(access.map((item) => String(item).trim()).filter(Boolean)));
+}
+
+function getEffectiveFeatureAccess(
+  user?: Pick<AuthUser, 'subscription_access' | 'subscription' | 'subscription_tier'> | null,
+): string[] {
+  const configuredAccess = getConfiguredFeatureAccess(user);
+  if (configuredAccess.length > 0) {
+    return configuredAccess;
+  }
+
+  return getSubscriptionCard(normalizeSubscriptionTier(user?.subscription_tier)).featureAccess;
+}
+
+function getTabsForFeatureAccess(featureAccess: string[]): string[] {
+  const tabs = new Set<string>();
+  featureAccess.forEach((feature) => {
+    FEATURE_TAB_ACCESS[feature]?.forEach((tab) => tabs.add(tab));
+  });
+  return ALL_TAB_ACCESS.filter((tab) => tabs.has(tab));
+}
+
+function getRoutesForFeatureAccess(featureAccess: string[]): string[] {
+  const routes = new Set<string>();
+  featureAccess.forEach((feature) => {
+    FEATURE_ROUTE_ACCESS[feature]?.forEach((route) => routes.add(route));
+  });
+  return Array.from(routes);
+}
+
 export function getPlanPrice(card: AppPlanCard, cycle: BillingCycle): string {
   if (card.tier === 'INNER_CIRCLE') {
     return card.yearlyPrice;
@@ -132,17 +201,21 @@ export function getPlanPrice(card: AppPlanCard, cycle: BillingCycle): string {
   return card.yearlyPrice;
 }
 
-export function getAllowedTabNames(user?: Pick<AuthUser, 'is_admin' | 'subscription_tier' | 'subscription_status'> | null): string[] {
+export function getAllowedTabNames(user?: Pick<AuthUser, 'is_admin' | 'subscription_tier' | 'subscription_status' | 'subscription_access' | 'subscription'> | null): string[] {
   if (!isSubscriptionActive(user)) {
     return [];
   }
 
   if (user?.is_admin) {
-    return ['index', 'workout', 'challenge', 'mealPlan', 'profile'];
+    return [...ALL_TAB_ACCESS];
   }
 
-  const tier = normalizeSubscriptionTier(user?.subscription_tier);
-  return getSubscriptionCard(tier).tabAccess;
+  const configuredTabs = getTabsForFeatureAccess(getConfiguredFeatureAccess(user));
+  if (configuredTabs.length > 0) {
+    return configuredTabs;
+  }
+
+  return getSubscriptionCard(normalizeSubscriptionTier(user?.subscription_tier)).tabAccess;
 }
 
 export function isPlanSelectionRoute(pathname: string): boolean {
@@ -180,7 +253,7 @@ export function getPostAuthRoute(user?: Pick<AuthUser, 'id' | 'is_admin' | 'subs
   return isSubscriptionActive(user) ? '/(tabs)' : PLAN_PATH;
 }
 
-export function isRouteAllowedForPlan(pathname: string, user?: Pick<AuthUser, 'id' | 'is_admin' | 'subscription_tier' | 'subscription_status' | 'subscription_is_purchased' | 'onboarding_completed'> | null): boolean {
+export function isRouteAllowedForPlan(pathname: string, user?: Pick<AuthUser, 'id' | 'is_admin' | 'subscription_tier' | 'subscription_status' | 'subscription_is_purchased' | 'onboarding_completed' | 'subscription_access' | 'subscription'> | null): boolean {
   if (user && !hasCompletedSetup(user)) {
     return pathname === '/onboarding' || pathname === '/login' || pathname === '/register' || pathname === '/verification' || pathname === '/forgot-password';
   }
@@ -202,15 +275,17 @@ export function isRouteAllowedForPlan(pathname: string, user?: Pick<AuthUser, 'i
       return true;
     }
 
-    const tier = normalizeSubscriptionTier(user?.subscription_tier);
-    const card = getSubscriptionCard(tier);
-    return card.routeAccess.some((route) => pathname === route || pathname.startsWith(`${route}/`));
+    const configuredRoutes = getRoutesForFeatureAccess(getConfiguredFeatureAccess(user));
+    const routeAccess = configuredRoutes.length > 0
+      ? configuredRoutes
+      : getSubscriptionCard(normalizeSubscriptionTier(user?.subscription_tier)).routeAccess;
+    return routeAccess.some((route) => pathname === route || pathname.startsWith(`${route}/`));
   }
 
   return false;
 }
 
-export function canAccessPlanRoute(pathname: string, user?: Pick<AuthUser, 'id' | 'is_admin' | 'subscription_tier' | 'subscription_status' | 'onboarding_completed'> | null): boolean {
+export function canAccessPlanRoute(pathname: string, user?: Pick<AuthUser, 'id' | 'is_admin' | 'subscription_tier' | 'subscription_status' | 'onboarding_completed' | 'subscription_access' | 'subscription'> | null): boolean {
   if (!user) {
     return false;
   }
@@ -220,7 +295,7 @@ export function canAccessPlanRoute(pathname: string, user?: Pick<AuthUser, 'id' 
 
 export function canAccessFeature(
   feature: string,
-  user?: Pick<AuthUser, 'is_admin' | 'subscription_tier' | 'subscription_status'> | null,
+  user?: Pick<AuthUser, 'is_admin' | 'subscription_tier' | 'subscription_status' | 'subscription_access' | 'subscription'> | null,
 ): boolean {
   if (!isSubscriptionActive(user)) {
     return false;
@@ -230,7 +305,5 @@ export function canAccessFeature(
     return true;
   }
 
-  const tier = normalizeSubscriptionTier(user?.subscription_tier);
-  const card = getSubscriptionCard(tier);
-  return card.featureAccess.includes(feature);
+  return getEffectiveFeatureAccess(user).includes(feature);
 }

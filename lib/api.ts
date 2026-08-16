@@ -191,6 +191,7 @@ export type SubscriptionPlan = {
   isMostPopular: boolean;
   iconType: string;
   features: string[];
+  featureAccess: string[];
 };
 
 export type CoachingApplicationPayload = {
@@ -989,6 +990,22 @@ export async function updateCurrentUserSubscription(payload: {
   currentUserFetchedAt = Date.now();
   await persistAuthUser(authUser);
   return user;
+}
+
+export async function createStripeCheckoutSession(payload: {
+  subscription_tier: string;
+  billing_cycle?: string;
+  plan_id?: string;
+  success_url?: string;
+  cancel_url?: string;
+}) {
+  return apiRequest<{ checkout_url: string; session_id: string }>(
+    '/payments/stripe/checkout-session',
+    {
+      method: 'POST',
+      body: payload,
+    }
+  );
 }
 
 export async function fetchSubscriptionPlans() {
