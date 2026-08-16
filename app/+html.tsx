@@ -48,7 +48,7 @@ export default function Root({ children }: { children: React.ReactNode }) {
         <script
           dangerouslySetInnerHTML={{
             __html:
-              "if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('/sw.js').catch(function(){})})}",
+              "if('serviceWorker' in navigator){window.addEventListener('load',function(){if(location.hostname==='localhost'||location.hostname==='127.0.0.1'){navigator.serviceWorker.getRegistrations().then(function(regs){return Promise.all(regs.map(function(reg){return reg.unregister()}))}).then(function(){return caches&&caches.keys?caches.keys().then(function(keys){return Promise.all(keys.map(function(key){return caches.delete(key)}))}):null}).catch(function(){})}else{navigator.serviceWorker.register('/sw.js').catch(function(){})}})}",
           }}
         />
       </head>

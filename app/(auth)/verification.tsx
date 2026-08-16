@@ -21,6 +21,13 @@ import { formatAppError } from '../../lib/error';
 import { replaceRoute } from '../../lib/navigation';
 
 const { height } = Dimensions.get('window');
+const RESEND_COOLDOWN_SECONDS = 10 * 60;
+
+function formatCountdown(totalSeconds: number) {
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+}
 
 export default function VerificationScreen() {
   const router = useRouter();
@@ -30,7 +37,7 @@ export default function VerificationScreen() {
   const [code, setCode] = useState('');
   const [loading, setLoading] = useState(false);
   const [resending, setResending] = useState(false);
-  const [resendSeconds, setResendSeconds] = useState(45);
+  const [resendSeconds, setResendSeconds] = useState(RESEND_COOLDOWN_SECONDS);
   const [errorDialog, setErrorDialog] = useState<{ title: string; message: string } | null>(null);
 
   useEffect(() => {
@@ -86,7 +93,7 @@ export default function VerificationScreen() {
         method: 'POST',
         body: { email },
       });
-      setResendSeconds(45);
+      setResendSeconds(RESEND_COOLDOWN_SECONDS);
     } catch (error) {
       setErrorDialog(formatAppError(error));
     } finally {
@@ -165,7 +172,7 @@ export default function VerificationScreen() {
               <View style={styles.resendRow}>
                 <Text style={styles.resendLabel}>Resend code in</Text>
                 <Text style={styles.resendTimer}>
-                  {resendSeconds === 0 ? 'Now' : `00:${String(resendSeconds).padStart(2, '0')}`}
+                  {resendSeconds === 0 ? 'Now' : formatCountdown(resendSeconds)}
                 </Text>
               </View>
 
@@ -178,7 +185,7 @@ export default function VerificationScreen() {
                 activeOpacity={0.8}
               >
                 <Text style={[styles.resendButtonText, resendSeconds > 0 && styles.resendButtonTextDisabled]}>
-                  {resending ? 'Sending code...' : 'I didn&apos;t receive a code'}
+                  {resending ? 'Sending code...' : "I didn't receive a code"}
                 </Text>
               </TouchableOpacity>
             </View>
