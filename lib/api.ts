@@ -13,7 +13,7 @@ declare const process: {
   env?: Record<string, string | undefined>;
 };
 
-const PRODUCTION_WEB_API_URL = 'https://victory-fitness-backend.vercel.app';
+const PRODUCTION_WEB_API_URL = 'https://victory-fitness-backend.onrender.com';
 
 function getDefaultApiUrl(): string {
   if (Platform.OS === 'android') {
