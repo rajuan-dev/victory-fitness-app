@@ -45,13 +45,14 @@ export default function ForgotPasswordScreen() {
   };
 
   const verifyCode = async () => {
-    if (!/^\d{4}$/.test(code.trim())) {
+    const cleanCode = code.trim();
+    if (!/^\d{4}$/.test(cleanCode)) {
       setErrorDialog({ title: 'Invalid code', message: 'Enter the 4-digit code from your email.' });
       return;
     }
     setLoading(true);
     try {
-      const response = await apiRequest<{ reset_token: string }>('/auth/verify-reset-code', { method: 'POST', body: { email, code: code.trim() } });
+      const response = await apiRequest<{ reset_token: string }>('/auth/verify-reset-code', { method: 'POST', body: { email, code: cleanCode } });
       setResetToken(response.reset_token);
       setStep('password');
     } catch (error) {
@@ -90,17 +91,81 @@ export default function ForgotPasswordScreen() {
         <ErrorPopupModal visible={Boolean(errorDialog)} title={errorDialog?.title ?? 'Error'} message={errorDialog?.message ?? ''} onClose={() => setErrorDialog(null)} />
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.keyboardView}>
           <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
-            <Text style={styles.brand}>V I C T O R Y</Text>
-            <Text style={styles.brandSub}>F I T N E S S</Text>
-            <Text style={styles.title}>{title}</Text>
-            <Text style={styles.subtitle}>{subtitle}</Text>
-            {!success && step === 'email' ? <AuthInput placeholder="Email" value={email} onChangeText={setEmail} keyboardType="email-address" autoComplete="email" autoCapitalize="none" /> : null}
-            {!success && step === 'code' ? <AuthInput placeholder="4-digit reset code" value={code} onChangeText={setCode} keyboardType="number-pad" maxLength={4} /> : null}
-            {!success && step === 'password' ? <><AuthInput placeholder="New password" value={newPassword} onChangeText={setNewPassword} secureTextEntry autoComplete="new-password" /><AuthInput placeholder="Confirm new password" value={confirmPassword} onChangeText={setConfirmPassword} secureTextEntry autoComplete="new-password" /></> : null}
-            {!success ? <AuthButton title={step === 'email' ? 'Send Reset Code' : step === 'code' ? 'Verify Code' : 'Update Password'} onPress={step === 'email' ? requestCode : step === 'code' ? verifyCode : resetPassword} disabled={loading} /> : <AuthButton title="Back to Login" onPress={() => replaceRoute(router, '/login')} />}
-            {!success && step === 'code' ? <TouchableOpacity style={styles.secondaryAction} onPress={requestCode} disabled={loading}><Text style={styles.secondaryText}>Resend code</Text></TouchableOpacity> : null}
-            {!success ? <TouchableOpacity style={styles.secondaryAction} onPress={() => step === 'email' ? router.back() : setStep(step === 'password' ? 'code' : 'email')} disabled={loading}><Text style={styles.secondaryText}>Back</Text></TouchableOpacity> : null}
-            {loading ? <ActivityIndicator style={styles.loader} color={Colors.primary} /> : null}
+            <View style={styles.brandingContainer}>
+              <Text style={styles.brand}>V I C T O R Y</Text>
+              <Text style={styles.brandSub}>F I T N E S S</Text>
+            </View>
+
+            <View style={styles.formCard}>
+              <Text style={styles.title}>{title}</Text>
+              <Text style={styles.subtitle}>{subtitle}</Text>
+              {!success && step === 'email' ? (
+                <AuthInput
+                  placeholder="Email"
+                  value={email}
+                  onChangeText={setEmail}
+                  allowedType="both"
+                  keyboardType="email-address"
+                  autoComplete="email"
+                  autoCapitalize="none"
+                  icon="mail-outline"
+                />
+              ) : null}
+              {!success && step === 'code' ? (
+                <AuthInput
+                  placeholder="4-digit reset code"
+                  value={code}
+                  onChangeText={setCode}
+                  allowedType="number"
+                  keyboardType="number-pad"
+                  maxLength={4}
+                  icon="key-outline"
+                />
+              ) : null}
+              {!success && step === 'password' ? (
+                <>
+                  <AuthInput
+                    placeholder="New password"
+                    value={newPassword}
+                    onChangeText={setNewPassword}
+                    allowedType="both"
+                    secureTextEntry
+                    autoComplete="new-password"
+                    icon="lock-closed-outline"
+                  />
+                  <AuthInput
+                    placeholder="Confirm new password"
+                    value={confirmPassword}
+                    onChangeText={setConfirmPassword}
+                    allowedType="both"
+                    secureTextEntry
+                    autoComplete="new-password"
+                    icon="lock-closed-outline"
+                  />
+                </>
+              ) : null}
+              {!success ? (
+                <AuthButton
+                  title={step === 'email' ? 'Send Reset Code' : step === 'code' ? 'Verify Code' : 'Update Password'}
+                  onPress={step === 'email' ? requestCode : step === 'code' ? verifyCode : resetPassword}
+                  disabled={loading}
+                  loading={loading}
+                />
+              ) : (
+                <AuthButton title="Back to Login" onPress={() => replaceRoute(router, '/login')} />
+              )}
+              {!success && step === 'code' ? (
+                <TouchableOpacity style={styles.secondaryAction} onPress={requestCode} disabled={loading}>
+                  <Text style={styles.secondaryText}>Resend code</Text>
+                </TouchableOpacity>
+              ) : null}
+              {!success ? (
+                <TouchableOpacity style={styles.secondaryAction} onPress={() => (step === 'email' ? router.back() : setStep(step === 'password' ? 'code' : 'email'))} disabled={loading}>
+                  <Text style={styles.secondaryText}>Back</Text>
+                </TouchableOpacity>
+              ) : null}
+              {loading ? <ActivityIndicator style={styles.loader} color={Colors.primary} /> : null}
+            </View>
           </ScrollView>
         </KeyboardAvoidingView>
       </View>
@@ -110,14 +175,30 @@ export default function ForgotPasswordScreen() {
 
 const styles = StyleSheet.create({
   background: { flex: 1, width: '100%', height: '100%' },
-  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.72)' },
+  overlay: { flex: 1, backgroundColor: 'rgba(7, 10, 15, 0.78)' },
   keyboardView: { flex: 1 },
-  content: { flexGrow: 1, justifyContent: 'center', alignItems: 'center', padding: 28 },
-  brand: { color: Colors.primary, fontSize: 28, letterSpacing: 8, fontFamily: 'Inter_700Bold' },
-  brandSub: { color: Colors.text, fontSize: 14, letterSpacing: 6, marginTop: 4, marginBottom: 48, fontFamily: 'Inter_600SemiBold' },
-  title: { color: Colors.primary, fontSize: 27, textAlign: 'center', letterSpacing: 1.5, fontFamily: 'Inter_700Bold' },
-  subtitle: { color: Colors.textSecondary, fontSize: 14, lineHeight: 21, textAlign: 'center', marginTop: 10, marginBottom: 28, maxWidth: 360, fontFamily: 'Inter_400Regular' },
-  secondaryAction: { padding: 14 },
+  content: { flexGrow: 1, justifyContent: 'center', alignItems: 'center', padding: 24 },
+  brandingContainer: { alignItems: 'center', marginBottom: 20 },
+  brand: { color: Colors.primary, fontSize: 26, letterSpacing: 8, fontFamily: 'Inter_700Bold' },
+  brandSub: { color: Colors.text, fontSize: 13, letterSpacing: 6, marginTop: 4, fontFamily: 'Inter_600SemiBold' },
+  formCard: {
+    width: '100%',
+    maxWidth: 420,
+    backgroundColor: 'rgba(18, 22, 34, 0.82)',
+    borderRadius: 24,
+    padding: 24,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.12)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.35,
+    shadowRadius: 20,
+    elevation: 10,
+    alignItems: 'center',
+  },
+  title: { color: Colors.primary, fontSize: 24, textAlign: 'center', letterSpacing: 1.5, fontFamily: 'Inter_700Bold', marginBottom: 6 },
+  subtitle: { color: Colors.textSecondary, fontSize: 14, lineHeight: 20, textAlign: 'center', marginTop: 4, marginBottom: 24, maxWidth: 360, fontFamily: 'Inter_400Regular' },
+  secondaryAction: { padding: 12, marginTop: 4 },
   secondaryText: { color: Colors.textMuted, fontSize: 14, fontFamily: 'Inter_600SemiBold' },
-  loader: { marginTop: 4 },
+  loader: { marginTop: 8 },
 });

@@ -33,6 +33,7 @@ export default function LoginScreen() {
   const [loading, setLoading] = useState(false);
   const [checkingAuth, setCheckingAuth] = useState(true);
   const [errorDialog, setErrorDialog] = useState<{ title: string; message: string } | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
   useEffect(() => {
     let cancelled = false;
@@ -68,11 +69,17 @@ export default function LoginScreen() {
     return () => {
       cancelled = true;
     };
-  }, [router]);
+  }, [router, t]);
 
   const handleLogin = async () => {
     const normalizedEmail = email.trim().toLowerCase();
-    if (!normalizedEmail || !password) {
+    const errors: Record<string, string> = {};
+
+    if (!normalizedEmail) errors.email = t('Please enter your email.');
+    if (!password) errors.password = t('Please enter your password.');
+
+    if (Object.keys(errors).length > 0) {
+      setFieldErrors(errors);
       setErrorDialog({
         title: t('Missing Information'),
         message: t('Please enter your email and password.'),
@@ -80,6 +87,7 @@ export default function LoginScreen() {
       return;
     }
 
+    setFieldErrors({});
     setLoading(true);
     try {
       const auth = await apiRequest<AuthResponse>('/auth/login', {
@@ -153,7 +161,7 @@ export default function LoginScreen() {
             showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps="handled"
           >
-            {/* Branding */}
+            {/* Branding Header */}
             <View style={styles.brandingContainer}>
               <Text style={styles.brandTitle}>V I C T O R Y</Text>
               <Text style={styles.brandSubtitle}>F I T N E S S</Text>
@@ -163,37 +171,50 @@ export default function LoginScreen() {
             <Text style={styles.heading}>{t('WELCOME BACK')}</Text>
             <Text style={styles.subheading}>{t('Log in to continue')}</Text>
 
-            {/* Form */}
-            <View style={styles.formContainer}>
+            {/* Glassmorphic Form Card */}
+            <View style={styles.formCard}>
               <AuthInput
                 placeholder={t('Email')}
                 value={email}
-                onChangeText={setEmail}
+                onChangeText={(val) => {
+                  setEmail(val);
+                  if (fieldErrors.email) setFieldErrors((prev) => ({ ...prev, email: '' }));
+                }}
+                allowedType="both"
                 keyboardType="email-address"
                 autoComplete="email"
+                icon="mail-outline"
+                error={fieldErrors.email}
               />
               <AuthInput
                 placeholder={t('Password')}
                 value={password}
-                onChangeText={setPassword}
+                onChangeText={(val) => {
+                  setPassword(val);
+                  if (fieldErrors.password) setFieldErrors((prev) => ({ ...prev, password: '' }));
+                }}
+                allowedType="both"
                 secureTextEntry
                 autoComplete="password"
+                icon="lock-closed-outline"
+                error={fieldErrors.password}
               />
 
               <TouchableOpacity
                 style={styles.forgotPassword}
                 onPress={handleForgotPassword}
+                activeOpacity={0.7}
               >
                 <Text style={styles.forgotPasswordText}>{t('Forgot Password?')}</Text>
               </TouchableOpacity>
 
-              <AuthButton title={t('Log In')} onPress={handleLogin} disabled={loading} />
+              <AuthButton title={t('Log In')} onPress={handleLogin} disabled={loading} loading={loading} />
             </View>
 
             {/* Register Link */}
             <View style={styles.linkContainer}>
               <Text style={styles.linkText}>{t("Don't have an account? ")}</Text>
-              <TouchableOpacity onPress={() => router.push('/register')}>
+              <TouchableOpacity onPress={() => router.push('/register')} activeOpacity={0.7}>
                 <Text style={styles.linkHighlight}>{t('Register')}</Text>
               </TouchableOpacity>
             </View>
@@ -226,11 +247,11 @@ const styles = StyleSheet.create({
   },
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.7)',
+    backgroundColor: 'rgba(7, 10, 15, 0.78)',
   },
   loadingOverlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.78)',
+    backgroundColor: 'rgba(7, 10, 15, 0.85)',
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -244,24 +265,24 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     flexGrow: 1,
-    paddingHorizontal: 28,
-    paddingTop: height * 0.1,
-    paddingBottom: 30,
+    paddingHorizontal: 24,
+    paddingTop: height * 0.08,
+    paddingBottom: 36,
     alignItems: 'center',
   },
   brandingContainer: {
     alignItems: 'center',
-    marginBottom: 28,
+    marginBottom: 24,
   },
   brandTitle: {
-    fontSize: 28,
-    fontWeight: '700',
+    fontSize: 26,
+    fontWeight: '800',
     color: Colors.primary,
     letterSpacing: 8,
     fontFamily: 'Inter_700Bold',
   },
   brandSubtitle: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '600',
     color: Colors.text,
     letterSpacing: 6,
@@ -269,38 +290,51 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter_600SemiBold',
   },
   heading: {
-    fontSize: 32,
-    fontWeight: '700',
+    fontSize: 30,
+    fontWeight: '800',
     color: Colors.primary,
     letterSpacing: 2,
-    marginBottom: 8,
+    marginBottom: 6,
+    textAlign: 'center',
     fontFamily: 'Inter_700Bold',
   },
   subheading: {
     fontSize: 15,
     color: Colors.textSecondary,
-    marginBottom: 32,
+    marginBottom: 28,
+    textAlign: 'center',
     fontFamily: 'Inter_400Regular',
   },
-  formContainer: {
+  formCard: {
     width: '100%',
+    maxWidth: 420,
+    backgroundColor: 'rgba(18, 22, 34, 0.82)',
+    borderRadius: 24,
+    padding: 22,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.12)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.35,
+    shadowRadius: 20,
+    elevation: 10,
     alignItems: 'center',
   },
   forgotPassword: {
     alignSelf: 'flex-end',
-    marginBottom: 8,
-    marginTop: -4,
+    marginBottom: 16,
+    marginTop: -2,
   },
   forgotPasswordText: {
     fontSize: 13,
-    color: Colors.textMuted,
-    fontFamily: 'Inter_400Regular',
+    color: Colors.primary,
+    fontFamily: 'Inter_600SemiBold',
   },
   linkContainer: {
     flexDirection: 'row',
     justifyContent: 'center',
     marginTop: 24,
-    marginBottom: 24,
+    marginBottom: 20,
   },
   linkText: {
     fontSize: 14,
@@ -310,34 +344,17 @@ const styles = StyleSheet.create({
   linkHighlight: {
     fontSize: 14,
     color: Colors.primary,
-    fontWeight: '600',
-    fontFamily: 'Inter_600SemiBold',
-  },
-  dividerContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    width: '100%',
-    marginBottom: 24,
-  },
-  dividerLine: {
-    flex: 1,
-    height: 1,
-    backgroundColor: Colors.divider,
-  },
-  dividerText: {
-    paddingHorizontal: 16,
-    fontSize: 14,
-    color: Colors.textMuted,
-    fontFamily: 'Inter_400Regular',
+    fontWeight: '700',
+    fontFamily: 'Inter_700Bold',
   },
   footer: {
     alignItems: 'center',
-    marginTop: 32,
+    marginTop: 28,
   },
   footerText: {
     fontSize: 12,
     color: Colors.primary,
-    marginBottom: 6,
+    marginBottom: 4,
     fontFamily: 'Inter_400Regular',
   },
   footerContact: {

@@ -389,13 +389,18 @@ export default function PostLoginOnboardingFlow({ user }: Props) {
             <View>
               <Text style={styles.stepTitle}>Personal profile</Text>
               <Text style={styles.stepText}>These answers set your personalized targets and can be updated later from your profile.</Text>
+              
+              {/* Age - Numbers only, strings CANNOT be typed! */}
               <AuthInput
                 placeholder="Age"
                 value={data.personalProfile.age}
                 onChangeText={(value) => void updateData((current) => ({ ...current, personalProfile: { ...current.personalProfile, age: value } }))}
+                allowedType="number"
                 keyboardType="number-pad"
+                icon="calendar-outline"
+                error={errors.age}
               />
-              {errors.age ? <Text style={styles.errorText}>{errors.age}</Text> : null}
+
               <Text style={styles.fieldLabel}>Gender</Text>
               <Pressable style={styles.dropdownField} onPress={() => setShowGenderModal(true)}>
                 <Text style={[styles.dropdownFieldText, !data.personalProfile.gender && styles.dropdownFieldPlaceholder]}>
@@ -404,14 +409,19 @@ export default function PostLoginOnboardingFlow({ user }: Props) {
                 <Ionicons name="chevron-down" size={18} color={Colors.textSecondary} />
               </Pressable>
               {errors.gender ? <Text style={styles.errorText}>{errors.gender}</Text> : null}
+
               <Text style={styles.fieldLabel}>Height</Text>
+              {/* Height - Decimals only, strings CANNOT be typed! */}
               <View style={styles.measurementField}>
                 <TextInput
                   style={styles.measurementInput}
                   placeholder="How many cm"
                   placeholderTextColor={Colors.placeholder}
                   value={data.personalProfile.height}
-                  onChangeText={(value) => void updateData((current) => ({ ...current, personalProfile: { ...current.personalProfile, height: value } }))}
+                  onChangeText={(val) => {
+                    const clean = val.replace(/[^0-9.]/g, '').replace(/(\..*)\./g, '$1');
+                    void updateData((current) => ({ ...current, personalProfile: { ...current.personalProfile, height: clean } }));
+                  }}
                   keyboardType="decimal-pad"
                 />
                 <View style={styles.measurementUnitBadge}>
@@ -420,14 +430,19 @@ export default function PostLoginOnboardingFlow({ user }: Props) {
               </View>
               {errors.height ? <Text style={styles.errorText}>{errors.height}</Text> : null}
               <Text style={styles.helperText}>This helps us calculate your personalized nutrition and training targets - visible only to you.</Text>
+
               <Text style={styles.fieldLabel}>Weight</Text>
+              {/* Weight - Decimals only, strings CANNOT be typed! */}
               <View style={styles.measurementField}>
                 <TextInput
                   style={styles.measurementInput}
                   placeholder={data.personalProfile.weightUnit === 'lb' ? 'How many lb' : 'How many kg'}
                   placeholderTextColor={Colors.placeholder}
                   value={data.personalProfile.weight}
-                  onChangeText={(value) => void updateData((current) => ({ ...current, personalProfile: { ...current.personalProfile, weight: value } }))}
+                  onChangeText={(val) => {
+                    const clean = val.replace(/[^0-9.]/g, '').replace(/(\..*)\./g, '$1');
+                    void updateData((current) => ({ ...current, personalProfile: { ...current.personalProfile, weight: clean } }));
+                  }}
                   keyboardType="decimal-pad"
                 />
                 <View style={styles.unitSelectorRow}>
@@ -491,6 +506,7 @@ export default function PostLoginOnboardingFlow({ user }: Props) {
                   </Pressable>
                 ))}
               </View>
+              {/* Health Notes - Allows both strings and numbers */}
               <TextInput
                 value={data.anamnese.healthNotes}
                 onChangeText={(value) => void updateData((current) => ({ ...current, anamnese: { ...current.anamnese, healthNotes: value } }))}
@@ -573,13 +589,14 @@ export default function PostLoginOnboardingFlow({ user }: Props) {
         {saveError ? <Text style={styles.saveError}>{saveError}</Text> : null}
         <View style={styles.actionsRow}>
           <Pressable onPress={() => void handleBack()} disabled={step === 0 || saving} style={[styles.secondaryButton, step === 0 && styles.secondaryButtonDisabled]}>
-            <Text style={styles.secondaryButtonText}>{step === 3 ? 'Review Answers' : 'Back'}</Text>
+            <Text style={styles.secondaryButtonText}>Back</Text>
           </Pressable>
           <View style={styles.primaryButtonWrap}>
             <AuthButton
               title={step === 3 ? 'Continue to Subscription' : 'Next'}
               onPress={() => void handleNext()}
               disabled={saving}
+              loading={saving}
             />
           </View>
         </View>
@@ -656,18 +673,23 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   progressDot: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: Colors.surface,
-    borderWidth: 1,
-    borderColor: Colors.inputBorder,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: 'rgba(26, 26, 46, 0.8)',
+    borderWidth: 1.5,
+    borderColor: 'rgba(255, 255, 255, 0.15)',
     alignItems: 'center',
     justifyContent: 'center',
   },
   progressDotActive: {
     backgroundColor: Colors.primary,
     borderColor: Colors.primary,
+    shadowColor: Colors.primary,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.5,
+    shadowRadius: 8,
+    elevation: 4,
   },
   progressDotText: {
     color: Colors.textSecondary,
@@ -684,14 +706,19 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   progressLabelActive: {
-    color: Colors.text,
+    color: Colors.primary,
   },
   card: {
-    backgroundColor: Colors.surface,
+    backgroundColor: 'rgba(18, 22, 34, 0.85)',
     borderRadius: 24,
-    padding: 18,
+    padding: 20,
     borderWidth: 1,
-    borderColor: Colors.inputBorder,
+    borderColor: 'rgba(255, 255, 255, 0.12)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.3,
+    shadowRadius: 16,
+    elevation: 6,
   },
   stepTitle: {
     color: Colors.text,
@@ -711,6 +738,7 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter_700Bold',
     fontSize: 13,
     marginBottom: 8,
+    marginTop: 4,
   },
   optionGrid: {
     flexDirection: 'row',
@@ -725,16 +753,21 @@ const styles = StyleSheet.create({
   },
   optionCard: {
     width: '100%',
-    backgroundColor: Colors.accentSurface,
-    borderWidth: 1,
+    backgroundColor: 'rgba(26, 26, 46, 0.7)',
+    borderWidth: 1.5,
     borderColor: 'rgba(255,255,255,0.08)',
     borderRadius: 16,
-    paddingHorizontal: 14,
+    paddingHorizontal: 16,
     paddingVertical: 14,
   },
   optionCardActive: {
     borderColor: Colors.primary,
-    backgroundColor: 'rgba(0,240,208,0.14)',
+    backgroundColor: 'rgba(0, 240, 208, 0.14)',
+    shadowColor: Colors.primary,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
+    elevation: 3,
   },
   optionLabel: {
     color: Colors.textSecondary,
@@ -749,19 +782,19 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter_400Regular',
     fontSize: 12,
     lineHeight: 18,
-    marginBottom: 10,
+    marginBottom: 12,
   },
   dropdownField: {
     minHeight: 56,
     borderRadius: 16,
-    borderWidth: 1,
-    borderColor: Colors.inputBorder,
-    backgroundColor: Colors.inputBackground,
+    borderWidth: 1.5,
+    borderColor: 'rgba(255, 255, 255, 0.12)',
+    backgroundColor: 'rgba(26, 26, 46, 0.75)',
     paddingHorizontal: 16,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 10,
+    marginBottom: 14,
   },
   dropdownFieldText: {
     color: Colors.text,
@@ -774,70 +807,83 @@ const styles = StyleSheet.create({
   measurementField: {
     minHeight: 56,
     borderRadius: 16,
-    borderWidth: 1,
-    borderColor: Colors.inputBorder,
-    backgroundColor: Colors.inputBackground,
-    paddingHorizontal: 14,
+    borderWidth: 1.5,
+    borderColor: 'rgba(255, 255, 255, 0.12)',
+    backgroundColor: 'rgba(26, 26, 46, 0.75)',
+    paddingLeft: 16,
+    paddingRight: 8,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    gap: 10,
-    marginBottom: 10,
+    gap: 8,
+    marginBottom: 14,
   },
   measurementInput: {
     flex: 1,
+    minWidth: 0,
     color: Colors.text,
     fontFamily: 'Inter_400Regular',
-    fontSize: 14,
+    fontSize: 15,
     paddingVertical: 14,
+    paddingRight: 4,
     outlineStyle: 'none' as any,
   },
   measurementUnitBadge: {
-    borderRadius: 12,
-    backgroundColor: Colors.accentSurface,
+    borderRadius: 10,
+    backgroundColor: 'rgba(0, 240, 208, 0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(0, 240, 208, 0.3)',
     paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingVertical: 7,
   },
   measurementUnitText: {
-    color: Colors.text,
+    color: Colors.primary,
     fontFamily: 'Inter_700Bold',
-    fontSize: 12,
+    fontSize: 12.5,
     letterSpacing: 0.4,
   },
   unitSelectorRow: {
     flexDirection: 'row',
-    gap: 8,
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.06)',
+    borderRadius: 10,
+    padding: 3,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
   },
   unitSelectorPill: {
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
-    backgroundColor: Colors.accentSurface,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    borderRadius: 8,
+    paddingHorizontal: 11,
+    paddingVertical: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   unitSelectorPillActive: {
-    borderColor: Colors.primary,
-    backgroundColor: 'rgba(0,240,208,0.14)',
+    backgroundColor: Colors.primary,
+    shadowColor: Colors.primary,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.4,
+    shadowRadius: 4,
+    elevation: 2,
   },
   unitSelectorText: {
     color: Colors.textSecondary,
     fontFamily: 'Inter_700Bold',
-    fontSize: 12,
+    fontSize: 11.5,
     letterSpacing: 0.3,
   },
   unitSelectorTextActive: {
-    color: Colors.text,
+    color: '#051614',
   },
   errorText: {
-    color: Colors.accentDanger,
+    color: '#EF4444',
     fontFamily: 'Inter_600SemiBold',
     fontSize: 12,
-    marginTop: -2,
+    marginTop: -4,
     marginBottom: 10,
   },
   saveError: {
-    color: Colors.accentDanger,
+    color: '#EF4444',
     fontFamily: 'Inter_600SemiBold',
     fontSize: 13,
     lineHeight: 19,
@@ -849,15 +895,15 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter_700Bold',
     fontSize: 15,
     lineHeight: 22,
-    marginTop: 12,
+    marginTop: 14,
     marginBottom: 10,
   },
   notesInput: {
     minHeight: 94,
     borderRadius: 16,
-    borderWidth: 1,
-    borderColor: Colors.inputBorder,
-    backgroundColor: Colors.inputBackground,
+    borderWidth: 1.5,
+    borderColor: 'rgba(255, 255, 255, 0.12)',
+    backgroundColor: 'rgba(26, 26, 46, 0.75)',
     color: Colors.text,
     paddingHorizontal: 16,
     paddingVertical: 14,
@@ -869,11 +915,11 @@ const styles = StyleSheet.create({
   },
   recommendationCard: {
     borderRadius: 20,
-    padding: 18,
-    backgroundColor: 'rgba(0,240,208,0.08)',
-    borderWidth: 1,
-    borderColor: 'rgba(0,240,208,0.22)',
-    marginBottom: 16,
+    padding: 20,
+    backgroundColor: 'rgba(0, 240, 208, 0.08)',
+    borderWidth: 1.5,
+    borderColor: 'rgba(0, 240, 208, 0.3)',
+    marginBottom: 18,
   },
   recommendationEyebrow: {
     color: Colors.primary,
@@ -903,8 +949,8 @@ const styles = StyleSheet.create({
   },
   reviewCard: {
     borderRadius: 18,
-    padding: 16,
-    backgroundColor: Colors.accentSurface,
+    padding: 18,
+    backgroundColor: 'rgba(26, 26, 46, 0.8)',
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.08)',
   },
@@ -917,28 +963,28 @@ const styles = StyleSheet.create({
   reviewLine: {
     color: Colors.textSecondary,
     fontFamily: 'Inter_400Regular',
-    fontSize: 13,
-    lineHeight: 20,
+    fontSize: 13.5,
+    lineHeight: 21,
     marginBottom: 4,
   },
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.72)',
+    backgroundColor: 'rgba(7, 10, 15, 0.8)',
     justifyContent: 'center',
     paddingHorizontal: 20,
   },
   modalCard: {
     backgroundColor: Colors.surface,
     borderRadius: 24,
-    borderWidth: 1,
-    borderColor: Colors.inputBorder,
-    padding: 20,
+    borderWidth: 1.5,
+    borderColor: 'rgba(255, 255, 255, 0.15)',
+    padding: 22,
   },
   modalTitle: {
     color: Colors.text,
     fontFamily: 'Inter_700Bold',
     fontSize: 18,
-    marginBottom: 14,
+    marginBottom: 16,
   },
   modalOption: {
     minHeight: 52,
@@ -947,7 +993,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: Colors.accentSurface,
+    backgroundColor: 'rgba(26, 26, 46, 0.8)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
     marginBottom: 10,
   },
   modalOptionText: {
@@ -962,18 +1010,19 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
-    marginTop: 18,
+    marginTop: 24,
+    width: '100%',
   },
   secondaryButton: {
-    minWidth: 120,
+    width: 100,
+    height: 56,
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: Colors.inputBorder,
-    backgroundColor: Colors.surface,
-    paddingHorizontal: 18,
-    paddingVertical: 16,
+    borderRadius: 28,
+    borderWidth: 1.5,
+    borderColor: 'rgba(255, 255, 255, 0.15)',
+    backgroundColor: 'rgba(18, 22, 34, 0.8)',
+    paddingHorizontal: 12,
   },
   secondaryButtonDisabled: {
     opacity: 0.45,
@@ -982,8 +1031,10 @@ const styles = StyleSheet.create({
     color: Colors.text,
     fontFamily: 'Inter_700Bold',
     fontSize: 14,
+    textAlign: 'center',
   },
   primaryButtonWrap: {
     flex: 1,
+    height: 56,
   },
 });

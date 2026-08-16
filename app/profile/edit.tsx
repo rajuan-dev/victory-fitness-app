@@ -185,7 +185,7 @@ export default function EditProfileScreen() {
             <TextInput
               style={styles.input}
               value={name}
-              onChangeText={setName}
+              onChangeText={(val) => setName(val.replace(/[0-9]/g, ''))}
               placeholder={t('Your Name')}
               placeholderTextColor="rgba(255,255,255,0.2)"
               editable={!loadingProfile && !savingProfile}

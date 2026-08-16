@@ -13,6 +13,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../constants/Colors';
 import { AuthInput } from '../../components/AuthInput';
 import { AuthButton } from '../../components/AuthButton';
@@ -33,17 +34,31 @@ export default function RegisterScreen() {
   const [marketingConsent, setMarketingConsent] = useState(false);
   const [loading, setLoading] = useState(false);
   const [errorDialog, setErrorDialog] = useState<{ title: string; message: string } | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
   const handleRegister = async () => {
     const normalizedEmail = email.trim().toLowerCase();
-    if (!name.trim() || !surname.trim() || !normalizedEmail || !mobile.trim() || !password) {
+    const errors: Record<string, string> = {};
+
+    if (!name.trim()) errors.name = 'Please enter your name.';
+    if (!surname.trim()) errors.surname = 'Please enter your surname.';
+    if (!normalizedEmail) errors.email = 'Please enter your email.';
+    if (!mobile.trim()) errors.mobile = 'Please enter your mobile number.';
+    if (!password) errors.password = 'Please enter your password.';
+    if (!marketingConsent) errors.marketingConsent = 'You must check the agreement box to register.';
+
+    if (Object.keys(errors).length > 0) {
+      setFieldErrors(errors);
       setErrorDialog({
-        title: 'Missing Information',
-        message: 'Please enter your name, surname, email, mobile, and password.',
+        title: 'Agreement & Information Required',
+        message: !marketingConsent && Object.keys(errors).length === 1
+          ? 'Please check the box to agree to terms before registering.'
+          : 'Please complete all required fields and agree to the terms to continue.',
       });
       return;
     }
 
+    setFieldErrors({});
     setLoading(true);
     try {
       await apiRequest('/auth/register', {
@@ -91,7 +106,7 @@ export default function RegisterScreen() {
             showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps="handled"
           >
-            {/* Branding */}
+            {/* Branding Header */}
             <View style={styles.brandingContainer}>
               <Text style={styles.brandTitle}>V I C T O R Y</Text>
               <Text style={styles.brandSubtitle}>F I T N E S S</Text>
@@ -101,58 +116,121 @@ export default function RegisterScreen() {
             <Text style={styles.heading}>CREATE ACCOUNT</Text>
             <Text style={styles.subheading}>Start your fitness journey</Text>
 
-            {/* Form */}
-            <View style={styles.formContainer}>
+            {/* Glassmorphic Form Card */}
+            <View style={styles.formCard}>
               <AuthInput
                 placeholder="Name"
                 value={name}
-                onChangeText={setName}
+                onChangeText={(val) => {
+                  setName(val);
+                  if (fieldErrors.name) setFieldErrors((prev) => ({ ...prev, name: '' }));
+                }}
+                allowedType="string"
+                autoCapitalize="words"
                 autoComplete="name"
+                icon="person-outline"
+                error={fieldErrors.name}
               />
               <AuthInput
                 placeholder="Surname"
                 value={surname}
-                onChangeText={setSurname}
+                onChangeText={(val) => {
+                  setSurname(val);
+                  if (fieldErrors.surname) setFieldErrors((prev) => ({ ...prev, surname: '' }));
+                }}
+                allowedType="string"
+                autoCapitalize="words"
                 autoComplete="name-family"
+                icon="person-outline"
+                error={fieldErrors.surname}
               />
               <AuthInput
                 placeholder="Email"
                 value={email}
-                onChangeText={setEmail}
+                onChangeText={(val) => {
+                  setEmail(val);
+                  if (fieldErrors.email) setFieldErrors((prev) => ({ ...prev, email: '' }));
+                }}
+                allowedType="both"
                 keyboardType="email-address"
                 autoComplete="email"
+                icon="mail-outline"
+                error={fieldErrors.email}
               />
               <AuthInput
                 placeholder="Mobile"
                 value={mobile}
-                onChangeText={setMobile}
+                onChangeText={(val) => {
+                  setMobile(val);
+                  if (fieldErrors.mobile) setFieldErrors((prev) => ({ ...prev, mobile: '' }));
+                }}
+                allowedType="number"
                 keyboardType="phone-pad"
                 autoComplete="tel"
+                icon="call-outline"
+                error={fieldErrors.mobile}
               />
               <AuthInput
                 placeholder="Password"
                 value={password}
-                onChangeText={setPassword}
+                onChangeText={(val) => {
+                  setPassword(val);
+                  if (fieldErrors.password) setFieldErrors((prev) => ({ ...prev, password: '' }));
+                }}
+                allowedType="both"
                 secureTextEntry
                 autoComplete="password-new"
+                icon="lock-closed-outline"
+                error={fieldErrors.password}
               />
 
-              <Pressable style={styles.consentRow} onPress={() => setMarketingConsent((value) => !value)}>
-                <View style={[styles.checkbox, marketingConsent && styles.checkboxChecked]}>
-                  {marketingConsent ? <Text style={styles.checkmark}>✓</Text> : null}
-                </View>
-                <Text style={styles.consentText}>
-                  I agree to receive occasional email or SMS messages about my trial, useful tips, and future offers. I can opt out anytime.
-                </Text>
-              </Pressable>
+              {/* Marketing Consent Option */}
+              <View style={styles.consentWrapper}>
+                <Pressable
+                  style={styles.consentRow}
+                  onPress={() => {
+                    setMarketingConsent((value) => {
+                      const next = !value;
+                      if (next && fieldErrors.marketingConsent) {
+                        setFieldErrors((prev) => ({ ...prev, marketingConsent: '' }));
+                      }
+                      return next;
+                    });
+                  }}
+                  accessibilityRole="checkbox"
+                  accessibilityState={{ checked: marketingConsent }}
+                >
+                  <View
+                    style={[
+                      styles.checkbox,
+                      marketingConsent && styles.checkboxChecked,
+                      Boolean(fieldErrors.marketingConsent) && styles.checkboxError,
+                    ]}
+                  >
+                    {marketingConsent ? (
+                      <Ionicons name="checkmark-sharp" size={14} color="#051614" />
+                    ) : null}
+                  </View>
+                  <Text style={[styles.consentText, Boolean(fieldErrors.marketingConsent) && styles.consentTextError]}>
+                    I agree to receive occasional email or SMS messages about my trial, useful tips, and future offers. I can opt out anytime.
+                  </Text>
+                </Pressable>
 
-              <AuthButton title="Register" onPress={handleRegister} disabled={loading} />
+                {fieldErrors.marketingConsent ? (
+                  <View style={styles.consentErrorRow}>
+                    <Ionicons name="alert-circle-outline" size={14} color="#EF4444" style={styles.errorIcon} />
+                    <Text style={styles.consentErrorText}>{fieldErrors.marketingConsent}</Text>
+                  </View>
+                ) : null}
+              </View>
+
+              <AuthButton title="Register" onPress={handleRegister} disabled={loading} loading={loading} />
             </View>
 
             {/* Login Link */}
             <View style={styles.linkContainer}>
               <Text style={styles.linkText}>Already have an account? </Text>
-              <TouchableOpacity onPress={() => router.push('/login')}>
+              <TouchableOpacity onPress={() => router.push('/login')} activeOpacity={0.7}>
                 <Text style={styles.linkHighlight}>Log In</Text>
               </TouchableOpacity>
             </View>
@@ -185,11 +263,11 @@ const styles = StyleSheet.create({
   },
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.7)',
+    backgroundColor: 'rgba(7, 10, 15, 0.78)',
   },
   loadingOverlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.78)',
+    backgroundColor: 'rgba(7, 10, 15, 0.85)',
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -198,24 +276,24 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     flexGrow: 1,
-    paddingHorizontal: 28,
-    paddingTop: height * 0.08,
-    paddingBottom: 30,
+    paddingHorizontal: 24,
+    paddingTop: height * 0.06,
+    paddingBottom: 36,
     alignItems: 'center',
   },
   brandingContainer: {
     alignItems: 'center',
-    marginBottom: 24,
+    marginBottom: 20,
   },
   brandTitle: {
-    fontSize: 28,
-    fontWeight: '700',
+    fontSize: 26,
+    fontWeight: '800',
     color: Colors.primary,
     letterSpacing: 8,
     fontFamily: 'Inter_700Bold',
   },
   brandSubtitle: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '600',
     color: Colors.text,
     letterSpacing: 6,
@@ -223,61 +301,107 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter_600SemiBold',
   },
   heading: {
-    fontSize: 32,
-    fontWeight: '700',
+    fontSize: 30,
+    fontWeight: '800',
     color: Colors.primary,
     letterSpacing: 2,
-    marginBottom: 8,
+    marginBottom: 6,
+    textAlign: 'center',
     fontFamily: 'Inter_700Bold',
   },
   subheading: {
     fontSize: 15,
     color: Colors.textSecondary,
-    marginBottom: 28,
+    marginBottom: 24,
+    textAlign: 'center',
     fontFamily: 'Inter_400Regular',
   },
-  formContainer: {
+  formCard: {
     width: '100%',
+    maxWidth: 420,
+    backgroundColor: 'rgba(18, 22, 34, 0.82)',
+    borderRadius: 24,
+    padding: 22,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.12)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.35,
+    shadowRadius: 20,
+    elevation: 10,
     alignItems: 'center',
+  },
+  consentWrapper: {
+    width: '100%',
+    marginTop: 4,
+    marginBottom: 20,
   },
   consentRow: {
     width: '100%',
     flexDirection: 'row',
     alignItems: 'flex-start',
-    marginTop: 4,
-    marginBottom: 18,
+    paddingRight: 4,
   },
   checkbox: {
     width: 22,
     height: 22,
-    borderRadius: 5,
-    borderWidth: 1,
+    borderRadius: 6,
+    borderWidth: 1.5,
     borderColor: Colors.inputBorder,
-    marginRight: 10,
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    marginRight: 12,
+    marginTop: 1,
     alignItems: 'center',
     justifyContent: 'center',
   },
   checkboxChecked: {
     backgroundColor: Colors.primary,
     borderColor: Colors.primary,
+    shadowColor: Colors.primary,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.5,
+    shadowRadius: 6,
+    elevation: 3,
   },
-  checkmark: {
-    color: '#071313',
-    fontSize: 15,
-    fontFamily: 'Inter_700Bold',
+  checkboxError: {
+    borderColor: '#EF4444',
+    borderWidth: 2,
+    backgroundColor: 'rgba(239, 68, 68, 0.15)',
+    shadowColor: '#EF4444',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.6,
+    shadowRadius: 8,
+    elevation: 4,
   },
   consentText: {
     flex: 1,
     color: Colors.textSecondary,
-    fontSize: 12,
-    lineHeight: 17,
+    fontSize: 12.5,
+    lineHeight: 18,
     fontFamily: 'Inter_400Regular',
+  },
+  consentTextError: {
+    color: '#F87171',
+  },
+  consentErrorRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 6,
+    paddingLeft: 34,
+  },
+  errorIcon: {
+    marginRight: 4,
+  },
+  consentErrorText: {
+    fontSize: 12,
+    color: '#EF4444',
+    fontFamily: 'Inter_600SemiBold',
   },
   linkContainer: {
     flexDirection: 'row',
     justifyContent: 'center',
-    marginTop: 20,
-    marginBottom: 20,
+    marginTop: 22,
+    marginBottom: 16,
   },
   linkText: {
     fontSize: 14,
@@ -287,34 +411,17 @@ const styles = StyleSheet.create({
   linkHighlight: {
     fontSize: 14,
     color: Colors.primary,
-    fontWeight: '600',
-    fontFamily: 'Inter_600SemiBold',
-  },
-  dividerContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    width: '100%',
-    marginBottom: 20,
-  },
-  dividerLine: {
-    flex: 1,
-    height: 1,
-    backgroundColor: Colors.divider,
-  },
-  dividerText: {
-    paddingHorizontal: 16,
-    fontSize: 14,
-    color: Colors.textMuted,
-    fontFamily: 'Inter_400Regular',
+    fontWeight: '700',
+    fontFamily: 'Inter_700Bold',
   },
   footer: {
     alignItems: 'center',
-    marginTop: 28,
+    marginTop: 24,
   },
   footerText: {
     fontSize: 12,
     color: Colors.primary,
-    marginBottom: 6,
+    marginBottom: 4,
     fontFamily: 'Inter_400Regular',
   },
   footerContact: {

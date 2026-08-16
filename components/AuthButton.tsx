@@ -34,7 +34,14 @@ export const AuthButton: React.FC<AuthButtonProps> = ({
       {loading ? (
         <ActivityIndicator color={Colors.background} />
       ) : (
-        <Text style={styles.buttonText}>{title}</Text>
+        <Text
+          style={styles.buttonText}
+          numberOfLines={1}
+          adjustsFontSizeToFit
+          minimumFontScale={0.75}
+        >
+          {title}
+        </Text>
       )}
     </TouchableOpacity>
   );
@@ -45,10 +52,10 @@ const styles = StyleSheet.create({
     width: '100%',
     height: 56,
     backgroundColor: Colors.primary,
-    borderRadius: 30,
+    borderRadius: 28,
     justifyContent: 'center',
     alignItems: 'center',
-    marginTop: 8,
+    paddingHorizontal: 16,
     shadowColor: Colors.primary,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.35,
@@ -56,11 +63,12 @@ const styles = StyleSheet.create({
     elevation: 8,
   },
   buttonText: {
-    fontSize: 17,
+    fontSize: 16,
     fontWeight: '700',
     color: Colors.background,
     fontFamily: 'Inter_700Bold',
-    letterSpacing: 0.5,
+    letterSpacing: 0.3,
+    textAlign: 'center',
   },
   buttonDisabled: {
     opacity: 0.7,
